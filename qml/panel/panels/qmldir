@@ -1,0 +1,10 @@
+module evoPlayer.panels
+Controls 1.0 Controls.qml
+DownloadsPanel 1.0 DownloadsPanel.qml
+FiletreePanel 1.0 FiletreePanel.qml
+FilterPanel 1.0 FilterPanel.qml
+LibrarySettingsPanel 1.0 LibrarySettingsPanel.qml
+PlaylistsPanel 1.0 PlaylistsPanel.qml
+SoundCloudSettingsPanel 1.0 SoundCloudSettingsPanel.qml
+StatsPanel 1.0 StatsPanel.qml
+VizSettingsPanel 1.0 VizSettingsPanel.qml

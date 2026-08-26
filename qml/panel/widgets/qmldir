@@ -1,0 +1,18 @@
+module evoPlayer.widgets
+AlbumArtThumbnail 1.0 AlbumArtThumbnail.qml
+ArtPickerOverlay 1.0 ArtPickerOverlay.qml
+BriefTooltip 1.0 BriefTooltip.qml
+HistoryRecapStatBox 1.0 HistoryRecapStatBox.qml
+FiletreeTrackRow 1.0 FiletreeTrackRow.qml
+IconTab 1.0 IconTab.qml
+MetaChip 1.0 MetaChip.qml
+PanelScrollBar 1.0 PanelScrollBar.qml
+PlayerCavaBars 1.0 PlayerCavaBars.qml
+RowIconButton 1.0 RowIconButton.qml
+TransportBtn 1.0 TransportBtn.qml
+TransportProgressBar 1.0 TransportProgressBar.qml
+TransportTimePill 1.0 TransportTimePill.qml
+UpNextStrip 1.0 UpNextStrip.qml
+VolumeSliderPopup 1.0 VolumeSliderPopup.qml
+VolumeTransportBtn 1.0 VolumeTransportBtn.qml
+WaveformViz 1.0 WaveformViz.qml

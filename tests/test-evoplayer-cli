@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${root}"
+
+bin="${HOME}/.local/lib/evoplayer"
+fail=0
+
+check() {
+  if ! "$@"; then
+    echo "failed: $*" >&2
+    fail=1
+  fi
+}
+
+EVOPLAYER_BIN="${EVOPLAYER_BIN:-${root}/.build/evoplayer}"
+if [[ ! -x "${EVOPLAYER_BIN}" ]]; then
+  echo "building evoplayer..." >&2
+  if command -v go >/dev/null 2>&1; then
+    go build -o "${EVOPLAYER_BIN}" ./cmd/evoplayer/
+  elif command -v mise >/dev/null 2>&1; then
+    mise exec -- go build -o "${EVOPLAYER_BIN}" ./cmd/evoplayer/
+  else
+    echo "fail: go toolchain required to build evoplayer" >&2
+    exit 1
+  fi
+fi
+
+check test -x "${EVOPLAYER_BIN}"
+
+runtime="$(mktemp -d)"
+sock="${runtime}/evoplayer.sock"
+state="$(mktemp -d)"
+cache="$(mktemp -d)"
+export XDG_RUNTIME_DIR="${runtime}"
+export EVO_PLAYER_MUSIC_STATE="${state}"
+export EVO_PLAYER_MUSIC_CACHE="${cache}"
+mkdir -p "${EVO_PLAYER_MUSIC_STATE}" "${cache}/tracks"
+
+daemon_pid=""
+cleanup() {
+  if [[ -n "${daemon_pid}" ]] && kill -0 "${daemon_pid}" 2>/dev/null; then
+    kill "${daemon_pid}" 2>/dev/null || true
+    wait "${daemon_pid}" 2>/dev/null || true
+  fi
+  rm -rf "${runtime}" "${state}" "${cache}"
+}
+trap cleanup EXIT
+
+export EVOPLAYER_SOCKET="${sock}"
+"${EVOPLAYER_BIN}" serve >/dev/null 2>&1 &
+daemon_pid=$!
+
+for _ in $(seq 1 40); do
+  if EVOPLAYER_SOCKET="${sock}" "${EVOPLAYER_BIN}" status --json >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
+
+check bash -c '"'"${EVOPLAYER_BIN}"'" status --json | jq -e ".state != null"'
+
+out="$("${EVOPLAYER_BIN}" history report --json 2>/dev/null || true)"
+if [[ -n "$out" ]]; then
+  echo "$out" | jq -e '.totals.scrobbles != null' >/dev/null || {
+    echo "history report missing totals" >&2
+    fail=1
+  }
+fi
+
+check bash -c '"'"${EVOPLAYER_BIN}"'" queue up-next --json | jq -e "type == \"array\""'
+
+if [[ -x "${bin}/evoplayer" ]]; then
+  check test -x "${bin}/evoplayer"
+fi
+
+exit "$fail"

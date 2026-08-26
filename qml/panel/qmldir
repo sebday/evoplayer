@@ -1,0 +1,4 @@
+module evoPlayer
+Player 1.0 Player.qml
+DashboardModule 1.0 DashboardModule.qml
+Service 1.0 Service.qml

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${root}"
+
+echo "== go: art image hash / display-art =="
+mise exec -- go test ./internal/library/... -run TestArtImageHashDisplayArt
+
+echo "evoplayer art cache ok"

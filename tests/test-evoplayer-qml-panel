@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${root}"
+
+format="$(command -v qmlformat 2>/dev/null || true)"
+if [[ -z "${format}" && -x /usr/lib/qt6/bin/qmlformat ]]; then
+  format=/usr/lib/qt6/bin/qmlformat
+fi
+if [[ -z "${format}" ]]; then
+  echo "fail: qmlformat not found (install qt6-declarative)" >&2
+  exit 1
+fi
+
+files=(
+  qml/panel/Player.qml
+  qml/panel/DashboardModule.qml
+  qml/panel/Service.qml
+)
+for f in qml/panel/widgets/*.qml qml/panel/panels/*.qml; do
+  files+=("$f")
+done
+
+for f in "${files[@]}"; do
+  if ! "${format}" -n "${f}" >/dev/null; then
+    echo "fail: qml syntax error in ${f}" >&2
+    exit 1
+  fi
+done
+
+shallow='import "compat"'
+deep='import "../compat"'
+for f in qml/panel/widgets/*.qml qml/panel/panels/*.qml qml/panel/settings/*.qml; do
+  if rg -q 'import ".*commons"' "${f}" 2>/dev/null; then
+    echo "fail: ${f} still imports legacy commons path" >&2
+    exit 1
+  fi
+  if [[ "${f}" == qml/panel/widgets/* || "${f}" == qml/panel/panels/* || "${f}" == qml/panel/settings/* ]]; then
+    if ! rg -q "${deep}" "${f}" 2>/dev/null; then
+      echo "fail: ${f} missing ../compat import" >&2
+      exit 1
+    fi
+  fi
+done
+
+for f in qml/panel/Player.qml qml/panel/DashboardModule.qml qml/panel/Service.qml; do
+  if ! rg -q "${shallow}" "${f}" 2>/dev/null; then
+    echo "fail: ${f} missing compat import" >&2
+    exit 1
+  fi
+done
+
+echo "evoplayer qml panel syntax ok"

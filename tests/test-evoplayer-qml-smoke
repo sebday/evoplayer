@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${root}"
+
+if [[ "${EVOPLAYER_SKIP_QUICKSHELL:-0}" == "1" ]]; then
+  echo "skip: EVOPLAYER_SKIP_QUICKSHELL=1"
+  exit 0
+fi
+
+quickshell="$(command -v quickshell 2>/dev/null || true)"
+if [[ -z "${quickshell}" ]]; then
+  echo "skip: quickshell not found (set EVOPLAYER_SKIP_QUICKSHELL=1 to silence)" >&2
+  exit 0
+fi
+
+EVOPLAYER_BIN="${EVOPLAYER_BIN:-${root}/.build/evoplayer}"
+export EVOPLAYER_BIN
+if [[ ! -x "${EVOPLAYER_BIN}" ]]; then
+  echo "building evoplayer..." >&2
+  (cd "${root}" && mise exec -- go build -o .build/evoplayer ./cmd/evoplayer/)
+fi
+
+runtime="$(mktemp -d)"
+state="$(mktemp -d)"
+cache="$(mktemp -d)"
+harness="$(mktemp -d)"
+
+daemon_pid=""
+cleanup() {
+  if [[ -n "${daemon_pid}" ]] && kill -0 "${daemon_pid}" 2>/dev/null; then
+    kill "${daemon_pid}" 2>/dev/null || true
+    wait "${daemon_pid}" 2>/dev/null || true
+  fi
+  rm -rf "${runtime}" "${state}" "${cache}" "${harness}"
+}
+trap cleanup EXIT
+
+export XDG_RUNTIME_DIR="${runtime}"
+export EVO_PLAYER_MUSIC_STATE="${state}"
+export EVO_PLAYER_MUSIC_CACHE="${cache}"
+mkdir -p "${EVO_PLAYER_MUSIC_STATE}" "${cache}/tracks"
+
+sock="${runtime}/evoplayer.sock"
+export EVOPLAYER_SOCKET="${sock}"
+
+"${EVOPLAYER_BIN}" serve >/dev/null 2>&1 &
+daemon_pid=$!
+
+for _ in $(seq 1 40); do
+  if "${EVOPLAYER_BIN}" status --json >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
+
+if ! "${EVOPLAYER_BIN}" status --json >/dev/null 2>&1; then
+  echo "fail: test daemon did not start" >&2
+  exit 1
+fi
+
+mkdir -p "${harness}/vendor"
+ln -s "${root}" "${harness}/vendor/evoplayer"
+cp -r "${root}/tests/qml/harness/qs" "${harness}/qs"
+cp "${root}/tests/qml/harness/shell.qml" "${harness}/shell.qml"
+
+export QML2_IMPORT_PATH="${harness}${QML2_IMPORT_PATH:+:${QML2_IMPORT_PATH}}"
+
+export QT_QPA_PLATFORM=offscreen
+export EVOPLAYER_SMOKE_INTERACT="${EVOPLAYER_SMOKE_INTERACT:-1}"
+
+set +e
+timeout 20s "${quickshell}" -n -p "${harness}" >"${harness}/quickshell.log" 2>&1
+rc=$?
+set -e
+
+if [[ "${rc}" -eq 124 ]]; then
+  echo "fail: quickshell smoke timed out" >&2
+  tail -n 40 "${harness}/quickshell.log" >&2 || true
+  exit 1
+fi
+
+if [[ "${rc}" -ne 0 ]]; then
+  echo "fail: quickshell smoke exited ${rc}" >&2
+  tail -n 40 "${harness}/quickshell.log" >&2 || true
+  exit 1
+fi
+
+if ! rg -q 'PASS:' "${harness}/quickshell.log"; then
+  echo "fail: quickshell smoke log missing PASS" >&2
+  cat "${harness}/quickshell.log" >&2
+  exit 1
+fi
+
+if rg -q 'FAIL:' "${harness}/quickshell.log"; then
+  echo "fail: quickshell smoke reported failure" >&2
+  cat "${harness}/quickshell.log" >&2
+  exit 1
+fi
+
+if [[ "${EVOPLAYER_SMOKE_INTERACT:-1}" == "1" ]]; then
+  if ! rg -q 'PASS: toggle dispatched' "${harness}/quickshell.log"; then
+    echo "fail: interact smoke missing toggle dispatched" >&2
+    cat "${harness}/quickshell.log" >&2
+    exit 1
+  fi
+fi
+
+echo "evoplayer qml quickshell smoke ok"
