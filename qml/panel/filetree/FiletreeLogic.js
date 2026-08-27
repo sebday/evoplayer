@@ -406,13 +406,12 @@ function pathsFromTracks(tracks) {
 function tracksFromPaths(paths) {
     paths = paths || []
     var tracks = []
-    var i, path, base
+    var i, path
     for (i = 0; i < paths.length; i++) {
         path = String(paths[i] || "")
         if (!path)
             continue
-        base = path.split("/").pop() || path
-        tracks.push({ path: path, title: base, type: "track" })
+        tracks.push({ path: path, type: "track" })
     }
     return tracks
 }

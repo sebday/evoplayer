@@ -43,9 +43,9 @@ Item {
             ? (transportMouse.containsMouse ? 0.55 : 0.35)
             : (liked ? 1 : (transportMouse.containsMouse ? 1 : 0.9))
         font.family: Theme.fontFamily
-        font.pixelSize: Math.max(10, Math.round((accent
-            ? dashboard.transportIconFont * 1.2
-            : (smallGlyph ? dashboard.transportSecondaryIconFont : dashboard.transportIconFont)) * btn.iconScale))
+        font.pixelSize: Math.max(10, Math.round((smallGlyph
+            ? dashboard.transportSecondaryIconFont
+            : dashboard.transportIconFont) * btn.iconScale))
     }
 
     MouseArea {

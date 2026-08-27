@@ -16,7 +16,7 @@ Item {
     property var libraryStats: ({ tracks: 0, genres: 0 })
     property string settingsMusicLibrary: ""
     property string settingsScUser: ""
-    property string settingsScOAuthToken: ""
+    property string settingsScOAuthSource: ""
     property bool settingsReady: false
     property bool settingsFieldFocused: false
     property int settingsVizFrameRate: 45
@@ -32,14 +32,6 @@ Item {
         && !applyVizProc.running
 
     readonly property var libraryActions: [
-        {
-            key: "download",
-            icon: "󰕧",
-            label: "download soundcloud",
-            button: "Download SoundCloud",
-            hint: "download soundcloud",
-            args: ["download"]
-        },
         {
             key: "import",
             icon: "󰉍",
@@ -75,7 +67,7 @@ Item {
             var paths = data.paths || {}
             var viz = data.viz || {}
             settingsScUser = String(sc.user || "")
-            settingsScOAuthToken = String(sc.oauth_token || "")
+            settingsScOAuthSource = String(sc.oauth_source || "")
             settingsMusicLibrary = String(paths.root || "")
             settingsVizFrameRate = parseInt(viz.frame_rate, 10) || 45
             settingsVizSensitivity = parseInt(viz.sensitivity, 10) || 145

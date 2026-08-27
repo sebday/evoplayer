@@ -298,6 +298,10 @@ SectionPanel {
                 onClicked: function(mouse) {
                     mouse.accepted = true
                     var path = dash.trackEntryPath(modelData)
+                    if (dash.isTrackPlaying(path)) {
+                        dash.selectTrackEntry(modelData)
+                        return
+                    }
                     if (dash.isTrackSelected(path))
                         dash.playFiletreeTrack(modelData)
                     else
@@ -306,7 +310,12 @@ SectionPanel {
 
                 onDoubleClicked: function(mouse) {
                     mouse.accepted = true
-                    if (!dash.isTrackSelected(dash.trackEntryPath(modelData)))
+                    var path = dash.trackEntryPath(modelData)
+                    if (dash.isTrackPlaying(path)) {
+                        dash.showNowplaying()
+                        return
+                    }
+                    if (!dash.isTrackSelected(path))
                         dash.selectTrackEntry(modelData)
                     dash.playFiletreeTrack(modelData)
                 }

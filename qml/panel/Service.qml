@@ -52,6 +52,8 @@ Item {
     property bool scanNoticeShown: false
     readonly property int scanNotifyId: 42421
 
+    signal daemonJobUpdated(var data)
+
     readonly property bool ipcReady: useCliampBackend ? cliampBridge.ipcReady : playerSocket.connected
     property bool ipcSynced: false
     property string enrichPath: ""
@@ -284,7 +286,7 @@ Item {
     function applyJobPayload(data) {
         if (!data)
             return
-        daemonJobEvent(data)
+        daemonJobUpdated(data)
         root.applyScanNotice(data)
     }
 

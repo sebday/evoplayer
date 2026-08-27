@@ -207,6 +207,10 @@ SectionPanel {
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     onClicked: dashboard.selectGenrePlaylist(modelData.name)
+                    onDoubleClicked: {
+                        dashboard.selectGenrePlaylist(modelData.name)
+                        dashboard.selectPlaylist(modelData.name)
+                    }
                 }
             }
         }

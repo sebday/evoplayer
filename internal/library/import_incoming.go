@@ -1,6 +1,7 @@
 package library
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,13 @@ import (
 )
 
 func RunImport(env Env) error {
+	return RunImportCtx(context.Background(), env)
+}
+
+func RunImportCtx(ctx context.Context, env Env) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	incoming := filepath.Join(env.MusicRoot, ".incoming")
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
 		return err
@@ -32,6 +40,10 @@ func RunImport(env Env) error {
 		return err
 	}
 	for _, e := range entries {
+		if err := ctx.Err(); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
 		if e.IsDir() {
 			continue
 		}
@@ -42,13 +54,14 @@ func RunImport(env Env) error {
 		if !audio.IsAudio(src) {
 			continue
 		}
-		if _, _, err := tags.StandardizePath(env.MusicRoot, src); err != nil {
-			fmt.Fprintf(os.Stderr, "evoplayer: warn: tag standardize failed: %s\n", src)
+		info, err := os.Stat(src)
+		if err != nil || info.Size() == 0 {
+			continue
 		}
 		probed, _ := tags.Probe(src)
 		dest, err := incomingDest(env, src, probed)
 		if err != nil {
-			failed++
+			fmt.Fprintf(os.Stderr, "evoplayer: skip import (no dest): %s\n", src)
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
@@ -57,7 +70,6 @@ func RunImport(env Env) error {
 		}
 		if _, err := os.Stat(dest); err == nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: skip existing dest: %s\n", dest)
-			failed++
 			continue
 		}
 		if err := os.Rename(src, dest); err != nil {
@@ -106,6 +118,9 @@ func RunImport(env Env) error {
 
 func incomingSkipFile(path string) bool {
 	base := filepath.Base(path)
+	if base == incomingTagsFile {
+		return true
+	}
 	if strings.Contains(base, ".part") || strings.Contains(base, ".ytdl") || strings.Contains(base, ".temp") {
 		return true
 	}
@@ -119,7 +134,10 @@ func incomingSkipFile(path string) bool {
 
 func incomingDest(env Env, path string, probed tags.ProbeResult) (string, error) {
 	tag := probed.Tag
-	genre := genreFolderFromTags(path, tag)
+	genre := overlayGenre(env, path)
+	if genre == "" {
+		genre = genreFolderFromTags(path, tag)
+	}
 	if genre == "" {
 		return "", fmt.Errorf("unknown genre for %s", path)
 	}
@@ -132,14 +150,28 @@ func incomingDest(env Env, path string, probed tags.ProbeResult) (string, error)
 		return "", fmt.Errorf("cannot name %s", path)
 	}
 	dir := filepath.Join(env.MusicRoot, genre, "soundcloud")
-	if isYouTubeSource(path, tag) {
-		year := mixYear(tag.Year, path)
-		dir = filepath.Join(env.MusicRoot, genre, "youtube", year)
-	} else if isMix(path, probed.Duration) {
+	if IsMix(path, probed.Duration) {
 		year := mixYear(tag.Year, path)
 		dir = filepath.Join(env.MusicRoot, genre, "mixes", year)
+	} else if isYouTubeSource(path, tag) {
+		year := mixYear(tag.Year, path)
+		dir = filepath.Join(env.MusicRoot, genre, "youtube", year)
 	}
 	return filepath.Join(dir, base), nil
+}
+
+var genreTagToFolder = map[string]string{
+	"drum & bass":   "drum&bass",
+	"drum and bass": "drum&bass",
+	"dnb":           "drum&bass",
+	"drum&bass":     "drum&bass",
+	"dubstep":       "dubstep",
+	"grime":         "grime",
+	"hip-hop":       "hiphop",
+	"hip hop":       "hiphop",
+	"hiphop":        "hiphop",
+	"house":         "house",
+	"misc":          "misc",
 }
 
 func genreFolderFromTags(path string, tag tags.TagInfo) string {
@@ -158,16 +190,21 @@ func genreFolderFromTags(path string, tag tags.TagInfo) string {
 			return item.folder
 		}
 	}
-	genreMap := map[string]string{
-		"drum & bass": "drum&bass", "drum and bass": "drum&bass", "dnb": "drum&bass",
-		"dubstep": "dubstep", "grime": "grime", "hip-hop": "hiphop", "hip hop": "hiphop",
-		"house": "house", "misc": "misc",
-	}
 	for _, field := range []string{tag.Genre, tag.Artist, tag.Title} {
-		lower := strings.ToLower(strings.TrimSpace(field))
-		if folder, ok := genreMap[lower]; ok {
+		if folder := resolveGenreFolder(field); folder != "" {
 			return folder
 		}
+	}
+	return ""
+}
+
+func resolveGenreFolder(name string) string {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	if lower == "" {
+		return ""
+	}
+	if folder, ok := genreTagToFolder[lower]; ok {
+		return folder
 	}
 	return ""
 }
@@ -205,20 +242,6 @@ func isYouTubeSource(path string, tag tags.TagInfo) bool {
 	}
 	stem := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
 	return strings.Contains(stem, "youtube")
-}
-
-func isMix(path string, dur float64) bool {
-	if dur > 45*60 {
-		return true
-	}
-	stem := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
-	markers := []string{"mixed", "essential", "euphoria", "session", "boiler", "radio_show", "radio-show", "-mix", "_mix", "live_mixed"}
-	for _, m := range markers {
-		if strings.Contains(stem, m) {
-			return true
-		}
-	}
-	return false
 }
 
 func mixYear(yearTag, path string) string {

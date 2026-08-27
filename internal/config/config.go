@@ -15,7 +15,7 @@ const musicRootDefault = "/mnt/external/music"
 type File struct {
 	Paths      map[string]any `toml:"paths"`
 	Soundcloud map[string]any `toml:"soundcloud"`
-	Skip       []string      `toml:"skip"`
+	Skip       []string       `toml:"skip"`
 	Extra      map[string]map[string]any
 }
 
@@ -31,9 +31,9 @@ type VizView struct {
 
 type JSONView struct {
 	Soundcloud struct {
-		User       string `json:"user"`
-		OAuthToken string `json:"oauth_token"`
-		ClientID   string `json:"client_id"`
+		User        string `json:"user"`
+		OAuthSource string `json:"oauth_source,omitempty"`
+		ClientID    string `json:"client_id"`
 	} `json:"soundcloud"`
 	Paths struct {
 		Root string `json:"root"`
@@ -95,9 +95,15 @@ func Set(path, section, key, value string) error {
 	if data[section] == nil {
 		data[section] = map[string]any{}
 	}
+	if section == "soundcloud" && key == "oauth_token" {
+		delete(data[section], "oauth_token")
+		_ = write(path, data)
+		return fmt.Errorf("evoplayer: soundcloud oauth is not stored in music.toml (browser cookie or pass)")
+	}
 	data[section][key] = value
 	if section == "soundcloud" || data["soundcloud"] != nil {
 		delete(data["soundcloud"], "likes_url")
+		delete(data["soundcloud"], "oauth_token")
 	}
 	return write(path, data)
 }
@@ -111,10 +117,13 @@ func PruneDerived(path string) error {
 	if !ok {
 		return nil
 	}
-	if _, ok := sc["likes_url"]; !ok {
+	_, hasLikes := sc["likes_url"]
+	_, hasOAuth := sc["oauth_token"]
+	if !hasLikes && !hasOAuth {
 		return nil
 	}
 	delete(sc, "likes_url")
+	delete(sc, "oauth_token")
 	return write(path, data)
 }
 
@@ -133,9 +142,6 @@ func JSON(path, musicRoot string) (JSONView, error) {
 		out.Soundcloud.User = user
 	} else {
 		out.Soundcloud.User = "seb-day"
-	}
-	if token, ok := sc["oauth_token"].(string); ok {
-		out.Soundcloud.OAuthToken = token
 	}
 	if clientID, ok := sc["client_id"].(string); ok {
 		out.Soundcloud.ClientID = clientID

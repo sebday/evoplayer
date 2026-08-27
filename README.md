@@ -34,6 +34,12 @@ omarchy-shell shell toggle seb.evoplayer '{}'
 
 See [AGENTS.md](AGENTS.md) for menu entry, autostart, state paths, and IPC tracing.
 
+## Library folders
+
+The music library is a tree of folders, not a genre taxonomy. Top-level dirs under the music root (`misc`, `drum&bass`, `house`, …) are where tracks are filed.
+
+A genre tag is only a hint for which of those folders to use. Untagged downloads stay in `.incoming` until you pick a folder; import then moves the file into that folder (`youtube/` or `mixes/` plus year for long mixes).
+
 ## Dev
 
 ```bash

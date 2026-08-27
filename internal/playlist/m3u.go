@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sebday/evoplayer/internal/audio"
+	"github.com/sebday/evoplayer/internal/library"
 )
 
 func readM3UPaths(path string) ([]string, error) {
@@ -61,6 +62,18 @@ func writeLikesM3U(env Env, outPath string) error {
 	return writeM3U(outPath, paths)
 }
 
+func writeMixesM3U(env Env) error {
+	db, dbErr := library.EnsureDB(env.Env)
+	if dbErr != nil {
+		db = nil
+	}
+	paths, err := library.LikedMixPaths(db, env.Env)
+	if err != nil {
+		return err
+	}
+	return writeM3U(filepath.Join(env.PlaylistDir, "mixes.m3u"), paths)
+}
+
 func writeGenreM3U(env Env, genre string) error {
 	paths, err := likedPathsForGenre(env, genre)
 	if err != nil {
@@ -103,7 +116,7 @@ func writeM3U(path string, paths []string) error {
 	return os.Rename(tmpName, path)
 }
 
-// RefreshAll rebuilds genre playlists and all.m3u from likes.
+// RefreshAll rebuilds genre playlists, mixes.m3u, and all.m3u from likes.
 func RefreshAll(env Env) error {
 	genres, err := listMusicGenres(env.MusicRoot)
 	if err != nil {
@@ -115,6 +128,9 @@ func RefreshAll(env Env) error {
 		}
 	}
 	_ = os.Remove(filepath.Join(env.PlaylistDir, "favorites.m3u"))
+	if err := writeMixesM3U(env); err != nil {
+		return err
+	}
 	return writeLikesM3U(env, filepath.Join(env.PlaylistDir, "all.m3u"))
 }
 

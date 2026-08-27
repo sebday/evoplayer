@@ -48,9 +48,11 @@ Rectangle {
     MouseArea {
         id: chipMouse
         anchors.fill: parent
-        visible: parent.clickable
+        z: 1
+        enabled: parent.clickable
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
+        preventStealing: true
+        cursorShape: parent.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
         onClicked: function(mouse) {
             mouse.accepted = true
             parent.activated()

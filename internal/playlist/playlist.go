@@ -64,11 +64,27 @@ func ListIndex(env Env) ([]IndexItem, error) {
 		})
 	}
 
+	mixCount, err := countLikedMixes(env, db, dbErr)
+	if err != nil {
+		return nil, err
+	}
+	if mixCount > 0 {
+		out = append(out, IndexItem{
+			Name:    "mixes",
+			Count:   mixCount,
+			Kind:    "system",
+			Starred: isStarred(stars, "mixes"),
+		})
+	}
+
 	genres, err := listMusicGenres(env.MusicRoot)
 	if err != nil {
 		return nil, err
 	}
 	for _, genre := range genres {
+		if genre == "mixes" {
+			continue
+		}
 		count, err := countLikedGenre(env, db, dbErr, genre)
 		if err != nil {
 			return nil, err
@@ -193,6 +209,7 @@ func FavoriteToggle(env Env, path string) (FavoriteResult, error) {
 	}
 	library.InvalidateLikesCache(env.LikesFile)
 	_ = writeLikesM3U(env, filepath.Join(env.PlaylistDir, "all.m3u"))
+	_ = writeMixesM3U(env)
 	if genre := genreFromPath(env.MusicRoot, path); genre != "" {
 		_ = writeGenreM3U(env, genre)
 	}
@@ -215,7 +232,7 @@ func LoadCurrent(env Env) ([]library.Track, error) {
 	cachePath := env.currentTracksJSON()
 	if raw, err := os.ReadFile(cachePath); err == nil {
 		var items []library.Track
-		if json.Unmarshal(raw, &items) == nil && currentJSONMatchesPaths(items, paths) {
+		if json.Unmarshal(raw, &items) == nil && currentJSONMatchesPaths(items, paths) && currentJSONHasMeta(items) {
 			return items, nil
 		}
 	}
@@ -232,6 +249,36 @@ func currentJSONMatchesPaths(items []library.Track, paths []string) bool {
 		}
 	}
 	return true
+}
+
+func currentJSONHasMeta(items []library.Track) bool {
+	if len(items) == 0 {
+		return false
+	}
+	n := len(items)
+	if n > 12 {
+		n = 12
+	}
+	for i := 0; i < n; i++ {
+		if strings.TrimSpace(items[i].Artist) != "" || strings.TrimSpace(items[i].Album) != "" {
+			return true
+		}
+		title := strings.TrimSpace(items[i].Title)
+		if title != "" && !looksLikeAudioFilename(title) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeAudioFilename(title string) bool {
+	lower := strings.ToLower(title)
+	for _, ext := range []string{".mp3", ".flac", ".ogg", ".m4a", ".wav", ".opus", ".aac", ".wma"} {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 type likeEntry struct {
@@ -275,6 +322,12 @@ func writeLikes(path string, likes map[string]likeEntry) error {
 
 func tracksPageFromDB(env Env, db *sql.DB, name string, offset, limit int) (TracksPage, bool, error) {
 	switch name {
+	case "mixes":
+		paths, err := library.LikedMixPaths(db, env.Env)
+		if err != nil {
+			return TracksPage{}, true, err
+		}
+		return paginatePaths(env, paths, name, offset, limit), true, nil
 	case "all":
 		var total int
 		if err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE liked=1`).Scan(&total); err != nil {
@@ -323,6 +376,22 @@ SELECT path FROM tracks WHERE liked=1 AND path LIKE ? ORDER BY path LIMIT ? OFFS
 	return TracksPage{}, false, nil
 }
 
+func paginatePaths(env Env, paths []string, name string, offset, limit int) TracksPage {
+	total := len(paths)
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	return TracksPage{
+		Total:  total,
+		Offset: offset,
+		Items:  tracksFromPaths(env.Env, paths[offset:end], name),
+	}
+}
+
 func scanPaths(rows *sql.Rows) ([]string, error) {
 	var paths []string
 	for rows.Next() {
@@ -344,6 +413,12 @@ func ensurePlaylistM3U(env Env, name string) (string, error) {
 	case "all":
 		out := filepath.Join(env.PlaylistDir, "all.m3u")
 		if err := writeLikesM3U(env, out); err != nil {
+			return "", err
+		}
+		return out, nil
+	case "mixes":
+		out := filepath.Join(env.PlaylistDir, "mixes.m3u")
+		if err := writeMixesM3U(env); err != nil {
 			return "", err
 		}
 		return out, nil
@@ -378,6 +453,17 @@ func countLikedAll(env Env, db *sql.DB, dbErr error) (int, error) {
 		return 0, err
 	}
 	return len(likes), nil
+}
+
+func countLikedMixes(env Env, db *sql.DB, dbErr error) (int, error) {
+	if dbErr != nil {
+		db = nil
+	}
+	paths, err := library.LikedMixPaths(db, env.Env)
+	if err != nil {
+		return 0, err
+	}
+	return len(paths), nil
 }
 
 func countLikedGenre(env Env, db *sql.DB, dbErr error, genre string) (int, error) {
@@ -416,7 +502,7 @@ func listExtraPlaylists(env Env, stars []string, existing []IndexItem) []IndexIt
 			continue
 		}
 		name := strings.TrimSuffix(e.Name(), ".m3u")
-		if name == "" || name == "all" || name == "favorites" || name == "current" {
+		if name == "" || name == "all" || name == "favorites" || name == "current" || name == "mixes" {
 			continue
 		}
 		if _, ok := seen[name]; ok {
@@ -475,7 +561,7 @@ func isGenreDir(env Env, name string) bool {
 
 func playlistKind(env Env, name string) string {
 	switch name {
-	case "all", "favorites":
+	case "all", "favorites", "mixes":
 		return "system"
 	default:
 		if isGenreDir(env, name) {
@@ -488,8 +574,8 @@ func playlistKind(env Env, name string) string {
 func pruneStars(env Env, stars []string) {
 	kept := make([]string, 0, len(stars))
 	for _, name := range stars {
-		if name == "all" {
-			if _, err := ensurePlaylistM3U(env, "all"); err == nil {
+		if name == "all" || name == "mixes" {
+			if _, err := ensurePlaylistM3U(env, name); err == nil {
 				kept = append(kept, name)
 			}
 			continue

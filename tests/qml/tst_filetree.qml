@@ -282,7 +282,8 @@ TestCase {
         var fromPaths = FiletreeLogic.parseBrowseQueueTracks(
             JSON.stringify({ paths: ["/a.mp3", "/b.mp3"] }))
         compare(fromPaths.length, 2)
-        compare(fromPaths[1].title, "b.mp3")
+        compare(fromPaths[1].path, "/b.mp3")
+        compare(fromPaths[1].title || "", "")
     }
 
     function test_appendTracksUnique() {

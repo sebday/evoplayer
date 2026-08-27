@@ -9,7 +9,7 @@ Native Go commands (daemon IPC or direct library access):
 - `load`, `status`, `open`, `queue append|play|extend|up-next` (`up-next` reads the daemon playback queue)
 - `playback …`, `library …`, `browse`, `meta`, `genres`, `tracks`, `cache`, `find`, `scrobble`
 - `history`, `config`, `tags`, `vinyl`, `placement`, `waveform`, `lastfm`, `jsonlog`
-- `warm`, `download` (soundcloud likes sync; `download url <url>` for youtube/soundcloud), `import`, `stats`, `job`
+- `warm`, `download` (soundcloud likes sync; `download url <url>` for youtube via yt-dlp, or soundcloud), `import`, `stats`, `job`
 - `art` (search, set, apply, clear, maintain, notify-cache), `sort`, `playlist`, `favorite`, `current`
 
 Unknown subcommands return a usage error from the Go CLI.
@@ -31,7 +31,7 @@ evoplayer viz get
 
 The Omarchy monitor service (`seb.evoplayer`) runs `evoplayer start` on load if the socket is absent.
 
-SoundCloud likes sync needs `soundcloud.oauth_token` in music config (browser cookie from soundcloud.com).
+SoundCloud likes sync reads `oauth_token` from a logged-in Brave (then Chromium) cookie, else `pass show omarchy/soundcloud/oauth-token` (`EVOPLAYER_PASS_PREFIX`). It is not stored in music.toml.
 
 ### IPC tracing (playback stops / tab switch)
 
@@ -53,6 +53,7 @@ Use `EVOPLAYER_TRACE_IPC=all` to also log `state.get`, `subscribe`, and library 
 - Cache: `$XDG_CACHE_HOME/evoplayer`
 - Library index: `$XDG_CACHE_HOME/evoplayer/library.sqlite3`
 - Last.fm credentials: `pass show omarchy/lastfm/api-key` (and `api-secret`, `session-key`)
+- SoundCloud oauth: Brave cookie `oauth_token` on soundcloud.com, else `pass show omarchy/soundcloud/oauth-token`
 - Pass prefix override: `EVOPLAYER_PASS_PREFIX` (default `omarchy`)
 
 ## Install (Omarchy shell)

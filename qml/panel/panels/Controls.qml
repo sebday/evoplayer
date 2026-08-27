@@ -79,8 +79,6 @@ Item {
     RowLayout {
         id: transportRow
         anchors.fill: parent
-        anchors.leftMargin: dashboard.compactLayout ? 0 : 6
-        anchors.rightMargin: dashboard.compactLayout ? 0 : 6
         spacing: dashboard.compactLayout ? Theme.spacingL : 12
 
         TransportTimePill {

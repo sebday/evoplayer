@@ -11,6 +11,7 @@ import (
 	"github.com/sebday/evoplayer/internal/audio"
 	"github.com/sebday/evoplayer/internal/config"
 	"github.com/sebday/evoplayer/internal/paths"
+	"github.com/sebday/evoplayer/internal/secrets"
 	"github.com/sebday/evoplayer/internal/tags"
 )
 
@@ -19,6 +20,7 @@ const defaultUser = "seb-day"
 type DownloadOptions struct {
 	User        string
 	OAuthToken  string
+	OAuthSource string
 	ClientID    string
 	MusicRoot   string
 	StateDir    string
@@ -42,17 +44,15 @@ func LoadOptions(env paths.Env) (DownloadOptions, error) {
 	if err != nil {
 		return DownloadOptions{}, err
 	}
-	oauth, err := config.Get(env.MusicConfig, "soundcloud", "oauth_token", "")
-	if err != nil {
-		return DownloadOptions{}, err
-	}
 	clientID, err := config.Get(env.MusicConfig, "soundcloud", "client_id", "")
 	if err != nil {
 		return DownloadOptions{}, err
 	}
+	tok := secrets.SoundcloudOAuth()
 	return DownloadOptions{
 		User:        user,
-		OAuthToken:  oauth,
+		OAuthToken:  tok.Token,
+		OAuthSource: tok.Source,
 		ClientID:    clientID,
 		MusicRoot:   env.MusicRoot,
 		StateDir:    env.StateDir,
@@ -63,6 +63,9 @@ func LoadOptions(env paths.Env) (DownloadOptions, error) {
 func Download(opts DownloadOptions) error {
 	if opts.MusicRoot == "" {
 		return fmt.Errorf("evoplayer: music root not configured")
+	}
+	if opts.OAuthSource != "" {
+		fmt.Fprintf(os.Stderr, "evoplayer: soundcloud auth from %s\n", opts.OAuthSource)
 	}
 	incoming := filepath.Join(opts.MusicRoot, ".incoming")
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
@@ -104,6 +107,9 @@ func DownloadTrackURL(env paths.Env, pageURL string) (string, error) {
 	}
 	if opts.MusicRoot == "" {
 		return "", fmt.Errorf("evoplayer: music root not configured")
+	}
+	if opts.OAuthSource != "" {
+		fmt.Fprintf(os.Stderr, "evoplayer: soundcloud auth from %s\n", opts.OAuthSource)
 	}
 	incoming := filepath.Join(opts.MusicRoot, ".incoming")
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
@@ -183,7 +189,6 @@ func trackMeta(track *Track) map[string]string {
 	meta := map[string]string{
 		"artist":  artist,
 		"title":   title,
-		"genre":   "misc",
 		"comment": "source:soundcloud",
 	}
 	if year != "" {

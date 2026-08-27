@@ -100,8 +100,9 @@ Item {
         if (!nowplayingCompact)
             Qt.callLater(root.refreshNowPlayingArtDisplay)
     }
-    readonly property int controlsHeight: 52
-    readonly property int nowplayingWaveformMinHeight: 56
+    readonly property int genreTabHeight: 34
+    readonly property int controlsHeight: genreTabHeight
+    readonly property int transportBtnSize: genreTabHeight
     readonly property int nowplayingTitleFont: nowplayingCompact
         ? Theme.fontSize6xl
         : Theme.fontSize9xl
@@ -113,14 +114,12 @@ Item {
         + columnPad
         + contentPad * 2
     readonly property int nowplayingMinBodyHeight: 200
-    readonly property int transportBtnSize: 36
+    readonly property int nowplayingWaveformMinHeight: 56
     property var waveformSamples: []
-    readonly property int iconFont: Theme.fontSize4xl
-    readonly property int transportIconFont: iconFont * 2
-    readonly property int transportSecondaryIconFont: Math.round(transportIconFont * 0.74)
+    readonly property int transportIconFont: Theme.fontSize7xl
+    readonly property int transportSecondaryIconFont: Theme.fontSize7xl
     readonly property int libraryFont: Theme.fontSizeS
     readonly property int sectionLabelFont: Theme.fontSizeL
-    readonly property int genreTabHeight: 34
     property bool trackTransitionPending: false
     property bool scannerHoldPending: false
     property string transportTargetPath: ""
@@ -143,8 +142,10 @@ Item {
     property var libraryStats: ({ tracks: 0, genres: 0 })
     property string musicRoot: ""
     property bool jobBusy: false
+    property bool libraryJobSawRunning: false
     property string jobLabel: ""
-    property string jobLog: ""
+    property var downloadFiles: []
+    property var downloadFolders: []
     property bool externalJobBusy: false
     property string externalJobLabel: ""
     property bool scanJobRunning: false
@@ -372,8 +373,8 @@ Item {
         || trashConfirmOpen || artPickerSearchFocused || settingsFieldFocused
     property var volumeTransportBtn: null
     property string settingsMusicLibrary: ""
-    property string settingsScUser: ""
-    property string settingsScOAuthToken: ""
+        property string settingsScUser: ""
+        property string settingsScOAuthSource: ""
     property bool settingsReady: false
     property int settingsVizFrameRate: 45
     property int settingsVizSensitivity: 145
@@ -387,14 +388,6 @@ Item {
         && !applyVizProc.running
     property bool settingsFieldFocused: false
     readonly property var libraryActions: [
-        {
-            key: "download",
-            icon: "󰕧",
-            label: "download soundcloud",
-            button: "Download SoundCloud",
-            hint: "download soundcloud",
-            args: ["download"]
-        },
         {
             key: "import",
             icon: "󰉍",
@@ -1076,6 +1069,7 @@ Item {
         statsPanelOpen = false
         downloadsPanelOpen = true
         playerScreen = "nowplaying"
+        loadIncomingDownloads()
         kickSidePanels()
     }
 
@@ -1293,7 +1287,7 @@ Item {
             return "Scanning library"
         if (key === "import")
             return "Importing"
-        if (key === "download")
+        if (key === "download" || key === "download-url")
             return "Downloading"
         if (key === "cache")
             return "Caching"
@@ -1464,11 +1458,6 @@ Item {
             return
         var stay = downloadsPanelOpen ? { stayOnScreen: true } : {}
         var key = String(action.key || "")
-        if (key === "download") {
-            runDaemonLibraryJob("library.soundcloud.download", { import: false },
-                action.label || "download soundcloud", Object.assign({ key: "download", args: ["download"] }, stay))
-            return
-        }
         if (key === "import") {
             runDaemonLibraryJob("library.import", {}, action.label || "import", Object.assign({ key: "import" }, stay))
             return
@@ -1483,22 +1472,38 @@ Item {
         }
         jobStopRequested = false
         jobBusy = true
+        libraryJobSawRunning = false
         jobLabel = label
         activeLibraryJobKey = (options && options.key) ? String(options.key) : ""
         jobLog = label + "…\n"
+        if (method === "library.download")
+            downloadFiles = []
+        daemonJobPollTimer.restart()
         if (!(options && options.stayOnScreen) && playerScreen !== "filter" && !settingsPanelOpen && !downloadsPanelOpen)
             playerScreen = "nowplaying"
         notify(label + "…", 2000)
         function onStart(text) {
             try {
                 var st = JSON.parse(String(text || "{}"))
-                if (st && st.status === "running") {
-                    daemonJobPollTimer.restart()
+                if (st && st.error && st.status !== "running") {
+                    jobLog = String(jobLog || "") + "\n" + String(st.error)
+                    onJobFinished(1)
+                    return
+                }
+                if (st && st.status === "done") {
+                    applyJobResult(st)
+                    onJobFinished(0)
+                    return
+                }
+                if (st && st.status === "error") {
+                    jobLog = String(jobLog || "") + "\n" + String(st.error || "job failed")
+                    onJobFinished(1)
                     return
                 }
             } catch (e) {
             }
-            onJobFinished(0)
+            libraryJobSawRunning = true
+            daemonJobPollTimer.restart()
         }
         function fallback() {
             var args = (options && options.args) ? options.args : []
@@ -1507,8 +1512,12 @@ Item {
                     args = ["import"]
                 else if (method === "library.soundcloud.download")
                     args = ["download"]
-                else if (method === "library.download")
+                else if (method === "library.download") {
                     args = ["download", "url"]
+                    var u = String((params && params.url) || "").trim()
+                    if (u)
+                        args.push(u)
+                }
                 else if (method === "library.art.maintain")
                     args = ["art", "maintain"]
                 else if (method === "library.cache")
@@ -1621,11 +1630,96 @@ Item {
         }
     }
 
+    function applyJobProgress(st) {
+        if (!st || String(st.status || "") !== "running")
+            return
+        var name = String(st.name || "")
+        if (name !== "download-url" && name !== "download")
+            return
+        var p = st.progress || {}
+        var phase = String(p.phase || name)
+        var line = phase
+        var done = Number(p.done) || 0
+        var total = Number(p.total) || 0
+        if (total > 0)
+            line += " " + Math.min(100, done) + "%"
+        jobLog = line + "…\n"
+    }
+
+    function applyJobResult(st) {
+        if (!st)
+            return
+        var name = String(st.name || "")
+        var result = st.result || {}
+        var folders = result.folders || result.genres
+        if (folders && folders.length)
+            downloadFolders = folders
+        if (name === "import") {
+            downloadFiles = result.files || []
+            return
+        }
+        if (name !== "download-url")
+            return
+        var files = result.files
+        if (files && files.length)
+            downloadFiles = files
+    }
+
+    function loadIncomingDownloads() {
+        runDaemonJSON("library.incoming.list", {}, function(text) {
+            try {
+                var data = JSON.parse(String(text || "{}"))
+                downloadFiles = data.files || []
+                var folders = data.folders || data.genres
+                if (folders && folders.length)
+                    downloadFolders = folders
+            } catch (e) {
+                downloadFiles = []
+            }
+        }, function() {
+        })
+    }
+
+    function setIncomingFolder(path, folder) {
+        path = String(path || "").trim()
+        folder = String(folder || "").trim()
+        if (!path || !folder)
+            return
+        runDaemonJSON("library.incoming.set_genre", { path: path, folder: folder, genre: folder }, function(text) {
+            try {
+                var file = JSON.parse(String(text || "{}"))
+                if (!file || !file.path) {
+                    notify("could not set folder", 3000)
+                    return
+                }
+                var next = []
+                var found = false
+                for (var i = 0; i < downloadFiles.length; i++) {
+                    if (String(downloadFiles[i].path || "") === String(file.path)) {
+                        next.push(file)
+                        found = true
+                    } else {
+                        next.push(downloadFiles[i])
+                    }
+                }
+                if (!found)
+                    next.push(file)
+                downloadFiles = next
+            } catch (e) {
+                notify("could not set folder", 3000)
+            }
+        }, function() {
+            notify("could not set folder", 3000)
+        })
+    }
+
     function onDaemonJobEvent(st) {
         if (!st)
             return
         syncScanJobRunning(st)
         root.applyScanStatusNote(st)
+        root.applyJobResult(st)
+        root.applyJobProgress(st)
         if (st.status === "idle" || st.status === "done") {
             daemonJobPollTimer.stop()
             if (jobBusy)
@@ -1671,19 +1765,17 @@ Item {
                 var st = JSON.parse(String(text || "{}"))
                 root.syncScanJobRunning(st)
                 root.applyScanStatusNote(st)
-                if (!st || st.status === "idle" || st.status === "done") {
-                    daemonJobPollTimer.stop()
-                    if (jobBusy)
-                        onJobFinished(0)
-                    else {
-                        externalJobBusy = false
-                        externalJobLabel = ""
-                        activeLibraryJobKey = ""
-                    }
+                root.applyJobResult(st)
+                root.applyJobProgress(st)
+                var status = String((st && st.status) || "idle")
+                if (status === "running") {
+                    libraryJobSawRunning = true
                     return
                 }
-                if (st.status === "error") {
-                    daemonJobPollTimer.stop()
+                if (status === "idle" && jobBusy && !libraryJobSawRunning)
+                    return
+                daemonJobPollTimer.stop()
+                if (status === "error") {
                     if (jobBusy) {
                         jobLog = String(jobLog || "") + "\n" + String(st.error || "job failed")
                         onJobFinished(1)
@@ -1695,15 +1787,12 @@ Item {
                     }
                     return
                 }
-                if (st.name) {
-                    var pollLabel = String(st.name)
-                    if (pollLabel === "scan")
-                        pollLabel = "Scanning library"
-                    jobLabel = pollLabel
-                    if (!jobBusy) {
-                        externalJobLabel = pollLabel
-                        activeLibraryJobKey = String(st.name)
-                    }
+                if (jobBusy)
+                    onJobFinished(0)
+                else {
+                    externalJobBusy = false
+                    externalJobLabel = ""
+                    activeLibraryJobKey = ""
                 }
             } catch (e) {
             }
@@ -1816,6 +1905,7 @@ Item {
         syncJobLog()
         var label = jobLabel
         jobBusy = false
+        libraryJobSawRunning = false
         jobLabel = ""
         activeLibraryJobKey = ""
         if (jobStopRequested) {
@@ -1827,6 +1917,7 @@ Item {
         }
         if (exitCode === 0) {
             notify(label + " complete", 4000)
+            loadIncomingDownloads()
             loadLibraryStats()
             loadPlaylists(true)
             if (filetreePanelOpen || filetreeRows.length > 0) {
@@ -1876,7 +1967,7 @@ Item {
             var paths = data.paths || {}
             var viz = data.viz || {}
             settingsScUser = String(sc.user || "")
-            settingsScOAuthToken = String(sc.oauth_token || "")
+            settingsScOAuthSource = String(sc.oauth_source || "")
             settingsMusicLibrary = String(paths.root || "")
             settingsVizFrameRate = parseInt(viz.frame_rate, 10) || 45
             settingsVizSensitivity = parseInt(viz.sensitivity, 10) || 145
@@ -2280,7 +2371,7 @@ Item {
 
     function playlistIsUserEditable(name) {
         var n = String(name || "")
-        if (!n || n === currentPlaylistId || n === "all" || n === "favorites")
+        if (!n || n === currentPlaylistId || n === "all" || n === "favorites" || n === "mixes")
             return false
         for (var i = 0; i < libraryPlaylists.length; i++) {
             if (libraryPlaylists[i].name === n)
@@ -2389,7 +2480,10 @@ Item {
                 args.push(paths[i])
             runMusic(args, null, saveCurrentProc)
         }
-        daemonVoid("library.current.save", { paths: paths }, null, runCLI)
+        daemonVoid("library.current.save", { paths: paths }, function(ok) {
+            if (ok && root.currentPlaylistNeedsMeta())
+                root.loadCurrentPlaylist()
+        }, runCLI)
     }
 
     function folderArtFromSiblings(trackPath) {
@@ -2800,11 +2894,13 @@ Item {
         function finishCurrentLoad(text) {
             try {
                 var list = JSON.parse(String(text || "[]"))
-                if (list.length > 0) {
-                    currentPlaylistTracks = list
+                if (Array.isArray(list) && list.length > 0) {
+                    currentPlaylistTracks = root.mergeCurrentTrackMeta(currentPlaylistTracks, list)
                     currentPlaylistActive = true
-                    _lastSavedCurrentPathsKey = pathsFromTracks(list).join("\n")
+                    _lastSavedCurrentPathsKey = pathsFromTracks(currentPlaylistTracks).join("\n")
                     rebuildPlaylistTabs()
+                    if (selectedPlaylist === currentPlaylistId && playlistsPanelOpen)
+                        root.applyCurrentPlaylistTracksView()
                 }
             } catch (e) {
             }
@@ -2823,6 +2919,78 @@ Item {
         if (runDaemonJSON("library.current.load", {}, finishCurrentLoad, runCurrentCLI))
             return
         runCurrentCLI()
+    }
+
+    function trackTitleLooksLikeFilename(title, path) {
+        title = String(title || "").trim()
+        if (!title)
+            return true
+        if (/\.(mp3|flac|ogg|m4a|wav|opus|aac|wma)$/i.test(title))
+            return true
+        var base = String(path || "").split("/").pop() || ""
+        base = base.replace(/\.(mp3|flac|ogg|m4a|wav|opus|aac|wma)$/i, "")
+        return title === base
+    }
+
+    function trackNeedsLibraryMeta(track) {
+        if (!track || !track.path)
+            return false
+        if (!String(track.artist || "").trim() && !String(track.album || "").trim())
+            return true
+        return root.trackTitleLooksLikeFilename(track.title, track.path)
+    }
+
+    function currentPlaylistNeedsMeta() {
+        var n = Math.min(currentPlaylistTracks.length, playlistPageSize)
+        for (var i = 0; i < n; i++) {
+            if (root.trackNeedsLibraryMeta(currentPlaylistTracks[i]))
+                return true
+        }
+        return false
+    }
+
+    function mergeCurrentTrackMeta(existing, loaded) {
+        loaded = loaded || []
+        existing = existing || []
+        if (!loaded.length)
+            return existing
+        if (!existing.length)
+            return loaded.slice()
+        var byPath = {}
+        var i, path, meta
+        for (i = 0; i < loaded.length; i++) {
+            path = loaded[i] && String(loaded[i].path || "")
+            if (path)
+                byPath[path] = loaded[i]
+        }
+        var out = []
+        for (i = 0; i < existing.length; i++) {
+            path = existing[i] && String(existing[i].path || "")
+            meta = path ? byPath[path] : null
+            if (meta && root.trackNeedsLibraryMeta(existing[i]))
+                out.push(Object.assign({}, existing[i], meta))
+            else
+                out.push(existing[i])
+        }
+        return out
+    }
+
+    function applyCurrentPlaylistTracksView() {
+        if (selectedPlaylist !== currentPlaylistId)
+            return
+        tracksLoading = false
+        playlistTrackTotal = currentPlaylistTracks.length
+        var cachedY = playlistViewByKey[currentPlaylistId]
+            && playlistViewByKey[currentPlaylistId].contentY >= 0
+            ? Number(playlistViewByKey[currentPlaylistId].contentY)
+            : -1
+        var pageEnd = Math.min(playlistPageSize, currentPlaylistTracks.length)
+        assignTracks(currentPlaylistTracks.slice(0, pageEnd), { scrollY: playlistFocusNowPlaying ? -1 : cachedY })
+        playlistTrackOffset = tracks.length
+        syncNowPlayingInPlaylist({ force: playlistFocusNowPlaying, ensureLoaded: playlistFocusNowPlaying })
+        playlistFocusNowPlaying = false
+        mergePlayerFromTrackList()
+        Qt.callLater(function() { snapshotPlaylistTracksCache(currentPlaylistId) })
     }
 
     function loadCurrentPlaylist(onDone) {
@@ -3158,10 +3326,7 @@ Item {
     function openSelectedLibraryPlaylist() {
         if (!selectedLibraryPlaylist)
             return
-        selectGenrePlaylist(selectedLibraryPlaylist)
-        playlistPanelMode = "tracks"
-        playlistFocusNowPlaying = true
-        loadPlaylistTracks(selectedLibraryPlaylist)
+        selectPlaylist(selectedLibraryPlaylist)
     }
 
     function togglePlaylistStar(name) {
@@ -4345,19 +4510,9 @@ Item {
         }
         var requested = String(name)
         if (requested === currentPlaylistId) {
-            tracksLoading = false
-            playlistTrackTotal = currentPlaylistTracks.length
-            var cachedY = playlistViewByKey[requested]
-                && playlistViewByKey[requested].contentY >= 0
-                ? Number(playlistViewByKey[requested].contentY)
-                : -1
-            var pageEnd = Math.min(playlistPageSize, currentPlaylistTracks.length)
-            assignTracks(currentPlaylistTracks.slice(0, pageEnd), { scrollY: playlistFocusNowPlaying ? -1 : cachedY })
-            playlistTrackOffset = tracks.length
-            syncNowPlayingInPlaylist({ force: playlistFocusNowPlaying, ensureLoaded: playlistFocusNowPlaying })
-            playlistFocusNowPlaying = false
-            mergePlayerFromTrackList()
-            Qt.callLater(function() { snapshotPlaylistTracksCache(requested) })
+            root.applyCurrentPlaylistTracksView()
+            if (root.currentPlaylistNeedsMeta())
+                root.loadCurrentPlaylist()
             return
         }
         if (!force && applyCachedPlaylistView(requested)) {
@@ -6142,7 +6297,7 @@ Item {
             openInThunar(rel ? filetreeAbsPath(rel) : filetreeAbsPath(""))
             return
         }
-        if (name === "all") {
+        if (name === "all" || name === "mixes") {
             openInThunar(filetreeAbsPath(""))
             return
         }
@@ -6231,6 +6386,7 @@ Item {
         id: jobStatusTimer
         interval: 2000
         repeat: true
+        running: root.jobBusy || root.externalJobBusy
         onTriggered: root.syncExternalJobStatus()
     }
 
@@ -6725,7 +6881,7 @@ Item {
     Connections {
         target: root.playerMonitor
         enabled: root.playerMonitor !== null
-        function onDaemonJobEvent(data) {
+        function onDaemonJobUpdated(data) {
             root.onDaemonJobEvent(data)
         }
     }
@@ -7039,6 +7195,8 @@ Item {
                 id: tabBarHost
                 Layout.fillWidth: true
                 Layout.preferredHeight: root.genreTabHeight
+                Layout.maximumHeight: root.genreTabHeight
+                Layout.alignment: Qt.AlignVCenter
                 spacing: Theme.spacingM
 
                 IconTab {
@@ -7089,7 +7247,9 @@ Item {
                     id: playlistTabBarHost
                     visible: !root.scanJobRunning
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.preferredHeight: root.genreTabHeight
+                    Layout.maximumHeight: root.genreTabHeight
+                    Layout.alignment: Qt.AlignVCenter
                     Layout.preferredWidth: playlistTabBar.contentWidth
                     Layout.maximumWidth: playlistTabBar.contentWidth
                     Layout.minimumWidth: 0
@@ -7252,6 +7412,7 @@ Item {
                 LibraryScanStatusBar {
                     dashboard: root
                     visible: root.scanJobRunning
+                    Layout.alignment: Qt.AlignVCenter
                 }
             }
         }
@@ -7492,7 +7653,7 @@ Item {
                                 visible: root.showInlineTransport
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: root.controlsHeight
-                                Layout.minimumHeight: root.controlsHeight
+                                Layout.maximumHeight: root.controlsHeight
                                 showTimestamps: false
                             }
                             }
@@ -7565,13 +7726,14 @@ Item {
                             legendIcon: "󰐊"
                             legendBackground: Theme.background
                             visible: root.showBottomTransport
+                            contentPad: root.contentPad
                             Layout.fillWidth: true
 
                             Controls {
                     dashboard: root
                                 Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                Layout.minimumHeight: root.controlsHeight
+                                Layout.preferredHeight: root.controlsHeight
+                                Layout.maximumHeight: root.controlsHeight
                                 showTimestamps: false
                             }
                         }

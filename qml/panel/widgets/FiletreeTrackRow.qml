@@ -40,6 +40,16 @@ Rectangle {
         var path = String((browseRow.track && browseRow.track.path) || "")
         return dashboard.trackIsLiked(path, browseRow.track && browseRow.track.liked)
     }
+    readonly property string trackTitle: {
+        var t = browseRow.track || {}
+        var title = String(t.title || t.name || "").trim()
+        if (title && !/\.(mp3|flac|ogg|m4a|wav|opus|aac|wma)$/i.test(title))
+            return title
+        var path = String(t.path || "")
+        var stem = path.split("/").pop() || ""
+        stem = stem.replace(/\.(mp3|flac|ogg|m4a|wav|opus|aac|wma)$/i, "")
+        return stem || title
+    }
     readonly property string artistAlbumLine: {
         var artist = String(browseRow.track.artist || "").trim()
         var album = String(browseRow.track.album || "").trim()
@@ -159,7 +169,7 @@ Rectangle {
 
                 Text {
                     Layout.fillWidth: true
-                    text: browseRow.track.title || ""
+                    text: browseRow.trackTitle
                     color: Theme.accent
                     font.family: Theme.fontFamily
                         font.pixelSize: browseRow.rowFont
@@ -267,6 +277,11 @@ Rectangle {
 
         onDoubleClicked: function(mouse) {
             mouse.accepted = true
+            if (browseRow.playing) {
+                if (browseRow.dashboard && typeof browseRow.dashboard.showNowplaying === "function")
+                    browseRow.dashboard.showNowplaying()
+                return
+            }
             if (!browseRow.selected)
                 browseRow.pressed()
             browseRow.playRequested()

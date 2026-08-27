@@ -20,6 +20,7 @@ Item {
 
     implicitWidth: dashboard.genreTabHeight
     implicitHeight: dashboard.genreTabHeight
+    Layout.alignment: Qt.AlignVCenter
     clip: true
 
     Connections {

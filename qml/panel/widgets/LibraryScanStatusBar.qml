@@ -11,6 +11,7 @@ Item {
     implicitHeight: dashboard.genreTabHeight
     Layout.fillWidth: true
     Layout.minimumWidth: 0
+    Layout.alignment: Qt.AlignVCenter
 
     readonly property string phaseText: dashboard.libraryScanPhaseText()
     readonly property string folderText: dashboard.libraryScanFolderText()
