@@ -57,22 +57,27 @@ func (m model) renderHeader() string {
 	innerW := max(8, contentW-4)
 	logo := renderLogoText()
 	active := m.focus == focusNav || m.focus == focusSearch
-	searchW := m.searchBarWidth()
-	search := m.renderSearch(searchW)
-	icons := m.renderHeaderIcons()
-	gap := 2
-	used := lipgloss.Width(icons) + lipgloss.Width(search) + gap*2
-	tabsW := innerW - used
-	if tabsW < 8 {
-		tabsW = 8
+	var row string
+	if m.libraryScanning() {
+		row = styleMuted().Render("Please wait for library to finish scanning")
+	} else {
+		searchW := m.searchBarWidth()
+		search := m.renderSearch(searchW)
+		icons := m.renderHeaderIcons()
+		gap := 2
+		used := lipgloss.Width(icons) + lipgloss.Width(search) + gap*2
+		tabsW := innerW - used
+		if tabsW < 8 {
+			tabsW = 8
+		}
+		tabs := m.renderHeaderTabs(tabsW)
+		rightPad := innerW - lipgloss.Width(icons) - lipgloss.Width(tabs) - lipgloss.Width(search) - gap
+		if rightPad < 1 {
+			rightPad = 1
+		}
+		leftGap := strings.Repeat(" ", gap)
+		row = lipgloss.JoinHorizontal(lipgloss.Top, icons, leftGap, tabs, strings.Repeat(" ", rightPad), search)
 	}
-	tabs := m.renderHeaderTabs(tabsW)
-	rightPad := innerW - lipgloss.Width(icons) - lipgloss.Width(tabs) - lipgloss.Width(search) - gap
-	if rightPad < 1 {
-		rightPad = 1
-	}
-	leftGap := strings.Repeat(" ", gap)
-	row := lipgloss.JoinHorizontal(lipgloss.Top, icons, leftGap, tabs, strings.Repeat(" ", rightPad), search)
 	return fieldsetInline(logo, row, contentW, active, m.pulsePhase, 1)
 }
 
@@ -428,6 +433,7 @@ func (m model) renderFooterHints() string {
 		hint("+", "add"),
 		hint("l", "like"),
 		space,
+		hint("v", "vis"),
 		hint("/", "find"),
 		hint("?", "help"),
 		hint("q", "quit"),

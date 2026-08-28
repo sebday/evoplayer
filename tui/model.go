@@ -51,6 +51,7 @@ type model struct {
 	vizPeaks    []float64
 	vizHold     []int
 	vizSub      bool
+	vizMode     vizMode
 	paint       *vizPainter
 	upNext      []library.Track
 	upNextRev   uint64
@@ -152,7 +153,7 @@ func newModel(env paths.Env) model {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(loadNav(m.env), pollLive(m.env), tickLogo())
+	return tea.Batch(loadNav(m.env), pollLive(m.env), pollJob(m.env), tickLogo())
 }
 
 func loadNav(env paths.Env) tea.Cmd {
@@ -233,7 +234,7 @@ func (m model) artOverlaying() bool {
 }
 
 func (m *model) continueChromeTick() tea.Cmd {
-	if m.artOverlaying() {
+	if m.artOverlaying() || m.frameFrozen() {
 		m.chromeTick = false
 		return nil
 	}
@@ -241,7 +242,7 @@ func (m *model) continueChromeTick() tea.Cmd {
 }
 
 func (m *model) ensureChromeTick() tea.Cmd {
-	if m.chromeTick || m.artOverlaying() {
+	if m.chromeTick || m.artOverlaying() || m.frameFrozen() {
 		return nil
 	}
 	m.chromeTick = true
@@ -274,7 +275,21 @@ func (m model) playing() bool {
 }
 
 func (m *model) syncViz() tea.Cmd {
+	if !liveVizEnabled || m.vizMode == vizModeNone {
+		if m.paint != nil {
+			m.paint.setTransport(false, m.status.Position, m.status.Duration, false)
+		}
+		m.vizLevels = nil
+		m.vizPeaks = nil
+		m.vizHold = nil
+		if m.vizSub {
+			m.vizSub = false
+			return unsubViz(m.env)
+		}
+		return nil
+	}
 	if m.paint != nil {
+		m.paint.setMode(m.vizMode)
 		m.paint.setTransport(m.playing(), m.status.Position, m.status.Duration, len(m.wavePeaks) > 0)
 	}
 	if m.playing() {
@@ -321,8 +336,16 @@ func (m model) canFreeze() bool {
 	return m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
 }
 
+func (m model) frameFrozen() bool {
+	return m.frames != nil && m.frames.freeze
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	m.unfreezeFrame()
+	switch msg.(type) {
+	case tickMsg, logoTickMsg, vizSubMsg:
+	default:
+		m.unfreezeFrame()
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -402,7 +425,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.ensureWaveFill(max(8, m.frames.vizW-2), vizPaintRows)
 			}
 		}
-		if m.paint != nil {
+		if m.paint != nil && liveVizEnabled {
 			m.paint.setTransport(m.playing(), m.status.Position, m.status.Duration, len(m.wavePeaks) > 0)
 		}
 		return m, nil
@@ -416,12 +439,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		timeChanged := m.status.PositionLabel != msg.status.PositionLabel || m.status.DurationLabel != msg.status.DurationLabel
 		m.status = msg.status
 		m.refreshNowPlayingAssets()
+		if same && oldArt == m.artPath && m.canFreeze() && !timeChanged {
+			m.freezeFrame()
+		}
 		cmds := []tea.Cmd{tickStatus(), m.ensureChromeTick(), m.syncWaveform(), m.syncViz()}
 		if !m.upNextOK || m.upNextRev != msg.status.QueueRevision || m.upNextPath != msg.status.Path {
 			cmds = append(cmds, loadUpNext(m.env, msg.status.QueueRevision, msg.status.Path))
-		}
-		if same && oldArt == m.artPath && m.canFreeze() && !timeChanged {
-			m.freezeFrame()
 		}
 		return m, tea.Batch(cmds...)
 	case upNextMsg:
@@ -439,7 +462,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err.Error()
 			return m, nil
 		}
+		wasScanning := m.libraryScanning()
 		m.job = msg.state
+		if wasScanning && !m.libraryScanning() {
+			return m, m.refreshQueueUI()
+		}
 		return m, nil
 	case errMsg:
 		if msg.err != nil {
@@ -447,10 +474,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tickMsg:
-		if m.jobBusy() {
-			return m, tea.Batch(pollLive(m.env), pollJob(m.env))
+		if m.canFreeze() {
+			m.freezeFrame()
 		}
-		return m, pollLive(m.env)
+		return m, tea.Batch(pollLive(m.env), pollJob(m.env))
 	case logoTickMsg:
 		m.pulsePhase += 0.05
 		if m.pulsePhase >= 1 {
@@ -595,6 +622,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			res, err := toggleLike(m.env, path)
 			return likeMsg{path: path, liked: res.Liked, err: err}
 		}
+	case "v":
+		return m.cycleViz(1)
+	case "V":
+		return m.cycleViz(-1)
 	case "backspace":
 		if m.focus == focusList && m.filetreeSelected() && m.browsePath != "" {
 			return m.leaveFolder()
@@ -819,6 +850,18 @@ func (m model) playSelectedFolder(rel string) (tea.Model, tea.Cmd) {
 		}
 		return tickMsg{}
 	}, m.refreshQueueUI())
+}
+
+func (m model) cycleViz(dir int) (tea.Model, tea.Cmd) {
+	if dir < 0 {
+		m.vizMode = m.vizMode.prev()
+	} else {
+		m.vizMode = m.vizMode.next()
+	}
+	if m.paint != nil {
+		m.paint.setMode(m.vizMode)
+	}
+	return m, m.syncViz()
 }
 
 func (m model) volumeDelta(delta int) tea.Cmd {

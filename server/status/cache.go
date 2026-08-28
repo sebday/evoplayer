@@ -23,6 +23,8 @@ type cachedMeta struct {
 
 var metaMu sync.RWMutex
 var metaByPath = map[string]cachedMeta{}
+var savedPlaylist string
+var savedPlaylistOK bool
 
 func cacheMeta(st playback.Status) {
 	if st.Path == "" {
@@ -98,5 +100,7 @@ func InvalidateMeta(path string) {
 func InvalidateAllMeta() {
 	metaMu.Lock()
 	metaByPath = map[string]cachedMeta{}
+	savedPlaylist = ""
+	savedPlaylistOK = false
 	metaMu.Unlock()
 }

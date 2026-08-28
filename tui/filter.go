@@ -46,7 +46,7 @@ func playlistTabLabel(name string) string {
 	case "all":
 		return "likes"
 	case "mixes":
-		return "Mixes"
+		return "mixes"
 	case "current":
 		return "current"
 	default:

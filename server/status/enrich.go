@@ -69,6 +69,13 @@ func mergeSavedPlaylist(env paths.Env, st playback.Status) playback.Status {
 	if st.Playlist != "" {
 		return st
 	}
+	metaMu.RLock()
+	if savedPlaylistOK {
+		st.Playlist = savedPlaylist
+		metaMu.RUnlock()
+		return st
+	}
+	metaMu.RUnlock()
 	b, err := os.ReadFile(env.PlayerState)
 	if err != nil {
 		return st
@@ -78,6 +85,10 @@ func mergeSavedPlaylist(env paths.Env, st playback.Status) playback.Status {
 	}
 	if json.Unmarshal(b, &saved) == nil && saved.Playlist != "" {
 		st.Playlist = saved.Playlist
+		metaMu.Lock()
+		savedPlaylist = saved.Playlist
+		savedPlaylistOK = true
+		metaMu.Unlock()
 	}
 	return st
 }

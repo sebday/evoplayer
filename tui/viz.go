@@ -8,15 +8,54 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 const (
+	liveVizEnabled  = true
 	vizPaintRows    = 5
 	vizTickInterval = 50 * time.Millisecond
 	peakHoldFrames  = 6
 	peakFall        = 0.035
 	waveIdleFloor   = 0.12
+	liveBarGap      = 1
+	liveBarWidth    = 1
 )
+
+type vizMode int
+
+const (
+	vizModeBars vizMode = iota
+	vizModeFill
+	vizModeScatter
+	vizModeWave
+	vizModeNone
+	vizModeCount
+)
+
+func (m vizMode) String() string {
+	switch m {
+	case vizModeFill:
+		return "fill"
+	case vizModeScatter:
+		return "scatter"
+	case vizModeWave:
+		return "wave"
+	case vizModeNone:
+		return "none"
+	default:
+		return "bars"
+	}
+}
+
+func (m vizMode) next() vizMode {
+	return (m + 1) % vizModeCount
+}
+
+func (m vizMode) prev() vizMode {
+	return (m + vizModeCount - 1) % vizModeCount
+}
 
 type waveVizOpts struct {
 	Width      int
@@ -152,14 +191,14 @@ func renderWaveformOverlay(opts waveVizOpts, levels, peaks []float64, playing bo
 	height := max(vizPaintRows, opts.Height)
 	playX := wavePlayCol(opts.PlayedFrac, width)
 	fill := waveformFill(opts.Peaks, width, height)
-	var live []float64
+	var live, peak []float64
 	if playing {
-		live = liveOverlayFill(fill, levels, peaks, waveMaxHalf(height), len(opts.Peaks) > 0)
+		live, peak = liveOverlayLayers(fill, levels, peaks, waveMaxHalf(height), len(opts.Peaks) > 0, vizModeBars)
 	}
-	if !hasLiveFill(live) {
+	if !hasLiveFill(live) && !hasLiveFill(peak) {
 		return strings.Join(colorizeWaveRows(waveformGlyphRowsFromFill(fill, height), playX), "\n")
 	}
-	return strings.Join(renderOverlayRows(fill, live, width, height, playX), "\n")
+	return strings.Join(renderOverlayRows(fill, live, peak, width, height, playX, vizModeBars, 0), "\n")
 }
 
 func waveMaxHalf(height int) float64 {
@@ -260,33 +299,57 @@ func updateVizPeaks(peaks []float64, hold []int, levels []float64) ([]float64, [
 	return peaks, hold
 }
 
-func liveOverlayFill(waveFill, levels, peaks []float64, maxHalf float64, clip bool) []float64 {
+func liveBarColumn(x int, mode vizMode) bool {
+	if mode == vizModeFill || mode == vizModeScatter || mode == vizModeWave {
+		return true
+	}
+	stride := liveBarWidth + liveBarGap
+	if stride < 1 {
+		return true
+	}
+	return x%stride < liveBarWidth
+}
+
+func liveOverlayLayers(waveFill, levels, peaks []float64, maxHalf float64, clip bool, mode vizMode) (bar, peak []float64) {
 	width := len(waveFill)
-	if width < 1 {
-		return nil
+	if width < 1 || mode == vizModeNone {
+		return nil, nil
 	}
 	cols := downsampleLevels(levels, width)
 	peakCols := downsampleLevels(peaks, width)
-	out := make([]float64, width)
+	bar = make([]float64, width)
+	peak = make([]float64, width)
 	for x := 0; x < width; x++ {
+		if !liveBarColumn(x, mode) {
+			continue
+		}
 		lv := 0.0
 		if x < len(cols) {
 			lv = cols[x]
 		}
-		if x < len(peakCols) && peakCols[x] > lv {
-			lv = peakCols[x]
+		pk := lv
+		if x < len(peakCols) {
+			pk = peakCols[x]
 		}
 		lv = math.Pow(clamp01(lv), 0.85)
-		if lv < 0.04 {
-			continue
-		}
+		pk = math.Pow(clamp01(pk), 0.85)
 		env := maxHalf
 		if clip && x < len(waveFill) {
 			env = waveFill[x]
 		}
-		out[x] = env * lv
+		if lv >= 0.04 {
+			bar[x] = env * lv
+		}
+		if pk >= 0.04 && mode != vizModeWave && mode != vizModeScatter {
+			peak[x] = env * pk
+		}
 	}
-	return out
+	return bar, peak
+}
+
+func liveOverlayFill(waveFill, levels, peaks []float64, maxHalf float64, clip bool) []float64 {
+	bar, _ := liveOverlayLayers(waveFill, levels, peaks, maxHalf, clip, vizModeBars)
+	return bar
 }
 
 func hasLiveFill(fill []float64) bool {
@@ -316,27 +379,30 @@ func paletteFG(n int) string {
 		n = 15
 	}
 	if n >= 8 {
-		return fmt.Sprintf("\x1b[%dm", 90+n-8)
+		return fmt.Sprintf("\x1b[%d;49m", 90+n-8)
 	}
-	return fmt.Sprintf("\x1b[%dm", 30+n)
+	return fmt.Sprintf("\x1b[%d;49m", 30+n)
 }
 
 func vuPalette(t float64) int {
-	t = clamp01(t)
-	switch {
-	case t < 0.22:
-		return 2
-	case t < 0.40:
-		return 10
-	case t < 0.58:
-		return 3
-	case t < 0.78:
-		return 11
-	case t < 0.92:
+	switch specTag(clamp01(t)) {
+	case 2:
 		return 1
+	case 1:
+		return 3
 	default:
-		return 9
+		return 2
 	}
+}
+
+func specTag(norm float64) int {
+	if norm >= 0.6 {
+		return 2
+	}
+	if norm >= 0.3 {
+		return 1
+	}
+	return 0
 }
 
 func overlayRowPrefixes(height int) []string {
@@ -356,7 +422,7 @@ func overlayRowPrefixes(height int) []string {
 
 var overlayPrefixesCached = overlayRowPrefixes(vizPaintRows)
 
-func renderOverlayRows(waveFill, liveFill []float64, width, height, playX int) []string {
+func renderOverlayRows(waveFill, liveFill, peakFill []float64, width, height, playX int, mode vizMode, salt uint64) []string {
 	width = max(1, width)
 	height = max(vizPaintRows, height)
 	center := float64(height*4-1) / 2
@@ -377,20 +443,26 @@ func renderOverlayRows(waveFill, liveFill []float64, width, height, playX int) [
 				tag = 1
 				ch = wavePlayhead
 			} else {
-				wf := 0.0
-				lf := 0.0
+				wf, lf, pf := 0.0, 0.0, 0.0
 				if x < len(waveFill) {
 					wf = waveFill[x]
 				}
 				if x < len(liveFill) {
 					lf = liveFill[x]
 				}
+				if x < len(peakFill) {
+					pf = peakFill[x]
+				}
 				waveBits := waveBrailleBits(wf, r, center)
-				liveBits := waveBrailleBits(lf, r, center)
-				if liveBits != 0 {
+				liveBits := overlayLiveBits(mode, lf, x, r, center, salt)
+				peakBits := 0
+				if mode == vizModeBars && pf > lf+0.45 {
+					peakBits = waveBraillePeakBits(pf, r, center)
+				}
+				if liveBits != 0 || peakBits != 0 {
 					prefix = prefixes[r]
 					tag = 2
-					ch = rune(brailleBase + (waveBits | liveBits))
+					ch = rune(brailleBase + (waveBits | liveBits | peakBits))
 				} else if waveBits != 0 {
 					prefix = waveMutedPrefix
 					tag = 0
@@ -416,6 +488,42 @@ func renderOverlayRows(waveFill, liveFill []float64, width, height, playX int) [
 	return rows
 }
 
+func overlayLiveBits(mode vizMode, fill float64, x, row int, center float64, salt uint64) int {
+	switch mode {
+	case vizModeNone:
+		return 0
+	case vizModeWave:
+		return waveBraillePeakBits(fill, row, center)
+	case vizModeScatter:
+		return scatterBrailleBits(fill, x, row, center, salt)
+	default:
+		return waveBrailleBits(fill, row, center)
+	}
+}
+
+func scatterBrailleBits(fill float64, x, row int, center float64, salt uint64) int {
+	bits := 0
+	for i := 0; i < 4; i++ {
+		dr := float64(row*4 + i)
+		if math.Abs(dr-center) > fill {
+			continue
+		}
+		if scatterHash(x, row, i, salt) < 0.38 {
+			bits |= brailleDots[i][0]
+			bits |= brailleDots[i][1]
+		}
+	}
+	return bits
+}
+
+func scatterHash(x, row, dot int, salt uint64) float64 {
+	h := uint64(x)*7919 + uint64(row)*6271 + uint64(dot)*3037 + salt*104729
+	h ^= h >> 16
+	h *= 0x45d9f3b37197344b
+	h ^= h >> 16
+	return float64(h%10000) / 10000.0
+}
+
 func wavePlayCol(frac float64, width int) int {
 	if frac <= 0 || width <= 0 {
 		return -1
@@ -438,7 +546,7 @@ const wavePlayhead = '│'
 var (
 	waveWhitePrefix = paletteFG(15)
 	waveMutedPrefix = paletteFG(8)
-	waveReset       = "\x1b[0m"
+	waveReset       = "\x1b[39m"
 	vizOutMu        sync.Mutex
 )
 
@@ -505,6 +613,18 @@ func waveBrailleBits(fill float64, row int, center float64) int {
 	return bits
 }
 
+func waveBraillePeakBits(fill float64, row int, center float64) int {
+	bits := 0
+	for i := 0; i < 4; i++ {
+		dr := float64(row*4 + i)
+		if math.Abs(math.Abs(dr-center)-fill) <= 0.51 {
+			bits |= brailleDots[i][0]
+			bits |= brailleDots[i][1]
+		}
+	}
+	return bits
+}
+
 func waveBrailleRune(fill float64, row int, center float64) rune {
 	bits := waveBrailleBits(fill, row, center)
 	if bits == 0 {
@@ -558,14 +678,15 @@ func (m model) ensureWaveRows(width, height int) []string {
 
 func (m model) overlayWaveRows(width, height, playedTo int) []string {
 	fill := m.ensureWaveFill(width, height)
-	var live []float64
-	if m.playing() {
-		live = liveOverlayFill(fill, m.vizLevels, m.vizPeaks, waveMaxHalf(height), len(m.wavePeaks) > 0)
-	}
-	if !hasLiveFill(live) {
+	mode := m.vizMode
+	if mode == vizModeNone || !m.playing() {
 		return colorizeWaveRows(m.ensureWaveRows(width, height), playedTo)
 	}
-	return renderOverlayRows(fill, live, width, height, playedTo)
+	live, peak := liveOverlayLayers(fill, m.vizLevels, m.vizPeaks, waveMaxHalf(height), len(m.wavePeaks) > 0, mode)
+	if !hasLiveFill(live) && !hasLiveFill(peak) {
+		return colorizeWaveRows(m.ensureWaveRows(width, height), playedTo)
+	}
+	return renderOverlayRows(fill, live, peak, width, height, playedTo, mode, 0)
 }
 
 func (m model) vizInnerLines() []string {
@@ -576,10 +697,10 @@ func (m model) vizInnerLines() []string {
 	waveW := max(8, innerW-2)
 	playX := wavePlayCol(waveformPlayedFrac(m.status.Position, m.status.Duration), waveW)
 	m.ensureWaveFill(waveW, vizPaintRows)
-	return composeVizLines(m.frames, m.vizLevels, m.vizPeaks, playX, len(m.wavePeaks) > 0)
+	return composeVizLines(m.frames, m.vizLevels, m.vizPeaks, playX, len(m.wavePeaks) > 0, m.vizMode, 0)
 }
 
-func composeVizLines(frames *frameCache, levels, livePeaks []float64, playX int, hasWave bool) []string {
+func composeVizLines(frames *frameCache, levels, livePeaks []float64, playX int, hasWave bool, mode vizMode, salt uint64) []string {
 	if frames == nil {
 		return nil
 	}
@@ -593,12 +714,15 @@ func composeVizLines(frames *frameCache, levels, livePeaks []float64, playX int,
 		return nil
 	}
 	waveW := max(8, innerW-2)
-	live := liveOverlayFill(fill, levels, livePeaks, waveMaxHalf(vizPaintRows), hasWave)
+	if mode == vizModeNone {
+		return padVizInner(colorizeWaveRows(rows, playX), innerW)
+	}
+	live, peak := liveOverlayLayers(fill, levels, livePeaks, waveMaxHalf(vizPaintRows), hasWave, mode)
 	var glyphs []string
-	if !hasLiveFill(live) {
+	if !hasLiveFill(live) && !hasLiveFill(peak) {
 		glyphs = colorizeWaveRows(rows, playX)
 	} else {
-		glyphs = renderOverlayRows(fill, live, waveW, vizPaintRows, playX)
+		glyphs = renderOverlayRows(fill, live, peak, waveW, vizPaintRows, playX, mode, salt)
 	}
 	return padVizInner(glyphs, innerW)
 }
@@ -610,7 +734,14 @@ func padVizInner(rows []string, innerW int) []string {
 		if i < len(rows) {
 			s = rows[i]
 		}
-		lines[i] = padExact(" "+s, innerW)
+		if s == "" || s[0] != ' ' {
+			s = " " + s
+		}
+		w := lipgloss.Width(s)
+		if w < innerW {
+			s += strings.Repeat(" ", innerW-w)
+		}
+		lines[i] = s
 	}
 	return lines
 }

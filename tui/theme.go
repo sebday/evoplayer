@@ -1,10 +1,8 @@
 package tui
 
 import (
-	"fmt"
 	"math"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -13,54 +11,41 @@ import (
 )
 
 var (
-	colAccent = lipgloss.Color("#C4B5FD")
-	colGood   = lipgloss.Color("#86EFAC")
-	colMuted  = lipgloss.Color("#6B7280")
-	colText   = lipgloss.Color("#FFFFFF")
-	colBorder = lipgloss.Color("#4B5563")
-	colWarn   = lipgloss.Color("#FBBF24")
-	pulseLo   = "#00B4E6"
-	pulseHi   = "#9AEDFE" // terminal bright_blue
+	colAccent  = lipgloss.Color("5")  // magenta
+	colGood    = lipgloss.Color("2")  // green
+	colMuted   = lipgloss.Color("8")  // bright black
+	colText    = lipgloss.Color("7")  // white
+	colBorder  = lipgloss.Color("8")  // bright black
+	colWarn    = lipgloss.Color("3")  // yellow
+	colPulseLo = lipgloss.Color("6")  // cyan
+	colPulseHi = lipgloss.Color("14") // bright cyan
 )
+
+func init() {
+	lipgloss.SetColorProfile(termenv.ANSI)
+}
 
 var (
 	logoRendererOnce sync.Once
 	logoRenderer     *lipgloss.Renderer
+	artRendererOnce  sync.Once
+	artRenderer      *lipgloss.Renderer
 )
 
 func logoColor() *lipgloss.Renderer {
 	logoRendererOnce.Do(func() {
 		logoRenderer = lipgloss.NewRenderer(os.Stdout)
-		logoRenderer.SetColorProfile(termenv.TrueColor)
+		logoRenderer.SetColorProfile(termenv.ANSI)
 	})
 	return logoRenderer
 }
 
-func mixHex(a, b string, t float64) string {
-	if t < 0 {
-		t = 0
-	}
-	if t > 1 {
-		t = 1
-	}
-	ar, ag, ab := rgb(a)
-	br, bg, bb := rgb(b)
-	r := ar + int(t*float64(br-ar))
-	g := ag + int(t*float64(bg-ag))
-	bl := ab + int(t*float64(bb-ab))
-	return fmt.Sprintf("#%02X%02X%02X", r, g, bl)
-}
-
-func rgb(hex string) (r, g, b int) {
-	s := strings.TrimPrefix(hex, "#")
-	if len(s) != 6 {
-		return 196, 181, 253
-	}
-	n, err := strconv.ParseUint(s, 16, 32)
-	if err != nil {
-		return 196, 181, 253
-	}
-	return int(n >> 16), int((n >> 8) & 0xff), int(n & 0xff)
+func artColor() *lipgloss.Renderer {
+	artRendererOnce.Do(func() {
+		artRenderer = lipgloss.NewRenderer(os.Stdout)
+		artRenderer.SetColorProfile(termenv.TrueColor)
+	})
+	return artRenderer
 }
 
 func styleMuted() lipgloss.Style {
@@ -254,7 +239,10 @@ func (c borderChase) hex() string {
 	if c.phase >= 0 {
 		t = (math.Sin(c.phase*2*math.Pi) + 1) / 2
 	}
-	return mixHex(pulseLo, pulseHi, t)
+	if t < 0.5 {
+		return string(colPulseLo)
+	}
+	return string(colPulseHi)
 }
 
 func padExact(s string, width int) string {
@@ -297,7 +285,7 @@ func styleGood() lipgloss.Style {
 func stylePill() lipgloss.Style {
 	return lipgloss.NewStyle().
 		Foreground(colMuted).
-		Background(lipgloss.Color("#2A3038")).
+		Background(lipgloss.Color("0")).
 		Padding(0, 1)
 }
 

@@ -113,28 +113,9 @@ func (m model) renderNowPlayingHead(width int) string {
 	}
 	sub := m.nowPlayingSubtitle()
 	if sub == "" {
-		if pills := m.renderNowPills(width); pills != "" {
-			return padExact(pills, width)
-		}
 		return ""
 	}
-	pills := m.renderNowPills(width)
-	if pills == "" {
-		return styleMuted().Render(clipWidth(sub, width))
-	}
-	gap := 1
-	pillW := lipgloss.Width(pills)
-	subMax := width - pillW - gap
-	if subMax < 8 {
-		pills = m.renderNowPills(max(8, width/2))
-		pillW = lipgloss.Width(pills)
-		subMax = width - pillW - gap
-		if subMax < 4 {
-			subMax = 4
-		}
-	}
-	left := padRight(styleMuted().Render(clipWidth(sub, subMax)), subMax)
-	return padExact(left+" "+pills, width)
+	return styleMuted().Render(clipWidth(sub, width))
 }
 
 func (m model) nowPlayingHeadRows() int {
@@ -165,7 +146,23 @@ func (m model) nowPlayingTitleRow(width int) string {
 	if title == "" {
 		title = m.status.Path
 	}
-	return styleText().Render(clipWidth(title, width))
+	pills := m.renderNowPills(width)
+	if pills == "" {
+		return styleText().Render(clipWidth(title, width))
+	}
+	gap := 1
+	pillW := lipgloss.Width(pills)
+	titleMax := width - pillW - gap
+	if titleMax < 8 {
+		pills = m.renderNowPills(max(8, width/2))
+		pillW = lipgloss.Width(pills)
+		titleMax = width - pillW - gap
+		if titleMax < 4 {
+			titleMax = 4
+		}
+	}
+	left := padRight(styleText().Render(clipWidth(title, titleMax)), titleMax)
+	return padExact(left+" "+pills, width)
 }
 
 func (m model) nowPlayingSubtitle() string {

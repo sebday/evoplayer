@@ -488,7 +488,7 @@ func (a *Actor) SetShuffle(on bool) {
 }
 
 func (a *Actor) syncVizDelay() {
-	if a.viz == nil {
+	if a.viz == nil || !a.viz.Wanted() {
 		return
 	}
 	delay := a.output.PresentationDelaySamples() - vizPaintLeadSamples

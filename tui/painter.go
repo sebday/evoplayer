@@ -24,6 +24,8 @@ type vizPainter struct {
 	lastKey uint64
 	lastX   int
 	lastOut string
+	lastSalt uint64
+	mode    vizMode
 }
 
 func newVizPainter(env paths.Env, frames *frameCache) *vizPainter {
@@ -62,10 +64,23 @@ func (p *vizPainter) setTransport(playing bool, pos, dur float64, hasWave bool) 
 	p.lastKey = 0
 	p.lastX = -2
 	p.lastOut = ""
+	p.lastSalt = 0
 	if p.stop != nil {
 		close(p.stop)
 		p.stop = nil
 	}
+}
+
+func (p *vizPainter) setMode(mode vizMode) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	p.mode = mode
+	p.lastOut = ""
+	p.lastKey = 0
+	p.lastSalt = 0
+	p.mu.Unlock()
 }
 
 func (p *vizPainter) loop(stop <-chan struct{}) {
@@ -92,6 +107,7 @@ func (p *vizPainter) frame() {
 		p.peaks, p.hold = updateVizPeaks(p.peaks, p.hold, levels)
 	}
 	livePeaks := p.peaks
+	mode := p.mode
 	p.mu.Unlock()
 	if !playing {
 		return
@@ -115,11 +131,15 @@ func (p *vizPainter) frame() {
 	}
 	waveW := max(8, innerW-2)
 	playX := wavePlayCol(playFrac, waveW)
-	if key == p.lastKey && playX == p.lastX && p.lastOut != "" {
+	salt := uint64(0)
+	if mode == vizModeScatter {
+		salt = uint64(time.Now().UnixNano() / int64(90*time.Millisecond))
+	}
+	if key == p.lastKey && playX == p.lastX && salt == p.lastSalt && p.lastOut != "" {
 		return
 	}
 
-	lines := composeVizLines(p.frames, levels, livePeaks, playX, hasWave)
+	lines := composeVizLines(p.frames, levels, livePeaks, playX, hasWave, mode, salt)
 	if len(lines) == 0 {
 		return
 	}
@@ -130,10 +150,12 @@ func (p *vizPainter) frame() {
 	if out == p.lastOut {
 		p.lastKey = key
 		p.lastX = playX
+		p.lastSalt = salt
 		return
 	}
 	p.lastKey = key
 	p.lastX = playX
+	p.lastSalt = salt
 	p.lastOut = out
 	paintVizAt(row, col, lines)
 }

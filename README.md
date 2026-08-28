@@ -1,8 +1,8 @@
 # Evoplayer
 
-Inspired by Bjarne's cliamp, I made a local music player with just the features I want and use.  
+Inspired by Bjarne's cliamp, I made a local music player with just the features I want and use. Styled like btop, because btop looks awesome.
 
-I used Soundcloud for years and ignored my mp3 collection. This TUI & Quickshell music player is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library.
+I used Soundcloud for years and ignored my mp3 collection. This TUI (and probably Quickshell) music player is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library.
 
 ## Layout
 

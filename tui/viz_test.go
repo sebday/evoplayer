@@ -37,11 +37,11 @@ func TestWaveformPlayheadLine(t *testing.T) {
 	if strings.Contains(got, "38;2;") {
 		t.Fatalf("waveform should use terminal palette, got %q", got)
 	}
-	if !strings.Contains(got, "[90m") {
+	if !strings.Contains(got, "[90") {
 		t.Fatalf("waveform should stay muted, got %q", got)
 	}
-	if strings.Count(got, "[97m") != 5 {
-		t.Fatalf("playhead should be one white run per row, got %d", strings.Count(got, "[97m"))
+	if strings.Count(got, "[97") != 5 {
+		t.Fatalf("playhead should be one white run per row, got %d", strings.Count(got, "[97"))
 	}
 	plain := strings.Split(lipglossStrip(got), "\n")
 	for i, line := range plain {
@@ -70,7 +70,7 @@ func TestWaveformBarsIdleNotEmpty(t *testing.T) {
 	if strings.Contains(lipglossStrip(got), string(wavePlayhead)) {
 		t.Fatalf("idle should not draw a playhead, got %q", got)
 	}
-	if strings.Contains(got, "[97m") {
+	if strings.Contains(got, "[97") {
 		t.Fatalf("idle bars should stay muted, got %q", got)
 	}
 	if strings.Contains(got, "38;2;") {
@@ -112,10 +112,10 @@ func TestWaveformOverlayLightsLiveDots(t *testing.T) {
 	if !hasBraille(plain) {
 		t.Fatalf("overlay should keep waveform dots, got %q", plain)
 	}
-	if !strings.Contains(got, "[90m") {
+	if !strings.Contains(got, "[90") {
 		t.Fatalf("quiet remaining columns should stay muted waveform, got %q", got)
 	}
-	if !strings.Contains(got, "[32m") {
+	if !strings.Contains(got, "[32") {
 		t.Fatalf("live overlay should use palette green, got %q", got)
 	}
 	if strings.Contains(got, "38;2;") {
@@ -156,6 +156,36 @@ func TestWaveformOverlayClipsToEnvelope(t *testing.T) {
 	}
 }
 
+func TestWaveformOverlayKeepsWaveformInGaps(t *testing.T) {
+	peaks := make([]int, 8)
+	for i := range peaks {
+		peaks[i] = 255
+	}
+	levels := []float64{1, 1, 1, 1, 1, 1, 1, 1}
+	got := renderWaveformOverlay(waveVizOpts{
+		Width:  8,
+		Height: 5,
+		Peaks:  peaks,
+	}, levels, levels, true)
+	plain := strings.Split(lipglossStrip(got), "\n")
+	if len(plain) < 3 {
+		t.Fatalf("rows = %d", len(plain))
+	}
+	mid := []rune(plain[2])
+	if len(mid) < 8 {
+		t.Fatalf("mid width = %d", len(mid))
+	}
+	if !isBraille(mid[1]) {
+		t.Fatalf("gap columns should keep the muted waveform, got %q", plain[2])
+	}
+	if !strings.Contains(got, "[90") {
+		t.Fatalf("gap columns should stay muted, got %q", got)
+	}
+	if !strings.Contains(got, "[32") {
+		t.Fatalf("live bars should use palette green, got %q", got)
+	}
+}
+
 func TestWaveformOverlayIdleWaveUsesFullVis(t *testing.T) {
 	levels := make([]float64, 8)
 	for i := range levels {
@@ -172,6 +202,27 @@ func TestWaveformOverlayIdleWaveUsesFullVis(t *testing.T) {
 	top := []rune(lines[0])
 	if len(top) < 8 || !isBraille(top[0]) {
 		t.Fatalf("without a waveform, live vis should fill the grid, got %q", lines[0])
+	}
+}
+
+func TestWaveformOverlayKeepsWaveformUnderLive(t *testing.T) {
+	peaks := []int{1, 255, 255, 255, 255, 255, 255, 255}
+	levels := []float64{0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2}
+	got := renderWaveformOverlay(waveVizOpts{
+		Width:  8,
+		Height: 5,
+		Peaks:  peaks,
+	}, levels, levels, true)
+	lines := strings.Split(lipglossStrip(got), "\n")
+	if len(lines) != 5 {
+		t.Fatalf("rows = %d", len(lines))
+	}
+	row := []rune(lines[2])
+	if len(row) < 3 || row[2] != '⣿' {
+		t.Fatalf("live bars should keep the waveform dots underneath, got %q", lines[2])
+	}
+	if strings.Contains(got, "48;") {
+		t.Fatalf("live overlay should not paint a background, got %q", got)
 	}
 }
 
@@ -242,4 +293,25 @@ func hasBraille(s string) bool {
 
 func isBraille(r rune) bool {
 	return r >= 0x2800 && r <= 0x28FF
+}
+
+func TestVizModeCycle(t *testing.T) {
+	if vizModeBars.next() != vizModeFill {
+		t.Fatalf("bars should cycle to fill, got %s", vizModeBars.next())
+	}
+	if vizModeNone.next() != vizModeBars {
+		t.Fatalf("none should wrap to bars, got %s", vizModeNone.next())
+	}
+	if vizModeBars.prev() != vizModeNone {
+		t.Fatalf("bars should wrap back to none, got %s", vizModeBars.prev())
+	}
+}
+
+func TestVizNoneHasNoLiveOverlay(t *testing.T) {
+	fill := waveformFill([]int{255, 255, 255, 255, 255, 255, 255, 255}, 8, 5)
+	levels := []float64{1, 1, 1, 1, 1, 1, 1, 1}
+	live, peak := liveOverlayLayers(fill, levels, levels, waveMaxHalf(5), true, vizModeNone)
+	if hasLiveFill(live) || hasLiveFill(peak) {
+		t.Fatalf("none should not paint live bars")
+	}
 }

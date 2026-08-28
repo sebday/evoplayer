@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sebday/evoplayer/server/jobs"
 	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/playlist"
@@ -43,8 +44,8 @@ func TestNavFromIndex(t *testing.T) {
 	if got[4].ID != "all" || got[4].Label != "likes" {
 		t.Fatalf("all should display as likes, got %#v", got[4])
 	}
-	if got[5].ID != "mixes" || got[5].Label != "Mixes" {
-		t.Fatalf("mixes should display as Mixes, got %#v", got[5])
+	if got[5].ID != "mixes" || got[5].Label != "mixes" {
+		t.Fatalf("mixes should display as mixes, got %#v", got[5])
 	}
 	if retainNavIdx(got, "") != 3 {
 		t.Fatalf("empty prev should land on current, got %d", retainNavIdx(got, ""))
@@ -123,6 +124,27 @@ func TestLiveStatusFreezesView(t *testing.T) {
 	}
 }
 
+func TestTickMsgKeepsFrozenView(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.nav = navFromIndex([]playlist.IndexItem{{Name: "current", Count: 1, Kind: "system"}})
+	m.navIdx = navIndex(m.nav, "current")
+	before := m.View()
+	got, _ := m.Update(liveMsg{status: m.status})
+	m = got.(model)
+	got, _ = m.Update(tickMsg{})
+	m = got.(model)
+	if !m.frames.freeze {
+		t.Fatal("status tick should keep the frame frozen")
+	}
+	after := m.View()
+	if before != after {
+		t.Fatal("status tick should not rebuild View")
+	}
+}
+
 func TestVizPainterStartsOnPlay(t *testing.T) {
 	m := newModel(paths.Env{})
 	m.width = 120
@@ -133,13 +155,23 @@ func TestVizPainterStartsOnPlay(t *testing.T) {
 	_ = m.View()
 	m.status.State = "playing"
 	m.syncViz()
-	if !m.paint.running() {
-		t.Fatal("playing should start the vis painter")
+	if liveVizEnabled {
+		if !m.paint.running() {
+			t.Fatal("playing should start the vis painter")
+		}
+	} else if m.paint.running() {
+		t.Fatal("live vis off should not start the painter")
 	}
 	m.status.State = "paused"
 	m.syncViz()
 	if m.paint.running() {
 		t.Fatal("pause should stop the vis painter")
+	}
+	m.status.State = "playing"
+	m.vizMode = vizModeNone
+	m.syncViz()
+	if m.paint.running() {
+		t.Fatal("none should not start the vis painter")
 	}
 }
 
@@ -176,9 +208,9 @@ func TestPlayingTrackRowIsGreen(t *testing.T) {
 	if !strings.Contains(plain, "▶") {
 		t.Fatalf("playing row should keep the play marker, got %q", plain)
 	}
-	green := "38;2;134;239;172"
+	green := "[32m"
 	if !strings.Contains(got, green) {
-		t.Fatalf("playing row should use active green, got %q", got)
+		t.Fatalf("playing row should use terminal green, got %q", got)
 	}
 	lines := strings.Split(got, "\n")
 	if len(lines) < 1 || !strings.Contains(lines[0], green) {
@@ -210,9 +242,9 @@ func TestIdleTrackNamesAreWhite(t *testing.T) {
 	if len(lines) < 2 {
 		t.Fatalf("want two rows, got %q", got)
 	}
-	white := "38;2;255;255;255"
+	white := "[37m"
 	if !strings.Contains(lines[1], white) {
-		t.Fatalf("idle track name should be white, got %q", lines[1])
+		t.Fatalf("idle track name should use terminal white, got %q", lines[1])
 	}
 	if !strings.Contains(lipglossStrip(lines[1]), "DJ Hype") {
 		t.Fatalf("missing idle title: %q", lipglossStrip(lines[1]))
@@ -249,25 +281,31 @@ func TestCurrentPaneHasTopGap(t *testing.T) {
 	}
 }
 
-func TestNowPlayingPillsShareArtistRow(t *testing.T) {
+func TestNowPlayingPillsShareTitleRow(t *testing.T) {
 	m := newModel(paths.Env{})
 	m.status.Path = "/tmp/x.mp3"
-	m.status.Title = "50000 Watts Loefah Remix"
-	m.status.Artist = "Matty G"
-	m.status.Album = "ARG009"
-	m.status.Label = "Arg"
+	m.status.Title = "So Distinguished (Instrumental)"
+	m.status.Artist = "Crazyee Bandit"
+	m.status.Album = "ARMY010"
+	m.status.Label = "Army"
 	m.status.Genre = "Dubstep"
 	m.status.Year = "2007"
-	m.status.DurationLabel = "5:22"
-	got := m.renderNowPlayingHead(72)
-	plain := lipglossStrip(got)
-	if strings.Contains(plain, "\n") {
-		t.Fatalf("artist and labels should share one row, got %q", plain)
+	m.status.DurationLabel = "3:01"
+	title := lipglossStrip(m.nowPlayingTitleRow(72))
+	if strings.Contains(title, "\n") {
+		t.Fatalf("title and labels should share one row, got %q", title)
 	}
-	artistAt := strings.Index(plain, "Matty G")
-	pillAt := strings.Index(plain, "Dubstep")
-	if artistAt < 0 || pillAt < 0 || artistAt > pillAt {
-		t.Fatalf("artist should sit left of labels, got %q", plain)
+	titleAt := strings.Index(title, "So Distinguished")
+	pillAt := strings.Index(title, "Dubstep")
+	if titleAt < 0 || pillAt < 0 || titleAt > pillAt {
+		t.Fatalf("title should sit left of labels, got %q", title)
+	}
+	head := lipglossStrip(m.renderNowPlayingHead(72))
+	if strings.Contains(head, "Dubstep") || strings.Contains(head, "2007") {
+		t.Fatalf("labels should not stay on the artist row, got %q", head)
+	}
+	if !strings.Contains(head, "Crazyee Bandit") {
+		t.Fatalf("artist row should keep the subtitle, got %q", head)
 	}
 }
 
@@ -279,6 +317,9 @@ func TestFooterHintsHaveBorderTails(t *testing.T) {
 	}
 	if !strings.Contains(got, "browse") || !strings.Contains(got, "play") {
 		t.Fatalf("want help labels, got %q", got)
+	}
+	if !strings.Contains(got, "vis") {
+		t.Fatalf("want vis hint, got %q", got)
 	}
 }
 
@@ -299,6 +340,54 @@ func TestFooterLegendHasTime(t *testing.T) {
 	}
 	if strings.Contains(footer, "VOL ") || strings.Contains(footer, "▎") {
 		t.Fatalf("volume indicator should be gone, got %q", footer)
+	}
+}
+
+func TestHeaderReplacesTabsWhileScanning(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.nav = navFromIndex([]playlist.IndexItem{
+		{Name: "current", Count: 1, Kind: "system"},
+		{Name: "all", Count: 3, Kind: "system"},
+	})
+	m.navIdx = navIndex(m.nav, "current")
+	normal := lipglossStrip(m.renderHeader())
+	if !strings.Contains(normal, "current") {
+		t.Fatalf("tabs should show before scan, got %q", normal)
+	}
+	m.job = jobs.State{Name: "scan", Status: "running"}
+	scanning := lipglossStrip(m.renderHeader())
+	if !strings.Contains(scanning, "Please wait for library to finish scanning") {
+		t.Fatalf("scan should replace the menu bar, got %q", scanning)
+	}
+	if strings.Contains(scanning, "likes") || strings.Contains(scanning, "current") {
+		t.Fatalf("tabs should hide while scanning, got %q", scanning)
+	}
+	m.job = jobs.State{Name: "scan", Status: "done"}
+	after := lipglossStrip(m.renderHeader())
+	if strings.Contains(after, "Please wait for library to finish scanning") {
+		t.Fatalf("wait message should clear when scan ends, got %q", after)
+	}
+	if !strings.Contains(after, "current") {
+		t.Fatalf("tabs should return after scan, got %q", after)
+	}
+}
+
+func TestChromeUsesTerminalPalette(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.nav = navFromIndex([]playlist.IndexItem{{Name: "current", Count: 1, Kind: "system"}})
+	m.navIdx = navIndex(m.nav, "current")
+	got := m.renderHeader()
+	if strings.Contains(got, "38;2;") || strings.Contains(got, "48;2;") {
+		t.Fatalf("header should use terminal palette colours, got %q", got)
+	}
+	if !strings.Contains(got, "[3") && !strings.Contains(got, "[9") {
+		t.Fatalf("header should use ANSI palette colours, got %q", got)
 	}
 }
 

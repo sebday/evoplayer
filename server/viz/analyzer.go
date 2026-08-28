@@ -267,6 +267,12 @@ func (a *Analyzer) ResetTrack() {
 	a.mu.Unlock()
 }
 
+func (a *Analyzer) Wanted() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.wanted
+}
+
 func (a *Analyzer) SetWanted(on bool) {
 	a.mu.Lock()
 	if a.wanted == on {

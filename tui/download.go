@@ -133,6 +133,10 @@ func (m model) jobBusy() bool {
 	return m.job.Status == "running"
 }
 
+func (m model) libraryScanning() bool {
+	return m.job.Status == "running" && m.job.Name == "scan"
+}
+
 func (m model) startURLDownload() (tea.Model, tea.Cmd) {
 	url := strings.TrimSpace(m.downloadURL.Value())
 	if url == "" {

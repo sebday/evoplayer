@@ -321,8 +321,8 @@ func renderArt(img image.Image, cols, rows int) string {
 
 func placeholderArt(cols, rows int) string {
 	cell := logoColor().NewStyle().
-		Foreground(colBorder).
-		Background(lipgloss.Color("#1F2937")).
+		Foreground(colMuted).
+		Background(lipgloss.Color("0")).
 		Render("▀")
 	line := strings.Repeat(cell, max(2, cols))
 	return strings.Repeat(line+"\n", max(1, rows)-1) + line
@@ -389,7 +389,7 @@ func paintHalfBlocks(img *image.RGBA) string {
 			if y*2+1 < b.Dy() {
 				bot = img.RGBAAt(x, y*2+1)
 			}
-			sb.WriteString(logoColor().NewStyle().
+			sb.WriteString(artColor().NewStyle().
 				Foreground(lipgloss.Color(colorHex(top))).
 				Background(lipgloss.Color(colorHex(bot))).
 				Render("▀"))

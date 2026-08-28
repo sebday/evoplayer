@@ -148,9 +148,10 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 	switch req.Method {
 	case "capabilities":
 		return capabilities(), nil
-	case "state.get", "subscribe":
-		st := d.Actor.Snapshot()
-		return status.EnrichFull(d.Env, st), nil
+	case "state.get":
+		return status.EnrichLight(d.Env, d.Actor.Snapshot()), nil
+	case "subscribe":
+		return status.EnrichFull(d.Env, d.Actor.Snapshot()), nil
 	case "playback.toggle":
 		st := d.Actor.Snapshot()
 		if st.Path == "" || st.State == "stopped" {

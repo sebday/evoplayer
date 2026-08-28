@@ -21,6 +21,7 @@ func helpKeys() []helpRow {
 		{"⏎", "play"},
 		{"+", "add to current"},
 		{"l", "like"},
+		{"v", "visualizer"},
 		{"space", "play / pause"},
 		{", .", "previous / next"},
 		{"- =", "volume"},
