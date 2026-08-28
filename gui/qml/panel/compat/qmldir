@@ -1,0 +1,7 @@
+module compat
+singleton Theme 1.0 Theme.qml
+singleton Util 1.0 Util.qml
+SectionPanel 1.0 SectionPanel.qml
+SliderSetting 1.0 SliderSetting.qml
+HoverPanelLabelPill 1.0 HoverPanelLabelPill.qml
+FramedPanel 1.0 FramedPanel.qml

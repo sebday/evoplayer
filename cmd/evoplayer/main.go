@@ -7,10 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/sebday/evoplayer/internal/cli"
-	"github.com/sebday/evoplayer/internal/daemon"
-	"github.com/sebday/evoplayer/internal/paths"
-	"github.com/sebday/evoplayer/internal/tui"
+	"github.com/sebday/evoplayer/server/cli"
+	"github.com/sebday/evoplayer/server/daemon"
+	"github.com/sebday/evoplayer/server/paths"
+	"github.com/sebday/evoplayer/tui"
 )
 
 func main() {
@@ -125,8 +125,6 @@ func main() {
 		err = cli.CmdJSONLog(env, args)
 	case "lastfm":
 		err = cli.CmdLastfm(env, args)
-	case "waveform":
-		err = cli.CmdWaveform(env, args)
 	case "playlist":
 		err = cli.CmdPlaylist(env, args)
 	case "favorite":

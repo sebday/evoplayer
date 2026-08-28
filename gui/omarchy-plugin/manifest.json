@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "evo.evoplayer",
+  "name": "Evoplayer",
+  "version": "0.1.0",
+  "author": "seb",
+  "description": "Music library and playback for Omarchy",
+  "kinds": ["service", "panel", "bar-widget"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "panel/Service.qml",
+    "panel": "panel/Player.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Player",
+    "description": "Now playing and transport",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "center"
+  }
+}

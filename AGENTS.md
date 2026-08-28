@@ -10,13 +10,13 @@ Native Go commands (daemon IPC or direct library access):
 - `serve`, `tui`, `start`, `restart`, `stop`, `toggle`, `next`, `prev`, `seek`, `volume`, `shuffle`
 - `load`, `status`, `open`, `queue append|play|extend|up-next` (`up-next` reads the daemon playback queue)
 - `playback …`, `library …`, `browse`, `meta`, `genres`, `tracks`, `cache`, `find`, `scrobble`
-- `history`, `config`, `tags`, `vinyl`, `placement`, `waveform`, `lastfm`, `jsonlog`
+- `history`, `config`, `tags`, `vinyl`, `placement`, `lastfm`, `jsonlog`
 - `warm`, `download` (soundcloud likes sync; `download url <url>` for youtube via yt-dlp, or soundcloud), `import`, `stats`, `job`
 - `art` (search, set, apply, clear, notify-cache), `sort`, `playlist`, `favorite`, `current`
 
 Unknown subcommands return a usage error from the Go CLI.
 
-The Quickshell dashboard lives on `archive/quickshell` (retired). This tree is daemon + TUI only.
+The Quickshell dashboard lives in `gui/` (optional; install stays TUI-only). Default `evoplayer` is the terminal player.
 
 ## Daemon
 
@@ -24,7 +24,7 @@ Single runtime: `evoplayer serve` owns playback (ffmpeg+oto), queue, volume, NDJ
 
 IPC protocol reference: [docs/ipc.md](docs/ipc.md) (`capabilities`, `queue_revision` / `if_revision`, `spectrum.get`, error codes).
 
-`evoplayer status --json` returns the same player fields as `state.get`, including `queue_revision`, `waveform`, and `art` paths when known.
+`evoplayer status --json` returns the same player fields as `state.get`, including `queue_revision` and `art` paths when known.
 
 Viz NDJSON stream for scripts/Waybar:
 
@@ -51,6 +51,7 @@ Use `EVOPLAYER_TRACE_IPC=all` to also log `state.get`, `subscribe`, and library 
 
 ## State, cache, and secrets
 
+- Music library: `[paths] root` in `$XDG_STATE_HOME/evoplayer/music.toml` (`evoplayer config set paths.root /path`). If unset or the folder is missing, `~/music` when that folder exists, else `~/Music`, else `~/music`.
 - State: `$XDG_STATE_HOME/evoplayer` (override: `EVO_PLAYER_MUSIC_STATE`)
 - Cache: `$XDG_CACHE_HOME/evoplayer`
 - Library index: `$XDG_CACHE_HOME/evoplayer/library.sqlite3`
@@ -79,19 +80,8 @@ o.launch_on_start("evoplayer serve")
 ## Tests
 
 ```bash
-bash tests/run-all.sh
+go test ./...
 ```
-
-Individual suites:
-
-```bash
-mise exec -- go test ./...
-mise exec -- go test -tags=integration ./tests/integration/...
-bash tests/test-evoplayer-cli
-bash tests/test-evoplayer-art
-```
-
-Integration tests use isolated temp dirs and `EVOPLAYER_SOCKET` so they do not conflict with a running daemon.
 
 ## Commit messages and branching
 

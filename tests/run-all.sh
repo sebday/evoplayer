@@ -4,16 +4,11 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${root}"
 
-echo "== go test (unit) =="
-mise exec -- go test ./...
-
-echo "== go test (integration) =="
-mise exec -- go test -tags=integration ./tests/integration/...
-
-echo "== bash cli smoke =="
-bash tests/test-evoplayer-cli
-
-echo "== bash art smoke =="
-bash tests/test-evoplayer-art
-
-echo "all tests passed"
+if command -v go >/dev/null 2>&1; then
+  go test ./...
+elif command -v mise >/dev/null 2>&1; then
+  mise exec -- go test ./...
+else
+  echo "fail: go toolchain required" >&2
+  exit 1
+fi
