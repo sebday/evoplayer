@@ -10,6 +10,7 @@ import (
 
 	"github.com/sebday/evoplayer/internal/download"
 	"github.com/sebday/evoplayer/internal/ipc"
+	"github.com/sebday/evoplayer/internal/jobs"
 	"github.com/sebday/evoplayer/internal/library"
 	"github.com/sebday/evoplayer/internal/library/find"
 	"github.com/sebday/evoplayer/internal/mpris"
@@ -139,6 +140,27 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		})
 	case "library.genres":
 		return library.Genres(libEnv)
+	case "library.incoming.list":
+		folders := library.GenreChoices(libEnv)
+		return map[string]any{
+			"files":   library.ListIncoming(libEnv),
+			"folders": folders,
+			"genres":  folders,
+		}, nil
+	case "library.incoming.set_genre":
+		var p struct {
+			Path   string `json:"path"`
+			Genre  string `json:"genre"`
+			Folder string `json:"folder"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		folder := strings.TrimSpace(p.Folder)
+		if folder == "" {
+			folder = strings.TrimSpace(p.Genre)
+		}
+		return library.SetIncomingGenre(libEnv, p.Path, folder)
 	case "library.tracks":
 		var p struct {
 			Genre string `json:"genre"`
@@ -207,9 +229,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
-		go func() {
-			_ = playlist.EnrichCurrentTracksJSON(env, paths)
-		}()
+		_ = playlist.EnrichCurrentTracksJSON(env, paths)
 		return map[string]any{"saved": len(paths), "changed": changed}, nil
 	case "library.warm":
 		var p struct {
@@ -297,10 +317,15 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 		}
 		return map[string]any{"cancelled": cancelled, "name": name}, nil
 	case "library.import":
-		st, err := d.jobs.Start("import", func(context.Context) error {
-			if err := library.RunImport(library.EnvFrom(d.Env)); err != nil {
+		st, err := d.jobs.Start("import", func(ctx context.Context) error {
+			if err := library.RunImportCtx(ctx, library.EnvFrom(d.Env)); err != nil {
 				return err
 			}
+			d.jobs.SetResult(map[string]any{
+				"files":   library.ListIncoming(library.EnvFrom(d.Env)),
+				"folders": library.GenreChoices(library.EnvFrom(d.Env)),
+				"genres":  library.GenreChoices(library.EnvFrom(d.Env)),
+			})
 			status.InvalidateAllMeta()
 			d.broadcastState()
 			d.broadcastJob()
@@ -344,12 +369,12 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 			Import bool `json:"import"`
 		}
 		_ = ipc.DecodeParams(req.Params, &p)
-		st, err := d.jobs.Start("download", func(context.Context) error {
+		st, err := d.jobs.Start("download", func(ctx context.Context) error {
 			if err := soundcloud.DownloadEnv(d.Env); err != nil {
 				return err
 			}
 			if p.Import {
-				if err := library.RunImport(library.EnvFrom(d.Env)); err != nil {
+				if err := library.RunImportCtx(ctx, library.EnvFrom(d.Env)); err != nil {
 					return err
 				}
 			}
@@ -368,14 +393,32 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 			Import bool   `json:"import"`
 		}
 		_ = ipc.DecodeParams(req.Params, &p)
-		st, err := d.jobs.Start("download-url", func(context.Context) error {
-			if _, err := download.DownloadURL(d.Env, p.URL); err != nil {
+		if strings.TrimSpace(p.URL) == "" {
+			return nil, ipc.ErrInvalidParams("url required")
+		}
+		st, err := d.jobs.Start("download-url", func(ctx context.Context) error {
+			path, err := download.DownloadURLCtx(ctx, d.Env, p.URL, func(phase string, pct int) {
+				d.jobs.SetProgress(jobs.Progress{Phase: phase, Done: pct, Total: 100})
+			})
+			if err != nil {
 				return err
 			}
+			env := library.EnvFrom(d.Env)
+			folders := library.GenreChoices(env)
+			d.jobs.SetResult(map[string]any{
+				"files":   []any{library.PreviewIncoming(env, path)},
+				"folders": folders,
+				"genres":  folders,
+			})
 			if p.Import {
-				if err := library.RunImport(library.EnvFrom(d.Env)); err != nil {
+				if err := library.RunImportCtx(ctx, env); err != nil {
 					return err
 				}
+				d.jobs.SetResult(map[string]any{
+					"files":   library.ListIncoming(env),
+					"folders": folders,
+					"genres":  folders,
+				})
 			}
 			d.broadcastJob()
 			d.scheduleArtMaintain()

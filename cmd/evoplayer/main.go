@@ -10,6 +10,7 @@ import (
 	"github.com/sebday/evoplayer/internal/cli"
 	"github.com/sebday/evoplayer/internal/daemon"
 	"github.com/sebday/evoplayer/internal/paths"
+	"github.com/sebday/evoplayer/internal/tui"
 )
 
 func main() {
@@ -17,7 +18,11 @@ func main() {
 	exe, _ := os.Executable()
 
 	if len(os.Args) < 2 {
-		usage()
+		if err := tui.Run(env, exe); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	}
 
 	cmd := os.Args[1]
@@ -27,6 +32,8 @@ func main() {
 	switch cmd {
 	case "serve":
 		err = daemon.New(env).Run()
+	case "tui":
+		err = tui.Run(env, exe)
 	case "start":
 		err = cli.CmdStart(env, exe)
 	case "restart":
@@ -190,6 +197,9 @@ func repoRoot() string {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: evoplayer <command> [args...]")
+	fmt.Fprintln(os.Stderr, "usage: evoplayer [command] [args...]")
+	fmt.Fprintln(os.Stderr, "  (none)  terminal player")
+	fmt.Fprintln(os.Stderr, "  serve   backend (playback, library, ipc)")
+	fmt.Fprintln(os.Stderr, "  tui     alias for the terminal player")
 	os.Exit(1)
 }

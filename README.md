@@ -1,46 +1,44 @@
 # Evoplayer
 
-Music library and playback for Omarchy shell.
-
-[![Evoplayer player panel](docs/screenshots/player.png)](docs/screenshots/player.png)
+Terminal music library and playback.
 
 ## Layout
 
 ```
-cmd/evoplayer/     Go daemon + CLI (playback, library, config, history, tags)
-qml/panel/         dashboard + monitor service QML
-omarchy-plugin/    Omarchy manifest, bar widget, install symlink target
+cmd/evoplayer/     Go daemon + CLI + TUI
+internal/          playback, library, ipc, tui
 tests/
-scripts/           install + link into omarchy-shell
+scripts/           install (binary + desktop entry)
 ```
 
-## Install (Omarchy)
+## Install
 
 ```bash
 bash scripts/install
-omarchy-shell shell rescanPlugins
 ```
 
-Defaults:
-- Plugin → `~/.config/omarchy/plugins/seb.evoplayer`
-- QML → `qml/panel/` (via plugin `panel/` symlink)
-- Runtime → `~/.local/bin/evoplayer` (symlink to `~/.local/lib/evoplayer/evoplayer`)
+Puts `evoplayer` on `PATH` (`~/.local/bin/evoplayer` → `.build/evoplayer`).
 
-Open the player:
+## Usage
 
 ```bash
-omarchy-shell shell toggle seb.evoplayer '{}'
+evoplayer          # terminal player (starts serve if needed)
+evoplayer serve    # backend only
 ```
 
-See [AGENTS.md](AGENTS.md) for menu entry, autostart, state paths, and IPC tracing.
+See [AGENTS.md](AGENTS.md) for daemon IPC, state paths, and tracing.
+
+## Library folders
+
+The music library is a tree of folders, not a genre taxonomy. Top-level dirs under the music root (`Drum & Bass`, `House`, …) are where tracks are filed.
+
+A genre tag is only a hint for which of those folders to use. Untagged downloads stay in `.incoming` until you pick a folder; import then moves the file into that folder (`youtube/` or `mixes/` plus year for long mixes).
 
 ## Dev
 
 ```bash
-bash tests/test-omarchy-plugin
 bash tests/test-evoplayer-cli
-bash tests/test-evoplayer-qml-smoke
-omarchy restart shell
+mise exec -- go test ./internal/tui/
 ```
 
 See [CONTRIB.md](CONTRIB.md) for commit message and branching conventions.

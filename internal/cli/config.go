@@ -12,6 +12,7 @@ import (
 	"github.com/sebday/evoplayer/internal/config"
 	"github.com/sebday/evoplayer/internal/history"
 	"github.com/sebday/evoplayer/internal/paths"
+	"github.com/sebday/evoplayer/internal/secrets"
 )
 
 func CmdHistoryReport(env paths.Env, args []string) error {
@@ -102,25 +103,28 @@ func cmdConfigGet(env paths.Env, args []string) error {
 	if err := env.EnsureDirs(); err != nil {
 		return err
 	}
-	view, err := config.JSON(env.MusicConfig, env.MusicRoot)
+	view, err := configJSONView(env)
 	if err != nil {
 		return err
 	}
 	if jsonOut {
 		return printJSON(view)
 	}
-	fmt.Printf("user: %s\noauth_token: %s\n", view.Soundcloud.User, maskSecret(view.Soundcloud.OAuthToken))
+	source := view.Soundcloud.OAuthSource
+	if source == "" {
+		source = "missing"
+	}
+	fmt.Printf("user: %s\noauth: %s\n", view.Soundcloud.User, source)
 	return nil
 }
 
-func maskSecret(s string) string {
-	if s == "" {
-		return ""
+func configJSONView(env paths.Env) (config.JSONView, error) {
+	view, err := config.JSON(env.MusicConfig, env.MusicRoot)
+	if err != nil {
+		return view, err
 	}
-	if len(s) <= 4 {
-		return "****"
-	}
-	return s[:2] + "…" + s[len(s)-2:]
+	view.Soundcloud.OAuthSource = secrets.SoundcloudOAuth().Source
+	return view, nil
 }
 
 func cmdConfigSet(env paths.Env, args []string) error {
@@ -163,7 +167,7 @@ func cmdConfigSet(env paths.Env, args []string) error {
 		return err
 	}
 	if jsonOut {
-		view, err := config.JSON(env.MusicConfig, env.MusicRoot)
+		view, err := configJSONView(env)
 		if err != nil {
 			return err
 		}
@@ -200,7 +204,7 @@ func cmdConfigTomlSet(env paths.Env, args []string) error {
 }
 
 func cmdConfigTomlJSON(env paths.Env) error {
-	view, err := config.JSON(env.MusicConfig, env.MusicRoot)
+	view, err := configJSONView(env)
 	if err != nil {
 		return err
 	}

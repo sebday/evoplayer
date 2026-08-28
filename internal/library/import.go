@@ -54,6 +54,7 @@ func ImportTagsCaches(db *sql.DB, env Env) error {
 }
 
 func SyncLiked(db *sql.DB, env Env) error {
+	_ = RelocateLibraryPaths(env)
 	raw, err := os.ReadFile(env.LikesFile)
 	if err != nil {
 		_, _ = db.Exec(`UPDATE tracks SET liked=0`)

@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# Symlink evoplayer into omarchy-shell plugin paths.
+# Build evoplayer and link the binary + desktop entry.
 set -euo pipefail
 
 EVOPLAYER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PLUGIN_SRC="${EVOPLAYER_ROOT}/omarchy-plugin"
-PLUGIN_DST="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/evo.evoplayer"
 LOCAL_BIN="${HOME}/.local/bin"
 EVOPLAYER_LIB="${HOME}/.local/lib/evoplayer"
 BUILD_DIR="${EVOPLAYER_ROOT}/.build"
+PLUGIN_DST="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/evo.evoplayer"
 SHELL_JSON="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/shell.json"
-MENU_JSONC="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/extensions/omarchy-menu.jsonc"
 DESKTOP_DST="${XDG_DATA_HOME:-$HOME/.local/share}/applications/evoplayer.desktop"
 
 link_path() {
@@ -53,10 +51,12 @@ build_go() {
 
 bash "${EVOPLAYER_ROOT}/scripts/migrate-evoshell-data.sh"
 
-mkdir -p "$(dirname "$PLUGIN_DST")"
-link_path "$PLUGIN_DST" "$PLUGIN_SRC"
-link_path "${PLUGIN_DST}/panel" "${EVOPLAYER_ROOT}/qml/panel"
-link_path "$DESKTOP_DST" "${PLUGIN_SRC}/evoplayer.desktop"
+link_path "$DESKTOP_DST" "${EVOPLAYER_ROOT}/share/evoplayer.desktop"
+
+if [[ -L "$PLUGIN_DST" || -d "$PLUGIN_DST" ]]; then
+  rm -rf "$PLUGIN_DST"
+  echo "removed quickshell plugin ${PLUGIN_DST}" >&2
+fi
 
 if [[ -f "$SHELL_JSON" ]]; then
   python3 - "$SHELL_JSON" <<'PY'
@@ -64,45 +64,22 @@ import json, sys
 path = sys.argv[1]
 with open(path, encoding="utf-8") as f:
     cfg = json.load(f)
-plugins = cfg.setdefault("plugins", [])
-if not any(p.get("id") == "evo.evoplayer" for p in plugins):
-    plugins.append({"id": "evo.evoplayer"})
-bar = cfg.setdefault("bar", {})
-layout = bar.setdefault("layout", {})
-center = layout.setdefault("center", [])
-if not any(w.get("id") == "evo.evoplayer" for w in center):
-    insert_at = 0
-    for i, w in enumerate(center):
-        if w.get("id") == "omarchy.clock":
-            insert_at = i
-            break
-    center.insert(insert_at, {"id": "evo.evoplayer"})
+cfg["plugins"] = [p for p in cfg.get("plugins", []) if p.get("id") != "evo.evoplayer"]
+bar = cfg.get("bar", {})
+layout = bar.get("layout", {})
+for section in ("left", "center", "right"):
+    layout[section] = [w for w in layout.get(section, []) if w.get("id") != "evo.evoplayer"]
 with open(path, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
 PY
 fi
 
-if [[ -f "$MENU_JSONC" ]]; then
-  if ! rg -q 'seb\.evoplayer' "$MENU_JSONC" 2>/dev/null; then
-    echo "note: add menu entry manually to $MENU_JSONC:" >&2
-    echo '  "command": "omarchy-shell shell toggle evo.evoplayer '\''{}'\''"' >&2
-  fi
-fi
-
-echo "linked evoplayer omarchy plugin from ${PLUGIN_SRC} -> ${PLUGIN_DST}"
 echo "binary: ${LOCAL_BIN}/evoplayer -> ${EVOPLAYER_LIB}/evoplayer"
+echo "apps menu: ${DESKTOP_DST}"
 echo ""
-echo "apps menu: ${DESKTOP_DST} (symlinked from omarchy-plugin/evoplayer.desktop)"
-echo ""
-echo "optional trigger menu entry (~/.config/omarchy/extensions/omarchy-menu.jsonc):"
-echo '  "trigger.evoplayer": {'
-echo '    "icon": "󰎈",'
-echo '    "label": "Music player",'
-echo '    "action": "omarchy-shell shell toggle evo.evoplayer '\''{}'\''"'
-echo '  }'
+echo "run: evoplayer"
+echo "backend: evoplayer serve"
 echo ""
 echo "optional autostart (~/.config/hypr/autostart.lua):"
 echo '  o.launch_on_start("evoplayer serve")'
-echo ""
-echo "next: omarchy-shell shell rescanPlugins"

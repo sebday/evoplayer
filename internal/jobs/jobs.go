@@ -17,6 +17,7 @@ type State struct {
 	StartedAt string    `json:"started_at,omitempty"`
 	EndedAt   string    `json:"ended_at,omitempty"`
 	Progress  *Progress `json:"progress,omitempty"`
+	Result    any       `json:"result,omitempty"`
 }
 
 type Manager struct {
@@ -152,5 +153,17 @@ func (m *Manager) BroadcastEvent() map[string]any {
 	if st.Progress != nil {
 		ev["progress"] = st.Progress
 	}
+	if st.Result != nil {
+		ev["result"] = st.Result
+	}
 	return ev
+}
+
+func (m *Manager) SetResult(v any) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.current == nil {
+		return
+	}
+	m.current.Result = v
 }

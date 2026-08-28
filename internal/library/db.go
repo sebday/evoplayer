@@ -88,14 +88,16 @@ func EnsureDB(env Env) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-		if !Ready(db) {
-			if hasTagsJSON(env) {
-				if err := rebuildFromJSON(db, env); err != nil {
-					_ = db.Close()
-					return nil, err
-				}
+	if !Ready(db) {
+		if hasTagsJSON(env) {
+			if err := rebuildFromJSON(db, env); err != nil {
+				_ = db.Close()
+				return nil, err
 			}
 		}
+	} else {
+		_ = SyncLiked(db, env)
+	}
 	storeCachedDB(env.LibraryDB, db)
 	return db, nil
 }

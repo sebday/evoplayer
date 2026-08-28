@@ -75,6 +75,9 @@ func TestImportUpsertsWithoutWiping(t *testing.T) {
 	}
 	incoming := filepath.Join(root, ".incoming")
 	src := filepath.Join(incoming, "new.mp3")
+	if err := os.MkdirAll(filepath.Join(root, "misc"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	writeTinyMP3(t, src, map[string]string{"title": "New", "artist": "N", "genre": "misc"})
 	if err := library.RunImport(env); err != nil {
 		t.Fatal(err)
@@ -90,6 +93,27 @@ func TestImportUpsertsWithoutWiping(t *testing.T) {
 	}
 	if n != 2 {
 		t.Fatalf("tracks = %d, want 2 (import must not wipe)", n)
+	}
+}
+
+func TestImportSkipsUnknownGenreWithoutFailing(t *testing.T) {
+	root := t.TempDir()
+	env := testCacheEnv(t, root)
+	incoming := filepath.Join(root, ".incoming")
+	src := filepath.Join(incoming, "odd.mp3")
+	writeTinyMP3(t, src, map[string]string{"title": "Odd", "artist": "X", "genre": "Trap"})
+	empty := filepath.Join(incoming, "empty.m4a")
+	if err := os.MkdirAll(incoming, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(empty, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := library.RunImport(env); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Fatal("unknown-genre file should stay in incoming")
 	}
 }
 

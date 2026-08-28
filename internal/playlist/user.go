@@ -72,7 +72,7 @@ func DeleteUser(env Env, name string) (ActionResult, error) {
 
 func isReservedName(name string) bool {
 	switch name {
-	case "all", "favorites", "current", "":
+	case "all", "favorites", "current", "mixes", "":
 		return true
 	default:
 		return false

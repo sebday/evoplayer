@@ -5,7 +5,7 @@
 #   bash scripts/trace-player-ipc.sh          # restart daemon, trace to stderr
 #   bash scripts/trace-player-ipc.sh watch    # follow omarchy-shell journal for ipc lines
 #
-# Traces playback/queue/viz IPC on the daemon (stderr) and QML client (journal).
+# Traces playback/queue/viz IPC on the daemon (stderr).
 # Set EVOPLAYER_TRACE_IPC=all to include state.get/subscribe and library calls.
 
 set -euo pipefail
@@ -17,8 +17,8 @@ lock="${state}/daemon.lock"
 
 if [[ "${1:-}" == "watch" ]]; then
   echo "watching journal for evoplayer ipc lines (Ctrl-C to stop)…" >&2
-  exec journalctl --user -f _COMM=omarchy-shell --since "1 min ago" 2>/dev/null \
-    | grep --line-buffered -E 'evoplayer: ipc|evoplayer: mpris|\[evoplayer-ipc\]'
+  exec journalctl --user -f --since "1 min ago" 2>/dev/null \
+    | grep --line-buffered -E 'evoplayer: ipc|evoplayer: mpris'
 fi
 
 if [[ ! -x "$exe" ]]; then
@@ -62,8 +62,7 @@ runtime="${XDG_RUNTIME_DIR:-/tmp}"
 rm -f "${runtime}/evoplayer.sock"
 
 echo "starting daemon with EVOPLAYER_TRACE_IPC=$EVOPLAYER_TRACE_IPC" >&2
-echo "  daemon logs: journalctl --user -f _COMM=omarchy-shell | grep -E 'evoplayer: ipc|evoplayer: mpris'" >&2
-echo "  qml logs:    journalctl --user -f _COMM=omarchy-shell | grep '\\[evoplayer-ipc\\]'" >&2
+echo "  daemon logs: ${TMPDIR:-/tmp}/evoplayer-serve.log" >&2
 echo "  or run:      bash scripts/trace-player-ipc.sh watch" >&2
 
 EVOPLAYER_TRACE_IPC="$EVOPLAYER_TRACE_IPC" "$exe" serve >>"${TMPDIR:-/tmp}/evoplayer-serve.log" 2>&1 &

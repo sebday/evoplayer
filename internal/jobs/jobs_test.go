@@ -108,3 +108,39 @@ func TestSetProgressThrottlesOnChange(t *testing.T) {
 	}
 	close(gate)
 }
+
+func TestSetResultSurvivesDone(t *testing.T) {
+	m := jobs.NewManager()
+	gate := make(chan struct{})
+	if _, err := m.Start("download-url", func(context.Context) error {
+		m.SetResult(map[string]any{"files": []any{map[string]any{"title": "T"}}})
+		<-gate
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	close(gate)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		st := m.Status()
+		if st != nil && st.Status == "done" {
+			res, _ := st.Result.(map[string]any)
+			if res == nil {
+				t.Fatalf("result = %#v", st.Result)
+			}
+			files, _ := res["files"].([]any)
+			if len(files) != 1 {
+				t.Fatalf("files = %#v", files)
+			}
+			ev := m.BroadcastEvent()
+			if ev["result"] == nil {
+				t.Fatal("broadcast missing result")
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status = %+v, want done with result", st)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}

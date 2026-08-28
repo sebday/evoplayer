@@ -3,11 +3,13 @@ package soundcloud
 import (
 	"fmt"
 	"strings"
+
+	"github.com/sebday/evoplayer/internal/secrets"
 )
 
 func (c *Client) LikesTracks() ([]Track, error) {
 	if c.OAuthToken == "" {
-		return nil, fmt.Errorf("soundcloud: oauth_token required for likes sync")
+		return nil, fmt.Errorf("soundcloud: oauth_token required (brave cookie or pass show %s)", secrets.SoundcloudPassPath())
 	}
 	var tracks []Track
 	next := "/me/likes?limit=50&linked_partitioning=1"

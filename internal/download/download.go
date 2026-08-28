@@ -1,6 +1,7 @@
 package download
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"strings"
@@ -34,9 +35,16 @@ func DetectSource(rawURL string) string {
 }
 
 func DownloadURL(env paths.Env, rawURL string) (string, error) {
+	return DownloadURLCtx(context.Background(), env, rawURL, nil)
+}
+
+func DownloadURLCtx(ctx context.Context, env paths.Env, rawURL string, progress youtube.ProgressFunc) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	switch DetectSource(rawURL) {
 	case "youtube":
-		return youtube.DownloadURL(env, rawURL)
+		return youtube.DownloadURLCtx(ctx, env, rawURL, progress)
 	case "soundcloud":
 		return soundcloud.DownloadTrackURL(env, rawURL)
 	default:

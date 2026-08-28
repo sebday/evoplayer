@@ -20,47 +20,10 @@ var audioExts = map[string]struct{}{
 	".mp3": {}, ".mp2": {}, ".m4a": {},
 }
 
-var genreFolderToTag = map[string]string{
-	"drum&bass": "Drum & Bass",
-	"dubstep":   "Dubstep",
-	"grime":     "Grime",
-	"hiphop":    "Hip-Hop",
-	"house":     "House",
-}
-
 var knownYears = map[string]int{
 	"bailey_gq-metalheadz_history_sessions_phonox-05-04-24": 2024,
 	"future_beats_radio_show_04-06-15":                      2015,
 	"future_beats_radio_show_04-04-13":                      2013,
-}
-
-var stemGenre = []struct {
-	pattern string
-	folder  string
-}{
-	{"excision-darkside_dubstep", "dubstep"},
-	{"future_beats_radio_show", "drum&bass"},
-	{"ant_tc1_mc_visionobi", "drum&bass"},
-	{"calibre-essential_mix", "drum&bass"},
-	{"chase_status_boiler_room", "drum&bass"},
-	{"hospital_records_with_lens", "drum&bass"},
-	{"huscher-subtle_radio", "drum&bass"},
-	{"jdizz_vol", "drum&bass"},
-	{"cream_live_mixed_by_paul_oakenfold", "house"},
-	{"bufera_beats_w_limmz", "grime"},
-	{"boofy", "dubstep"},
-	{"cluekid", "dubstep"},
-	{"chokez", "dubstep"},
-	{"damna", "dubstep"},
-	{"benga", "dubstep"},
-	{"skream", "dubstep"},
-	{"hatcha", "dubstep"},
-	{"kampah", "dubstep"},
-	{"black teeth", "dubstep"},
-	{"jook", "drum&bass"},
-	{"nas", "hiphop"},
-	{"kendrick", "hiphop"},
-	{"hip hop", "hiphop"},
 }
 
 var tagFields = []string{"title", "artist", "genre", "year", "album", "publisher", "catalognumber"}
@@ -356,8 +319,7 @@ func writeM4ATags(path string, targets map[string]string) bool {
 func targetTags(musicRoot, path string, tags TagMap) TagMap {
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	year := resolveYear(musicRoot, path, tags)
-	folder := resolveGenreFolder(path, tags)
-	genreTag := genreFolderToTag[folder]
+	folder := folderFromPath(musicRoot, path)
 
 	artist := strings.TrimSpace(tags["artist"])
 	title := strings.TrimSpace(tags["title"])
@@ -381,8 +343,8 @@ func targetTags(musicRoot, path string, tags TagMap) TagMap {
 		}
 	}
 	out := TagMap{"title": title, "artist": artist}
-	if genreTag != "" {
-		out["genre"] = genreTag
+	if folder != "" {
+		out["genre"] = folder
 	}
 	if year > 0 {
 		out["year"] = strconv.Itoa(year)
@@ -515,49 +477,16 @@ func resolveYear(musicRoot, path string, tags TagMap) int {
 	return 0
 }
 
-func genreTagToFolder(tag string) string {
-	lower := strings.ToLower(strings.TrimSpace(tag))
-	if lower == "" {
+func folderFromPath(musicRoot, path string) string {
+	rel, err := filepath.Rel(filepath.Clean(musicRoot), filepath.Clean(path))
+	if err != nil || strings.HasPrefix(rel, "..") {
 		return ""
 	}
-	if strings.Contains(lower, "drum") || strings.Contains(lower, "dnb") || strings.Contains(lower, "jungle") {
-		return "drum&bass"
-	}
-	if strings.Contains(lower, "dub") {
-		return "dubstep"
-	}
-	if strings.Contains(lower, "house") {
-		return "house"
-	}
-	if strings.Contains(lower, "grime") {
-		return "grime"
-	}
-	if strings.Contains(lower, "hiphop") || (strings.Contains(lower, "hip") && strings.Contains(lower, "hop")) {
-		return "hiphop"
-	}
-	if lower == "liquid" {
-		return "drum&bass"
-	}
-	if lower == "electronic" || lower == "electronica" {
+	parts := strings.Split(rel, string(os.PathSeparator))
+	if len(parts) == 0 || parts[0] == "." || strings.HasPrefix(parts[0], ".") {
 		return ""
 	}
-	return ""
-}
-
-func resolveGenreFolder(path string, tags TagMap) string {
-	stemLower := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
-	for _, item := range stemGenre {
-		if strings.Contains(stemLower, item.pattern) {
-			return item.folder
-		}
-	}
-	for _, field := range []string{tags["genre"], tags["artist"], tags["title"]} {
-		if folder := genreTagToFolder(field); folder != "" {
-			return folder
-		}
-	}
-	combined := tags["artist"] + " " + tags["title"]
-	return genreTagToFolder(combined)
+	return parts[0]
 }
 
 func vinylFromPath(musicRoot, path string) TagMap {
@@ -566,10 +495,7 @@ func vinylFromPath(musicRoot, path string) TagMap {
 		return nil
 	}
 	parts := strings.Split(rel, string(os.PathSeparator))
-	if len(parts) < 4 || parts[1] != "vinyl" {
-		return nil
-	}
-	if _, ok := genreFolderToTag[parts[0]]; !ok {
+	if len(parts) < 4 || parts[0] == "" || strings.HasPrefix(parts[0], ".") || parts[1] != "vinyl" {
 		return nil
 	}
 	if parts[2] == "_misc" {
