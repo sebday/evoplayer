@@ -46,6 +46,7 @@ type model struct {
 	browse             []library.BrowseEntry
 	searchQuery        string
 	searchGen          int
+	searchMoved        bool
 	status             playback.Status
 	artPath            string
 	artImg             image.Image
@@ -696,7 +697,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.artPickPreviewURL = msg.urls[m.playlistIdx]
 			}
 			m.artPickPreviewIdx = m.playlistIdx
-			m.invalidateArtCache()
+			m.refreshArtPickPreview()
 		} else {
 			m.showCachedArtPick(m.playlistIdx)
 		}
@@ -714,7 +715,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.artPickPreviewURL = msg.url
 		m.artPickPreviewIdx = msg.idx
 		m.artPreviewImg = msg.img
-		m.invalidateArtCache()
+		m.refreshArtPickPreview()
 		return m, nil
 	case artApplyMsg:
 		m.artPickBusy = false
@@ -748,27 +749,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) browseFocused() bool {
+	return m.focus == focusBrowse || m.focus == focusSearch
+}
+
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.focus == focusSearch {
 		switch msg.String() {
 		case "esc":
 			m.search.Blur()
 			m.search.SetValue("")
+			m.searchMoved = false
 			m.focus = focusBrowse
 			return m, m.applyFilter()
-		case "tab":
-			m.search.Blur()
-			m.focus = focusBrowse
-			return m, nil
 		case "enter":
-			m.search.Blur()
-			m.focus = focusBrowse
+			m.searchMoved = false
 			return m.playSelected()
-		case " ":
-			return m, m.playbackCmd(togglePlayback)
-		case "ctrl+c", "q":
-			return m, m.quitCmd()
+		case "d":
+			if m.searchMoved && m.browseLen() > 0 {
+				m.searchMoved = false
+				return m.addSelected()
+			}
+		case "up":
+			if m.browseLen() == 0 || m.browseIdx <= 0 {
+				return m, nil
+			}
+			m.searchMoved = true
+			m.moveFocusedList(-1)
+			return m.patchFocusedList()
+		case "down":
+			m.searchMoved = true
+			m.moveFocusedList(1)
+			return m.patchFocusedList()
+		case "pgup":
+			m.searchMoved = true
+			m.moveFocusedList(-m.browseListVisible())
+			return m.patchFocusedList()
+		case "pgdown":
+			m.searchMoved = true
+			m.moveFocusedList(m.browseListVisible())
+			return m.patchFocusedList()
 		}
+		m.searchMoved = false
 		var cmd tea.Cmd
 		m.search, cmd = m.search.Update(msg)
 		return m, tea.Batch(cmd, m.applyFilter())
@@ -814,15 +836,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "a":
 			return m.openArtPicker()
 		case "up":
-			if m.artPickBusy {
-				return m, nil
-			}
 			m.moveQueue(-1)
 			return m, m.armArtPickPreview()
 		case "down":
-			if m.artPickBusy {
-				return m, nil
-			}
 			m.moveQueue(1)
 			return m, m.armArtPickPreview()
 		case "ctrl+c", "q":
@@ -860,6 +876,18 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.addDir()
+	case "f":
+		path := m.folderOpenTarget()
+		if path == "" {
+			return m, nil
+		}
+		target := path
+		return m, func() tea.Msg {
+			if err := openInFileManager(target); err != nil {
+				return errMsg{err: err}
+			}
+			return tickMsg{}
+		}
 	case " ":
 		return m, m.playbackCmd(togglePlayback)
 	case ".":
@@ -1207,7 +1235,7 @@ func (m model) playbackCmd(fn func(paths.Env) error) tea.Cmd {
 }
 
 func (m model) playSelected() (tea.Model, tea.Cmd) {
-	if m.focus == focusBrowse {
+	if m.browseFocused() {
 		if item, ok := m.currentPlaylist(); ok {
 			return m.playPlaylist(item.ID)
 		}
@@ -1260,7 +1288,7 @@ func (m model) playPlaylist(name string) (tea.Model, tea.Cmd) {
 }
 
 func (m model) addSelected() (tea.Model, tea.Cmd) {
-	if m.focus == focusBrowse {
+	if m.browseFocused() {
 		if item, ok := m.currentPlaylist(); ok {
 			return m.addPlaylist(item.ID)
 		}
@@ -1294,7 +1322,7 @@ func (m model) addSelected() (tea.Model, tea.Cmd) {
 }
 
 func (m model) addDir() (tea.Model, tea.Cmd) {
-	if m.focus != focusBrowse {
+	if !m.browseFocused() {
 		return m, nil
 	}
 	if _, ok := m.currentPlaylist(); ok {
@@ -1633,7 +1661,7 @@ func (m *model) showCachedArtPick(idx int) bool {
 	m.artPickPreviewURL = url
 	m.artPickPreviewIdx = idx
 	m.artPreviewImg = img
-	m.invalidateArtCache()
+	m.refreshArtPickPreview()
 	return true
 }
 
@@ -1651,15 +1679,31 @@ func (m *model) armArtPickPreview() tea.Cmd {
 }
 
 func fetchArtHit(r art.Result) (image.Image, string, error) {
-	url := art.PreviewURL(r)
-	if url == "" {
+	seen := map[string]struct{}{}
+	var urls []string
+	for _, u := range []string{art.PreviewURL(r), r.URL, r.Thumb} {
+		u = strings.TrimSpace(u)
+		if u == "" {
+			continue
+		}
+		if _, ok := seen[u]; ok {
+			continue
+		}
+		seen[u] = struct{}{}
+		urls = append(urls, u)
+	}
+	if len(urls) == 0 {
 		return nil, "", fmt.Errorf("no art url")
 	}
-	img, err := fetchArtURL(url)
-	if err != nil {
-		return nil, url, err
+	var lastErr error
+	for _, url := range urls {
+		img, err := fetchArtURL(url)
+		if err == nil {
+			return boundImage(img, art.PreviewSize), url, nil
+		}
+		lastErr = err
 	}
-	return boundImage(img, art.PreviewSize), url, nil
+	return nil, urls[0], lastErr
 }
 
 func prefetchArtHits(hits []art.Result, path string, gen int) tea.Cmd {
@@ -1713,11 +1757,16 @@ func (m *model) invalidateArtCache() {
 	}
 }
 
-func artPickImageURL(r art.Result) string {
-	if r.URL != "" {
-		return r.URL
+func (m *model) refreshArtPickPreview() {
+	m.invalidateArtCache()
+	if m.art != nil {
+		m.art.shown = false
 	}
-	return r.Thumb
+	m.unfreezeFrame()
+}
+
+func artPickImageURL(r art.Result) string {
+	return art.PreviewURL(r)
 }
 
 func (m model) artPickApplyURL() string {

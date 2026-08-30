@@ -7,18 +7,18 @@ import (
 	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
+	_ "golang.org/x/image/webp"
 	"io"
-	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/blacktop/go-termimg"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
 	"github.com/mattn/go-sixel"
+	"github.com/sebday/evoplayer/server/art"
 	"golang.org/x/sys/unix"
 )
 
@@ -469,28 +469,12 @@ func (w *artRestorer) restore() {
 	w.restoring = false
 }
 
-const artFetchUA = "evoplayer/1.0 (local music player)"
-
-var artHTTP = &http.Client{Timeout: 6 * time.Second}
-
 func fetchArtURL(url string) (image.Image, error) {
-	if url == "" {
-		return nil, fmt.Errorf("empty art url")
-	}
-	req, err := http.NewRequest(http.MethodGet, url, nil)
+	body, err := art.FetchImage(url)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", artFetchUA)
-	resp, err := artHTTP.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("art fetch %d", resp.StatusCode)
-	}
-	img, _, err := image.Decode(resp.Body)
+	img, _, err := image.Decode(bytes.NewReader(body))
 	return img, err
 }
 

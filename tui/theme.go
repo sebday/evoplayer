@@ -297,6 +297,10 @@ func (c borderChase) hex() string {
 	return string(c.idle)
 }
 
+func panelBorderHex(num int, active bool) string {
+	return borderChase{active: active, idle: panelIdleColor(num)}.hex()
+}
+
 func padExact(s string, width int) string {
 	return lipgloss.NewStyle().MaxWidth(width).Width(width).Render(s)
 }

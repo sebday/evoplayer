@@ -1,8 +1,13 @@
 package library
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
+	_ "golang.org/x/image/webp"
 	"io"
 	"net/http"
 	"os"
@@ -82,26 +87,50 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 
 func ApplyImageURL(env Env, trackPath, imageURL, scope string) (InstallResult, error) {
 	tmp := filepath.Join(env.ArtDir, fmt.Sprintf(".fetch.%d.jpg", time.Now().UnixNano()))
-	out, err := os.Create(tmp)
-	if err != nil {
+	if err := downloadArtURL(imageURL, tmp); err != nil {
 		return InstallResult{}, err
 	}
-	resp, err := http.Get(imageURL)
-	if err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return InstallResult{}, err
-	}
-	defer resp.Body.Close()
-	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close()
-		os.Remove(tmp)
-		return InstallResult{}, err
-	}
-	out.Close()
 	res, err := InstallImage(env, trackPath, tmp, scope)
 	os.Remove(tmp)
 	return res, err
+}
+
+func downloadArtURL(imageURL, dest string) error {
+	req, err := http.NewRequest(http.MethodGet, imageURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "evoplayer/1.0 (local music player)")
+	if strings.Contains(imageURL, "discogs.com") {
+		req.Header.Set("Referer", "https://www.discogs.com/")
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("art fetch %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if err := validateImageBytes(body); err != nil {
+		return err
+	}
+	return os.WriteFile(dest, body, 0o644)
+}
+
+func validateImageBytes(body []byte) error {
+	if len(body) == 0 {
+		return fmt.Errorf("empty art response")
+	}
+	_, _, err := image.Decode(bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("not an image: %w", err)
+	}
+	return nil
 }
 
 func ClearArt(env Env, trackPath string) error {
@@ -124,18 +153,14 @@ func normalizeJPG(src, dest string) error {
 			return nil
 		}
 	}
-	in, err := os.Open(src)
+	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-	out, err := os.Create(dest)
-	if err != nil {
+	if err := validateImageBytes(data); err != nil {
 		return err
 	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	return os.WriteFile(dest, data, 0o644)
 }
 
 func Maintain(env Env) error {

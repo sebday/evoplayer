@@ -68,6 +68,102 @@ func TestSearchQueriesFullLibrary(t *testing.T) {
 	}
 }
 
+func TestSearchIgnoresGlobalKeybinds(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.ready = true
+	m.focus = focusSearch
+	m.search.Focus()
+
+	got, cmd := m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = got.(model)
+	if m.focus != focusSearch {
+		t.Fatal("space should stay in search")
+	}
+	if cmd != nil {
+		t.Fatal("space should not trigger playback")
+	}
+
+	got, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	m = got.(model)
+	if m.focus != focusSearch {
+		t.Fatal("q should stay in search")
+	}
+	if m.search.Value() != "q" {
+		t.Fatalf("q should be typed into search, got %q", m.search.Value())
+	}
+
+	got, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = got.(model)
+	if m.focus != focusBrowse {
+		t.Fatal("esc should exit search")
+	}
+	if m.search.Value() != "" {
+		t.Fatalf("esc should clear search, got %q", m.search.Value())
+	}
+}
+
+func TestSearchArrowKeysMoveResults(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.ready = true
+	m.focus = focusSearch
+	m.search.Focus()
+	m.search.SetValue("wiley")
+	m.searchQuery = "wiley"
+	m.browse = []library.BrowseEntry{
+		{Type: "track", Track: library.Track{Path: "/tmp/a.mp3", Title: "A"}},
+		{Type: "track", Track: library.Track{Path: "/tmp/b.mp3", Title: "B"}},
+	}
+	m.browseIdx = 0
+
+	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = got.(model)
+	if m.browseIdx != 1 {
+		t.Fatalf("down in search should move browse caret, idx=%d", m.browseIdx)
+	}
+	if m.focus != focusSearch {
+		t.Fatal("down should stay in search")
+	}
+
+	got, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	m = got.(model)
+	if m.focus != focusSearch {
+		t.Fatal("d after moving selection should stay in search")
+	}
+	if cmd == nil {
+		t.Fatal("d after moving selection should queue the selected search hit")
+	}
+
+	m.search.SetValue("wiley")
+	m.searchQuery = "wiley"
+	m.browseIdx = 0
+	m.searchMoved = false
+	got, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = got.(model)
+	if m.focus != focusSearch {
+		t.Fatal("enter should stay in search")
+	}
+	if cmd == nil {
+		t.Fatal("enter should play the selected search hit")
+	}
+}
+
+func TestSearchDTypingBeforeMove(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.ready = true
+	m.focus = focusSearch
+	m.search.Focus()
+	m.search.SetValue("wiley")
+
+	got, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	m = got.(model)
+	if m.search.Value() != "wileyd" {
+		t.Fatalf("d before moving selection should type, got %q", m.search.Value())
+	}
+	if cmd != nil && m.searchMoved {
+		t.Fatal("d before moving selection should not queue")
+	}
+}
+
 func TestSearchResultsReplaceFolder(t *testing.T) {
 	m := newModel(paths.Env{})
 	m.search.SetValue("wiley")
@@ -1378,6 +1474,9 @@ func TestLCDGlyphsBottomRowAligned(t *testing.T) {
 	if lcdGlyphs['8'] == lcdGlyphs['9'] {
 		t.Fatal("9 should be distinct from 8")
 	}
+	if strings.HasPrefix(lcdGlyphs['9'][1], "█") {
+		t.Fatalf("9 middle row should not extend the left stem: %q", lcdGlyphs['9'][1])
+	}
 }
 
 func TestWinampBarKeepsWaveformBesideClock(t *testing.T) {
@@ -1900,6 +1999,10 @@ func TestArtPickApplyURLUsesSelectedCover(t *testing.T) {
 	if got := m.artPickApplyURL(); got != "https://example.com/b.jpg" {
 		t.Fatalf("apply should use the selected cover, got %q", got)
 	}
+	got := art.PreviewURL(art.Result{Thumb: "https://i.discogs.com/x/fit-in/150x150/R-1.jpg"})
+	if got != "https://i.discogs.com/x/fit-in/600x600/R-1.jpg" {
+		t.Fatalf("apply should size discogs thumbs, got %q", got)
+	}
 }
 
 func TestArtPickShowsCachedCoverOnMove(t *testing.T) {
@@ -2031,5 +2134,49 @@ func TestArtPrefetchShowsFirstCover(t *testing.T) {
 	}
 	if m.artPreviewImg != img {
 		t.Fatal("first cover should fill the artwork panel")
+	}
+}
+
+func TestFolderOpenTargetBrowseTrack(t *testing.T) {
+	m := newModel(paths.Env{MusicRoot: "/music"})
+	m.focus = focusBrowse
+	m.browse = []library.BrowseEntry{{
+		Type:  "track",
+		Track: library.Track{Path: "/music/grime/track.mp3"},
+	}}
+	got := m.folderOpenTarget()
+	if got != "/music/grime" {
+		t.Fatalf("folder = %q", got)
+	}
+}
+
+func TestFolderOpenTargetBrowseDir(t *testing.T) {
+	m := newModel(paths.Env{MusicRoot: "/music"})
+	m.focus = focusBrowse
+	m.browse = []library.BrowseEntry{{
+		Type:  "dir",
+		Track: library.Track{Path: "grime/youtube"},
+	}}
+	got := m.folderOpenTarget()
+	if got != "/music/grime/youtube" {
+		t.Fatalf("folder = %q", got)
+	}
+}
+
+func TestFolderOpenTargetPlaylistTrack(t *testing.T) {
+	m := newModel(paths.Env{MusicRoot: "/music"})
+	m.focus = focusPlaylist
+	m.queueFiltered = []library.Track{{Path: "/music/dnb/a.mp3"}}
+	m.playlistIdx = 0
+	got := m.folderOpenTarget()
+	if got != "/music/dnb" {
+		t.Fatalf("folder = %q", got)
+	}
+}
+
+func TestOpenInFileManagerUsesOverride(t *testing.T) {
+	t.Setenv("EVOPLAYER_FILE_MANAGER", "true")
+	if err := openInFileManager(t.TempDir()); err != nil {
+		t.Fatal(err)
 	}
 }

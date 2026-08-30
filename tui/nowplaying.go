@@ -187,7 +187,7 @@ func (m model) renderNowPlayingBar() string {
 }
 
 func (m model) nowPlayingHintLegend() string {
-	return m.spaceHint() + "  " + hint("/", "find") + "  " + hint("?", "help") + "  " + hint("q", "quit")
+	return m.spaceHint() + "  " + hint("/", "find", 1, false) + "  " + hint("?", "help", 1, false) + "  " + hint("q", "quit", 1, false)
 }
 
 func (m model) renderBody(height int) (string, artworkPlacement) {
@@ -231,7 +231,8 @@ func (m model) browseLegendTick() string {
 }
 
 func (m model) browseHintLegend() string {
-	return hint("⏎", "play") + "  " + hint("d", "add dir")
+	active := m.focus == focusBrowse || m.focus == focusSearch
+	return hint("⏎", "play", 2, active) + "  " + hint("d", "add dir", 2, active)
 }
 
 func (m model) renderPlaylistPane(g playerGeom) string {
@@ -241,9 +242,9 @@ func (m model) renderPlaylistPane(g playerGeom) string {
 	if m.focus == focusPlaylist {
 		pulse = m.pulsePhase
 	}
-	bottomLeft := hint("l", "like")
+	bottomLeft := hint("l", "like", 3, m.focus == focusPlaylist)
 	if m.artPicker {
-		bottomLeft = hint("⏎", "set") + "  " + hint("s", "track")
+		bottomLeft = hint("⏎", "set", 3, m.focus == focusPlaylist) + "  " + hint("s", "track", 3, m.focus == focusPlaylist)
 	}
 	return fieldsetPad(m.playlistLegend(innerW), "", m.renderPlaylistInner(innerW, innerH), g.playlistW, g.bodyH, m.focus == focusPlaylist, pulse, panePadY, panePadX, bottomLeft, "", 3)
 }
@@ -257,9 +258,9 @@ func (m model) renderArtworkPane(g playerGeom) (string, artworkPlacement) {
 	}
 	var pane string
 	if overlay && !place.atCursor {
-		pane = fieldsetArt(m.artworkLegend(), layout, g.artworkW, g.bodyH, panePadX, g.artworkCols, hint("a", "art"), 4)
+		pane = fieldsetArt(m.artworkLegend(), layout, g.artworkW, g.bodyH, panePadX, g.artworkCols, hint("a", "art", 4, false), 4)
 	} else {
-		pane = fieldsetPad(m.artworkLegend(), "", layout, g.artworkW, g.bodyH, false, 0, 0, panePadX, "", hint("a", "art"), 4)
+		pane = fieldsetPad(m.artworkLegend(), "", layout, g.artworkW, g.bodyH, false, 0, 0, panePadX, "", hint("a", "art", 4, false), 4)
 	}
 	return pane, place
 }
@@ -567,7 +568,7 @@ var lcdGlyphs = map[rune][3]string{
 	'6': {"█▀▀", "█▀█", "▀▀▀"},
 	'7': {"▀▀█", "  █", "  ▀"},
 	'8': {"█▀█", "█▀█", "▀▀▀"},
-	'9': {"█▀█", "█▀█", " ▀▀"},
+	'9': {"█▀█", " ▀█", " ▀▀"},
 	'-': {"   ", "▀▀▀", "   "},
 	':': {" ", "▄", "▀"},
 }

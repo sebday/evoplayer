@@ -417,7 +417,7 @@ func (m model) renderPlayTime() string {
 
 func (m model) renderFooterHints() string {
 	if m.downloadSelected() {
-		return hint("⏎", "run")
+		return hint("⏎", "run", 0, false)
 	}
 	return ""
 }
@@ -431,11 +431,13 @@ func (m model) spaceHint() string {
 	if m.status.State == "playing" {
 		label = "pause"
 	}
-	return hint("space", label)
+	return hint("space", label, 1, false)
 }
 
-func hint(key, label string) string {
-	return styleSelected().Render(key) + " " + styleMuted().Render(label)
+func hint(key, label string, panelNum int, active bool) string {
+	hex := panelBorderHex(panelNum, active)
+	keyStyle := logoColor().NewStyle().Foreground(lipgloss.Color(hex)).Bold(true)
+	return keyStyle.Render(key) + " " + styleMuted().Render(label)
 }
 
 func heartPrefix(liked bool) string {

@@ -14,32 +14,39 @@ const PreviewSize = 600
 
 var (
 	discogsFitInRe      = regexp.MustCompile(`/fit-in/[0-9]+x[0-9]+/`)
-	discogsIPathRe      = regexp.MustCompile(`^(https://i\.discogs\.com/[^/]+)(/.*)$`)
 	discogsReleaseIDRe  = regexp.MustCompile(`discogs\.com/release/([0-9]+)`)
 	discogsReleaseAPIRe = regexp.MustCompile(`api\.discogs\.com/releases/([0-9]+)`)
 )
 
+// sizedDiscogsURL only upgrades legacy /fit-in/WxH/ thumbs. Signed i.discogs.com
+// URLs (rs:fit/...) must not be rewritten or the CDN returns 403.
 func sizedDiscogsURL(raw string, size int) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "null" {
 		return ""
 	}
+	if !discogsFitInRe.MatchString(raw) {
+		return raw
+	}
 	fit := fmt.Sprintf("/fit-in/%dx%d/", size, size)
-	if discogsFitInRe.MatchString(raw) {
-		return discogsFitInRe.ReplaceAllString(raw, fit)
-	}
-	if m := discogsIPathRe.FindStringSubmatch(raw); len(m) == 3 && !strings.HasPrefix(m[2], "/fit-in/") {
-		return m[1] + strings.TrimSuffix(fit, "/") + m[2]
-	}
-	return raw
+	return discogsFitInRe.ReplaceAllString(raw, fit)
 }
 
-// PreviewURL is a 600px Discogs image for the art panel, not the 150px list thumb.
+// PreviewURL picks a Discogs image URL for preview and apply. Full release URIs
+// that combine /fit-in/ with /rs:fit/ are often rejected by the CDN; the uri150
+// thumb still works and is upscaled when saved.
 func PreviewURL(r Result) string {
-	if u := sizedDiscogsURL(r.URL, PreviewSize); u != "" {
-		return u
+	url := strings.TrimSpace(r.URL)
+	thumb := strings.TrimSpace(r.Thumb)
+	if url != "" && strings.Contains(url, "/fit-in/") && strings.Contains(url, "/rs:fit/") {
+		if thumb != "" {
+			return thumb
+		}
 	}
-	return sizedDiscogsURL(r.Thumb, PreviewSize)
+	if url != "" {
+		return sizedDiscogsURL(url, PreviewSize)
+	}
+	return sizedDiscogsURL(thumb, PreviewSize)
 }
 
 type discogsSearchRow struct {
@@ -148,7 +155,7 @@ func searchDiscogsArtistID(id string) []Result {
 			thumb = u
 		}
 		out = append(out, Result{
-			URL:    sizedDiscogsURL(u, PreviewSize),
+			URL:    u,
 			Thumb:  thumb,
 			Label:  name,
 			Source: "discogs",
@@ -317,7 +324,7 @@ func discogsReleaseImages(resourceURL string, row discogsSearchRow) []Result {
 			imgLabel = label + " (" + t + ")"
 		}
 		out = append(out, Result{
-			URL:    sizedDiscogsURL(u, PreviewSize),
+			URL:    u,
 			Thumb:  thumb,
 			Label:  imgLabel,
 			Source: "discogs",
