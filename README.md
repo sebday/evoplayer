@@ -1,52 +1,40 @@
 # Evoplayer
 
-Music library and playback for Omarchy shell.
+Inspired by Bjarne's cliamp, I made a local music player with just the features I want and use. Styled like btop, because btop looks awesome.
 
-[![Evoplayer player panel](docs/screenshots/player.png)](docs/screenshots/player.png)
+I used Soundcloud for years and ignored my mp3 collection. This TUI (and probably Quickshell) music player is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library.
 
 ## Layout
 
 ```
-cmd/evoplayer/     Go daemon + CLI (playback, library, config, history, tags)
-qml/panel/         dashboard + monitor service QML
-omarchy-plugin/    Omarchy manifest, bar widget, install symlink target
+cmd/evoplayer/     thin main (serve, tui, CLI)
+server/            daemon, playback, library, ipc, cli
+tui/               terminal player
+gui/               quickshell dashboard (optional, not default)
 tests/
-scripts/           install + link into omarchy-shell
+scripts/           install (binary + desktop entry)
 ```
 
-## Install (Omarchy)
+## Install
 
 ```bash
 bash scripts/install
-omarchy-shell shell rescanPlugins
 ```
 
-Defaults:
-- Plugin → `~/.config/omarchy/plugins/seb.evoplayer`
-- QML → `qml/panel/` (via plugin `panel/` symlink)
-- Runtime → `~/.local/bin/evoplayer` (symlink to `~/.local/lib/evoplayer/evoplayer`)
+Puts `evoplayer` on `PATH` (`~/.local/bin/evoplayer` → `.build/evoplayer`).
 
-Open the player:
+## Usage
 
 ```bash
-omarchy-shell shell toggle seb.evoplayer '{}'
+evoplayer          # terminal player (starts serve if needed)
+evoplayer serve    # backend only
 ```
 
-See [AGENTS.md](AGENTS.md) for menu entry, autostart, state paths, and IPC tracing.
+See [AGENTS.md](AGENTS.md) for daemon IPC, state paths, and tracing.
 
 ## Library folders
 
-The music library is a tree of folders, not a genre taxonomy. Top-level dirs under the music root (`misc`, `drum&bass`, `house`, …) are where tracks are filed.
+The music library is a tree of folders, not a genre taxonomy. Set the root with `evoplayer config set paths.root /path/to/music` (stored as `[paths] root` in `music.toml`). If unset or that folder is missing, evoplayer uses `~/music` when that folder exists, otherwise `~/Music`. Top-level dirs under the music root (`Drum & Bass`, `House`, …) are where tracks are filed.
 
 A genre tag is only a hint for which of those folders to use. Untagged downloads stay in `.incoming` until you pick a folder; import then moves the file into that folder (`youtube/` or `mixes/` plus year for long mixes).
 
-## Dev
-
-```bash
-bash tests/test-omarchy-plugin
-bash tests/test-evoplayer-cli
-bash tests/test-evoplayer-qml-smoke
-omarchy restart shell
-```
-
-See [CONTRIB.md](CONTRIB.md) for commit message and branching conventions.

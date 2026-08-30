@@ -82,7 +82,6 @@ Stable fields on the enriched status object:
 | `position_label`, `duration_label` | string | Formatted times |
 | `volume` | int | 0–100 |
 | `art` | string | Absolute path to album art cache file |
-| `waveform` | string | Absolute path to waveform JSON cache |
 | `shuffle` | bool | Shuffle mode |
 | `playlist_pos`, `playlist_count` | int | Queue index (1-based pos) and length |
 | `queue_revision` | int | Monotonic queue version for `if_revision` guards |
@@ -150,7 +149,6 @@ evoplayer viz get
 | `library.meta` | `{ "path": "..." }` |
 | `library.browse` | `{ "path": "..." }` |
 | `library.warm` | `{ "path": "..." }` |
-| `library.warm.waveform` | `{ "path": "..." }` |
 | `library.warm.batch` | `{ "paths": [], "workers": 8, "art": true }` |
 
 See `capabilities` for the full method list.

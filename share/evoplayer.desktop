@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Evoplayer
+Comment=Music library and playback
+Exec=evoplayer
+Terminal=true
+Icon=audio-headphones
+Categories=Audio;AudioVideo;Player;Music;
+Keywords=music;player;evoplayer;library;
+StartupNotify=true
