@@ -5,6 +5,31 @@ import (
 	"testing"
 )
 
+func TestPadVizInnerKeepsPlayheadAligned(t *testing.T) {
+	innerW := 12
+	visualW := 8
+	playX := 3
+	head := string(wavePlayhead)
+	rows := []string{
+		strings.Repeat(" ", playX) + head + strings.Repeat(" ", visualW-playX-1),
+		strings.Repeat("⣿", playX) + head + strings.Repeat("⣿", visualW-playX-1),
+		strings.Repeat(" ", playX) + head + strings.Repeat(" ", visualW-playX-1),
+		strings.Repeat(" ", playX) + head + strings.Repeat(" ", visualW-playX-1),
+		strings.Repeat(" ", playX) + head + strings.Repeat(" ", visualW-playX-1),
+	}
+	got := padVizInner(rows, innerW, visualW)
+	wantCol := vizPadLeft + playX
+	for i, line := range got {
+		plain := []rune(lipglossStrip(line))
+		if len(plain) < wantCol+1 {
+			t.Fatalf("row %d too short: %q", i, line)
+		}
+		if plain[wantCol] != wavePlayhead {
+			t.Fatalf("row %d playhead at %d want col %d: %q", i, strings.IndexRune(string(plain), wavePlayhead), wantCol, line)
+		}
+	}
+}
+
 func TestDownsamplePeaksWidth(t *testing.T) {
 	peaks := make([]int, 100)
 	for i := range peaks {
@@ -122,10 +147,13 @@ func TestWaveformOverlayLightsLiveDots(t *testing.T) {
 		t.Fatalf("vis should use terminal palette, got %q", got)
 	}
 	plainLines := strings.Split(plain, "\n")
-	if len(plainLines) > 2 {
-		cols := []rune(plainLines[2])
-		if len(cols) < 5 || cols[4] != wavePlayhead {
-			t.Fatalf("overlay should keep a playhead, got %q", plainLines[2])
+	for i, line := range plainLines {
+		cols := []rune(line)
+		if len(cols) < 5 {
+			t.Fatalf("row %d too narrow: %q", i, line)
+		}
+		if cols[4] != wavePlayhead {
+			t.Fatalf("overlay row %d playhead at %d want │, got %q", i, 4, line)
 		}
 	}
 }
@@ -296,14 +324,14 @@ func isBraille(r rune) bool {
 }
 
 func TestVizModeCycle(t *testing.T) {
-	if vizModeBars.next() != vizModeFill {
-		t.Fatalf("bars should cycle to fill, got %s", vizModeBars.next())
+	if vizModeBars.next() != vizModeNone {
+		t.Fatalf("bars should toggle to none, got %s", vizModeBars.next())
 	}
 	if vizModeNone.next() != vizModeBars {
-		t.Fatalf("none should wrap to bars, got %s", vizModeNone.next())
+		t.Fatalf("none should toggle to bars, got %s", vizModeNone.next())
 	}
 	if vizModeBars.prev() != vizModeNone {
-		t.Fatalf("bars should wrap back to none, got %s", vizModeBars.prev())
+		t.Fatalf("bars should toggle back to none, got %s", vizModeBars.prev())
 	}
 }
 

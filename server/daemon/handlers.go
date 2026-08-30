@@ -87,7 +87,11 @@ func (d *Daemon) broadcastStateFull() {
 }
 
 func (d *Daemon) broadcastViz(levels []float32) {
-	_ = viz.WriteFrame(viz.FramePath(d.Env.SocketPath), levels)
+	if d.vizFrame != nil {
+		_ = d.vizFrame.Write(levels)
+	} else {
+		_ = viz.WriteFrame(viz.FramePath(d.Env.SocketPath), levels)
+	}
 	if !d.Server.HasEventClients() {
 		return
 	}

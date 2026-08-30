@@ -203,6 +203,8 @@ SectionPanel {
                     spacing: Theme.spacingS
 
                     Text {
+                        Layout.preferredWidth: 36
+                        horizontalAlignment: Text.AlignRight
                         visible: modelData.count !== undefined && modelData.count !== null
                         text: String(modelData.count)
                         color: Theme.foreground

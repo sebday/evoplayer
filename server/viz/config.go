@@ -9,7 +9,7 @@ const (
 	tuneAutosens       = 2
 	tuneNoiseReduction = 34
 	tuneMonstercat     = 1.0
-	tuneFrameRate      = 45
+	tuneFrameRate      = 30
 	tuneLowCutoff      = 50
 	tuneHighCutoff     = 10000
 )

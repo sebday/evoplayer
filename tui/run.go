@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"os"
+
+	"github.com/blacktop/go-termimg"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/sebday/evoplayer/server/cli"
@@ -12,7 +15,9 @@ func Run(env paths.Env, exe string) error {
 		return err
 	}
 	probeArtProtocol()
-	p := tea.NewProgram(newModel(env), tea.WithAltScreen())
+	m := newModel(env)
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithOutput(newArtRestorer(os.Stdout, m.frames)))
 	_, err := p.Run()
+	_ = termimg.ClearAll()
 	return err
 }

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,8 +25,9 @@ type vizPainter struct {
 	lastKey uint64
 	lastX   int
 	lastOut string
-	lastSalt uint64
 	mode    vizMode
+	reader  viz.FrameReader
+	outBuf  strings.Builder
 }
 
 func newVizPainter(env paths.Env, frames *frameCache) *vizPainter {
@@ -64,7 +66,6 @@ func (p *vizPainter) setTransport(playing bool, pos, dur float64, hasWave bool) 
 	p.lastKey = 0
 	p.lastX = -2
 	p.lastOut = ""
-	p.lastSalt = 0
 	if p.stop != nil {
 		close(p.stop)
 		p.stop = nil
@@ -79,7 +80,6 @@ func (p *vizPainter) setMode(mode vizMode) {
 	p.mode = mode
 	p.lastOut = ""
 	p.lastKey = 0
-	p.lastSalt = 0
 	p.mu.Unlock()
 }
 
@@ -98,7 +98,10 @@ func (p *vizPainter) loop(stop <-chan struct{}) {
 }
 
 func (p *vizPainter) frame() {
-	levels := readSpectrumFrame(p.env)
+	levels, ok := p.readSpectrum()
+	if !ok {
+		return
+	}
 	p.mu.Lock()
 	playing := p.playing
 	hasWave := p.hasWave
@@ -129,33 +132,30 @@ func (p *vizPainter) frame() {
 	if row < 1 || col < 1 || innerW < 8 {
 		return
 	}
-	waveW := max(8, innerW-2)
+	waveW := vizWaveWidth(innerW)
 	playX := wavePlayCol(playFrac, waveW)
-	salt := uint64(0)
-	if mode == vizModeScatter {
-		salt = uint64(time.Now().UnixNano() / int64(90*time.Millisecond))
-	}
-	if key == p.lastKey && playX == p.lastX && salt == p.lastSalt && p.lastOut != "" {
+	if key == p.lastKey && playX == p.lastX && p.lastOut != "" {
 		return
 	}
 
-	lines := composeVizLines(p.frames, levels, livePeaks, playX, hasWave, mode, salt)
+	lines := composeVizLines(p.frames, levels, livePeaks, playX, hasWave, mode)
 	if len(lines) == 0 {
 		return
 	}
-	out := lines[0]
+	p.outBuf.Reset()
+	p.outBuf.WriteString(lines[0])
 	for i := 1; i < len(lines); i++ {
-		out += "\n" + lines[i]
+		p.outBuf.WriteByte('\n')
+		p.outBuf.WriteString(lines[i])
 	}
+	out := p.outBuf.String()
 	if out == p.lastOut {
 		p.lastKey = key
 		p.lastX = playX
-		p.lastSalt = salt
 		return
 	}
 	p.lastKey = key
 	p.lastX = playX
-	p.lastSalt = salt
 	p.lastOut = out
 	paintVizAt(row, col, lines)
 }
@@ -168,13 +168,13 @@ func spectrumKey(levels []float64) uint64 {
 	return h
 }
 
-func readSpectrumFrame(env paths.Env) []float64 {
-	if env.SocketPath == "" {
-		return nil
+func (p *vizPainter) readSpectrum() ([]float64, bool) {
+	if p.env.SocketPath == "" {
+		return nil, true
 	}
-	levels, err := viz.ReadFrame(viz.FramePath(env.SocketPath))
-	if err != nil || len(levels) == 0 {
-		return nil
+	levels, err := p.reader.Read(viz.FramePath(p.env.SocketPath))
+	if err != nil {
+		return nil, false
 	}
-	return levels
+	return levels, true
 }

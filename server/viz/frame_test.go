@@ -28,6 +28,24 @@ func TestSpectrumFrameRoundTrip(t *testing.T) {
 	if _, err := ReadFrame(path + ".missing"); !os.IsNotExist(err) {
 		t.Fatalf("missing = %v", err)
 	}
+
+	w := NewFrameWriter(path + ".reuse")
+	defer w.Close()
+	if err := w.Write(in); err != nil {
+		t.Fatal(err)
+	}
+	second := []float32{0, 0.25, 0.75, 1}
+	if err := w.Write(second); err != nil {
+		t.Fatal(err)
+	}
+	var r FrameReader
+	got, err := r.Read(path + ".reuse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(second) || got[2] != float64(second[2]) {
+		t.Fatalf("reuse read = %v", got)
+	}
 }
 
 func TestFramePath(t *testing.T) {

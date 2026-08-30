@@ -94,6 +94,9 @@ func daemonBinaryStale(env paths.Env, exe string) bool {
 }
 
 func restartDaemon(env paths.Env) {
+	if DaemonUp(env) {
+		_ = savePlayerState(env)
+	}
 	pid, _ := daemon.ReadLockPID(env.DaemonLock)
 	if pid > 0 && daemon.ProcessAlive(pid) {
 		_ = daemon.StopProcess(pid)

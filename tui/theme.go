@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"math"
 	"os"
 	"strings"
 	"sync"
@@ -11,15 +10,23 @@ import (
 )
 
 var (
-	colAccent  = lipgloss.Color("5")  // magenta
-	colGood    = lipgloss.Color("2")  // green
-	colMuted   = lipgloss.Color("8")  // bright black
-	colText    = lipgloss.Color("7")  // white
-	colBorder  = lipgloss.Color("8")  // bright black
-	colWarn    = lipgloss.Color("3")  // yellow
-	colPulseLo = lipgloss.Color("6")  // cyan
-	colPulseHi = lipgloss.Color("14") // bright cyan
+	colAccent  = lipgloss.Color("4") // purple
+	colGood    = lipgloss.Color("2") // green
+	colMuted   = lipgloss.Color("8") // bright black
+	colText    = lipgloss.Color("7") // white
+	colBG      = lipgloss.Color("0") // terminal background (black)
+	colBorder  = lipgloss.Color("8") // bright black
+	colWarn    = lipgloss.Color("3") // yellow
 )
+
+func panelIdleColor(num int) lipgloss.Color {
+	switch num {
+	case 1, 2, 3, 4:
+		return lipgloss.Color("6")
+	default:
+		return colAccent
+	}
+}
 
 func init() {
 	lipgloss.SetColorProfile(termenv.ANSI)
@@ -57,10 +64,10 @@ func styleText() lipgloss.Style {
 }
 
 func fieldset(legend, inner string, width, height int, active bool, pulse float64, num int) string {
-	return fieldsetPad(legend, inner, width, height, active, pulse, 1, 1, "", "", num)
+	return fieldsetPad(legend, "", inner, width, height, active, pulse, 1, 1, "", "", num)
 }
 
-func fieldsetPad(legend, inner string, width, height int, active bool, pulse float64, padY, padX int, bottomLeft, bottomRight string, num int) string {
+func fieldsetPad(legend, legendTopRight, inner string, width, height int, active bool, pulse float64, padY, padX int, bottomLeft, bottomRight string, num int) string {
 	width = max(8, width)
 	innerW := width - 2
 	innerH := max(1, height-2)
@@ -72,9 +79,33 @@ func fieldsetPad(legend, inner string, width, height int, active bool, pulse flo
 	for i := range lines {
 		lines[i] = padExact(lines[i], innerW)
 	}
+	return fieldsetBox(legend, legendTopRight, lines, innerW, active, pulse, bottomLeft, bottomRight, num)
+}
 
-	border := newBorderChase(active, pulse, innerW, len(lines))
-	top := fieldsetTop(legend, innerW, border, num)
+func fieldsetArt(legend, inner string, width, height, padX, cols int, bottomRight string, num int) string {
+	width = max(8, width)
+	innerW := width - 2
+	innerH := max(1, height-2)
+	cols = max(1, cols)
+	padX = max(0, padX)
+	src := strings.Split(inner, "\n")
+	left := strings.Repeat(" ", padX)
+	right := strings.Repeat(" ", max(0, innerW-padX-cols))
+	blank := strings.Repeat(" ", innerW)
+	lines := make([]string, innerH)
+	for i := 0; i < innerH; i++ {
+		if i < len(src) && src[i] != "" {
+			lines[i] = left + src[i] + right
+		} else {
+			lines[i] = blank
+		}
+	}
+	return fieldsetBox(legend, "", lines, innerW, false, 0, "", bottomRight, num)
+}
+
+func fieldsetBox(legend, legendTopRight string, lines []string, innerW int, active bool, pulse float64, bottomLeft, bottomRight string, num int) string {
+	border := newBorderChase(active, innerW, len(lines), num)
+	top := fieldsetTop(legend, legendTopRight, innerW, border, num)
 	var mid strings.Builder
 	for r, line := range lines {
 		mid.WriteString(border.cell("left", r, "│") + line + border.cell("right", r, "│") + "\n")
@@ -83,21 +114,40 @@ func fieldsetPad(legend, inner string, width, height int, active bool, pulse flo
 	return top + "\n" + mid.String() + bottom
 }
 
+func browseSectionRule(width int, active bool) string {
+	w := max(4, width)
+	border := newBorderChase(active, w, 1, 2)
+	return border.paint(strings.Repeat("─", w))
+}
+
 // fieldsetInline is a single-line fieldset without vertical inner padding (e.g. search).
 func fieldsetInline(legend, inner string, width int, active bool, pulse float64, num int) string {
+	return fieldsetInlineEdge(legend, inner, width, active, pulse, num, true)
+}
+
+// fieldsetInlineFlush is like fieldsetInline but omits the bottom border so hints
+// can sit flush on the terminal's last row.
+func fieldsetInlineFlush(legend, inner string, width int, active bool, pulse float64, num int) string {
+	return fieldsetInlineEdge(legend, inner, width, active, pulse, num, false)
+}
+
+func fieldsetInlineEdge(legend, inner string, width int, active bool, pulse float64, num int, bottom bool) string {
 	width = max(8, width)
 	innerW := width - 2
 	line := padExact(lipgloss.NewStyle().Padding(0, 1).Render(inner), innerW)
 
-	border := newBorderChase(active, pulse, innerW, 1)
-	top := fieldsetTop(legend, innerW, border, num)
+	border := newBorderChase(active, innerW, 1, num)
+	top := fieldsetTop(legend, "", innerW, border, num)
 	mid := border.cell("left", 0, "│") + line + border.cell("right", 0, "│")
-	bottom := fieldsetBottom("", "", innerW, border)
-	return top + "\n" + mid + "\n" + bottom
+	if !bottom {
+		return top + "\n" + mid
+	}
+	bottomEdge := fieldsetBottom("", "", innerW, border)
+	return top + "\n" + mid + "\n" + bottomEdge
 }
 
-func fieldsetTop(legend string, innerW int, border borderChase, num int) string {
-	return fieldsetEdge(legend, "", innerW, border, "top", "╭", "╮", "┐", "┌", num)
+func fieldsetTop(left, right string, innerW int, border borderChase, num int) string {
+	return fieldsetEdge(left, right, innerW, border, "top", "╭", "╮", "┐", "┌", num)
 }
 
 func fieldsetBottom(left, right string, innerW int, border borderChase) string {
@@ -106,6 +156,10 @@ func fieldsetBottom(left, right string, innerW int, border borderChase) string {
 
 func fieldsetEdge(left, right string, innerW int, border borderChase, side, start, end, dropOpen, dropClose string, num int) string {
 	hex := border.hex()
+	branch := side == "top" && right == "─"
+	if branch {
+		right = ""
+	}
 	leftLabel := styleFieldsetLegend(left, hex, border.active)
 	rightLabel := styleFieldsetLegend(right, hex, border.active)
 	numStr := stylePanelNum(num, hex)
@@ -164,6 +218,9 @@ func fieldsetEdge(left, right string, innerW int, border borderChase, side, star
 		writeRaw(numStr)
 		writeRaw(leftLabel)
 		writeCh(dropClose)
+		if branch {
+			writeCh("┬")
+		}
 	}
 
 	rightNeed := 1
@@ -205,22 +262,24 @@ func styleFieldsetLegend(legend, hex string, active bool) string {
 	if strings.Contains(label, "\x1b") {
 		return label
 	}
-	st := logoColor().NewStyle().Foreground(lipgloss.Color(hex))
-	if active {
-		st = st.Bold(true)
-	}
+	st := logoColor().NewStyle().Foreground(lipgloss.Color(hex)).Bold(true)
 	return st.Render(label)
 }
 
 type borderChase struct {
 	active bool
-	phase  float64
 	innerW int
 	bodyH  int
+	idle   lipgloss.Color
 }
 
-func newBorderChase(active bool, phase float64, innerW, bodyH int) borderChase {
-	return borderChase{active: active, phase: phase, innerW: max(1, innerW), bodyH: max(1, bodyH)}
+func newBorderChase(active bool, innerW, bodyH, num int) borderChase {
+	return borderChase{
+		active: active,
+		innerW: max(1, innerW),
+		bodyH:  max(1, bodyH),
+		idle:   panelIdleColor(num),
+	}
 }
 
 func (c borderChase) cell(side string, pos int, ch string) string {
@@ -232,21 +291,22 @@ func (c borderChase) paint(ch string) string {
 }
 
 func (c borderChase) hex() string {
-	if !c.active {
-		return string(colAccent)
+	if c.active {
+		return string(colGood)
 	}
-	t := 0.45
-	if c.phase >= 0 {
-		t = (math.Sin(c.phase*2*math.Pi) + 1) / 2
-	}
-	if t < 0.5 {
-		return string(colPulseLo)
-	}
-	return string(colPulseHi)
+	return string(c.idle)
 }
 
 func padExact(s string, width int) string {
 	return lipgloss.NewStyle().MaxWidth(width).Width(width).Render(s)
+}
+
+func padLinesExact(s string, width int) string {
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = padExact(lines[i], width)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func padToHeight(s string, height int) string {
@@ -282,11 +342,8 @@ func styleGood() lipgloss.Style {
 	return logoColor().NewStyle().Foreground(colGood)
 }
 
-func stylePill() lipgloss.Style {
-	return lipgloss.NewStyle().
-		Foreground(colMuted).
-		Background(lipgloss.Color("0")).
-		Padding(0, 1)
+func styleNowPlayingRow() lipgloss.Style {
+	return logoColor().NewStyle().Background(colGood).Foreground(colBG)
 }
 
 func styleWarn() lipgloss.Style {

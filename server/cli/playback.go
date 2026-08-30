@@ -13,6 +13,7 @@ import (
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
+	"github.com/sebday/evoplayer/server/status"
 	"github.com/sebday/evoplayer/server/warm"
 )
 
@@ -262,20 +263,7 @@ func waitForTrack(env paths.Env, path string, timeout time.Duration) (playback.S
 }
 
 func saveStatus(env paths.Env, st playback.Status) error {
-	if st.Path == "" {
-		return nil
-	}
-	payload := map[string]interface{}{
-		"path":     st.Path,
-		"genre":    st.Genre,
-		"playlist": st.Playlist,
-		"position": st.Position,
-	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(env.PlayerState, b, 0o644)
+	return status.Write(env, st)
 }
 
 func warmTrack(env paths.Env, path string) {
@@ -382,20 +370,7 @@ func savePlayerState(env paths.Env) error {
 	if err != nil {
 		return nil
 	}
-	if st.Path == "" {
-		return nil
-	}
-	payload := map[string]interface{}{
-		"path":     st.Path,
-		"genre":    st.Genre,
-		"playlist": st.Playlist,
-		"position": st.Position,
-	}
-	b, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(env.PlayerState, b, 0o644)
+	return status.Write(env, st)
 }
 
 func resumeSaved(env paths.Env, exe string, playing bool) error {

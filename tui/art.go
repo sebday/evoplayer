@@ -7,10 +7,13 @@ import (
 	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/blacktop/go-termimg"
 	"github.com/charmbracelet/lipgloss"
@@ -29,7 +32,6 @@ type artCache struct {
 	seq     string
 	overlay bool
 	shown   bool
-	frame   int
 }
 
 var (
@@ -65,12 +67,12 @@ func artProtocol() termimg.Protocol {
 	override := os.Getenv("EVOPLAYER_ART_PROTOCOL")
 	tty := term.IsTerminal(os.Stdout.Fd())
 	emu := detectEmulator()
-	detected := termimg.Unsupported
 	if tty {
 		tuneArtFeatures(emu)
-		detected = termimg.DetectProtocol()
 	}
-	artProto = pickArtProtocol(override, tty, emu, detected)
+	// Skip DetectProtocol(): it CSI-queries stdin and leftover bytes eat the
+	// first keypress once bubbletea starts reading the TTY.
+	artProto = pickArtProtocol(override, tty, emu, termimg.Unsupported)
 	artProtoSet = true
 	return artProto
 }
@@ -172,12 +174,24 @@ func parentPID(pid int) int {
 }
 
 func tuneArtFeatures(emu string) {
+	bypass := os.Getenv("TERMIMG_BYPASS_DETECTION")
+	if bypass == "" {
+		switch emu {
+		case "foot":
+			bypass = "sixel"
+		case "kitty", "ghostty", "wezterm":
+			bypass = "kitty"
+		default:
+			bypass = "halfblocks"
+		}
+		_ = os.Setenv("TERMIMG_BYPASS_DETECTION", bypass)
+	}
 	feat := termimg.QueryTerminalFeatures()
-	artQueryW, artQueryH = feat.FontWidth, feat.FontHeight
 	iw, ih := artCellPixels()
 	cw, ch := pickArtCellSize(artQueryW, artQueryH, iw, ih)
 	feat.FontWidth = cw
 	feat.FontHeight = ch
+	artQueryW, artQueryH = cw, ch
 	artCellW, artCellH = cw, ch
 	switch emu {
 	case "foot":
@@ -231,6 +245,9 @@ func artBlank(cols, rows int) string {
 	return strings.Repeat(line+"\n", rows-1) + line
 }
 
+const kittyArtID = 1
+const kittyPlaceholder = "\U0010EEEE"
+
 func encodeArt(img image.Image, cols, rows int) (layout, seq string, overlay bool) {
 	cols = max(2, cols)
 	rows = max(1, rows)
@@ -241,11 +258,67 @@ func encodeArt(img image.Image, cols, rows int) (layout, seq string, overlay boo
 	if !graphicsProtocol(p) {
 		return renderArt(img, cols, rows), "", false
 	}
+	if p == termimg.Kitty {
+		layout, seq, err := renderKittyArt(img, cols, rows)
+		if err != nil || seq == "" {
+			return renderArt(img, cols, rows), "", false
+		}
+		return layout, seq, true
+	}
 	out, err := renderGraphicsArt(img, cols, rows, p)
 	if err != nil || out == "" {
 		return renderArt(img, cols, rows), "", false
 	}
 	return artBlank(cols, rows), out, true
+}
+
+func renderKittyArt(img image.Image, cols, rows int) (layout, seq string, err error) {
+	cols = max(2, cols)
+	rows = max(1, rows)
+	ti := termimg.New(img).Protocol(termimg.Kitty).Size(cols, rows).Compression(true).ZIndex(1).ImageNum(kittyArtID)
+	seq, err = ti.Render()
+	if err != nil || seq == "" {
+		return "", "", err
+	}
+	seq = stripKittyPlaceholders(seq)
+	if seq == "" {
+		return "", "", fmt.Errorf("empty kitty transmit")
+	}
+	return artBlank(cols, rows), seq, nil
+}
+
+func stripKittyPlaceholders(seq string) string {
+	if i := strings.Index(seq, kittyPlaceholder); i >= 0 {
+		seq = seq[:i]
+	}
+	return strings.TrimRight(seq, "\r\n")
+}
+
+func kittyPlacementCells(seq string) (cols, rows int, ok bool) {
+	cIdx := strings.Index(seq, ",c=")
+	rIdx := strings.Index(seq, ",r=")
+	if cIdx < 0 || rIdx < 0 {
+		return 0, 0, false
+	}
+	cIdx += 3
+	cEnd := cIdx
+	for cEnd < len(seq) && seq[cEnd] >= '0' && seq[cEnd] <= '9' {
+		cEnd++
+	}
+	rIdx += 3
+	rEnd := rIdx
+	for rEnd < len(seq) && seq[rEnd] >= '0' && seq[rEnd] <= '9' {
+		rEnd++
+	}
+	if cEnd == cIdx || rEnd == rIdx {
+		return 0, 0, false
+	}
+	c, err1 := strconv.Atoi(seq[cIdx:cEnd])
+	r, err2 := strconv.Atoi(seq[rIdx:rEnd])
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return c, r, true
 }
 
 func renderGraphicsArt(img image.Image, cols, rows int, p termimg.Protocol) (string, error) {
@@ -282,15 +355,143 @@ func renderSixel(img image.Image, pxW, pxH int) (string, error) {
 	return buf.String(), nil
 }
 
-func overlayArt(view, seq string, row, col, frame int) string {
-	if seq == "" || row < 1 || col < 1 {
+func overlayArt(view, seq string, row, col int) string {
+	if seq == "" {
 		return view
 	}
-	if frame <= 0 {
-		return view + fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", row, col, seq)
+	if row < 1 || col < 1 {
+		return view + seq
 	}
-	n := frame%2 + 1
-	return view + fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u\x1b[%dC\x1b[%dD", row, col, seq, n, n)
+	return view + fmt.Sprintf("\x1b[s\x1b[%d;%dH%s\x1b[u", row, col, seq)
+}
+
+func kittyPlaceSeq(cols, rows int) string {
+	cols = max(2, cols)
+	rows = max(1, rows)
+	return fmt.Sprintf("\x1b_Ga=p,I=%d,c=%d,r=%d,z=1,q=2\x1b\\", kittyArtID, cols, rows)
+}
+
+func (m *model) storeArtOverlay(seq string, row, col, cols, rows int) {
+	if m.frames == nil {
+		return
+	}
+	m.frames.mu.Lock()
+	if m.frames.quitting {
+		m.frames.mu.Unlock()
+		return
+	}
+	place := seq
+	if strings.Contains(seq, "\x1b_G") {
+		place = kittyPlaceSeq(cols, rows)
+	}
+	m.frames.artDirty = m.frames.artSeq != seq || m.frames.artRow != row || m.frames.artCol != col
+	m.frames.artSeq = seq
+	m.frames.artPlace = place
+	m.frames.artRow = row
+	m.frames.artCol = col
+	m.frames.mu.Unlock()
+}
+
+func (m *model) clearStoredArtOverlay() {
+	if m.frames == nil {
+		return
+	}
+	m.frames.mu.Lock()
+	m.frames.artSeq = ""
+	m.frames.artPlace = ""
+	m.frames.artRow = 0
+	m.frames.artCol = 0
+	m.frames.artDirty = false
+	m.frames.mu.Unlock()
+}
+
+type artRestorer struct {
+	w         io.Writer
+	fd        uintptr
+	frames    *frameCache
+	restoring bool
+}
+
+func newArtRestorer(f *os.File, frames *frameCache) *artRestorer {
+	return &artRestorer{w: f, fd: f.Fd(), frames: frames}
+}
+
+func (w *artRestorer) Write(p []byte) (int, error) {
+	n, err := w.w.Write(p)
+	if err != nil {
+		return n, err
+	}
+	w.restore()
+	return n, nil
+}
+
+func (w *artRestorer) Read(p []byte) (int, error) {
+	if r, ok := w.w.(io.Reader); ok {
+		return r.Read(p)
+	}
+	return 0, io.EOF
+}
+
+func (w *artRestorer) Close() error {
+	return nil
+}
+
+func (w *artRestorer) Fd() uintptr {
+	if w.fd != 0 {
+		return w.fd
+	}
+	return os.Stdout.Fd()
+}
+
+func (w *artRestorer) restore() {
+	if w == nil || w.frames == nil || w.restoring {
+		return
+	}
+	w.frames.mu.Lock()
+	if w.frames.quitting {
+		w.frames.mu.Unlock()
+		return
+	}
+	row, col := w.frames.artRow, w.frames.artCol
+	seq := w.frames.artPlace
+	if w.frames.artDirty {
+		seq = w.frames.artSeq
+		w.frames.artDirty = false
+	}
+	w.frames.mu.Unlock()
+	if seq == "" || row < 1 || col < 1 {
+		return
+	}
+	w.restoring = true
+	vizOutMu.Lock()
+	_, _ = w.w.Write([]byte(overlayArt("", seq, row, col)))
+	vizOutMu.Unlock()
+	w.restoring = false
+}
+
+const artFetchUA = "evoplayer/1.0 (local music player)"
+
+var artHTTP = &http.Client{Timeout: 6 * time.Second}
+
+func fetchArtURL(url string) (image.Image, error) {
+	if url == "" {
+		return nil, fmt.Errorf("empty art url")
+	}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", artFetchUA)
+	resp, err := artHTTP.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("art fetch %d", resp.StatusCode)
+	}
+	img, _, err := image.Decode(resp.Body)
+	return img, err
 }
 
 func loadArt(path string) image.Image {
@@ -326,6 +527,21 @@ func placeholderArt(cols, rows int) string {
 		Render("▀")
 	line := strings.Repeat(cell, max(2, cols))
 	return strings.Repeat(line+"\n", max(1, rows)-1) + line
+}
+
+func boundImage(src image.Image, maxPx int) image.Image {
+	if src == nil || maxPx < 1 {
+		return src
+	}
+	b := src.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w <= maxPx && h <= maxPx {
+		return src
+	}
+	if w >= h {
+		return scaleImage(src, maxPx, max(1, h*maxPx/w))
+	}
+	return scaleImage(src, max(1, w*maxPx/h), maxPx)
 }
 
 func scaleImage(src image.Image, w, h int) *image.RGBA {

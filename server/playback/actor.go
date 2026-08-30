@@ -390,6 +390,11 @@ func (a *Actor) Toggle() error {
 			a.mu.Unlock()
 			return nil
 		}
+		if a.paused && a.stream == nil {
+			pos := a.positionSec
+			a.mu.Unlock()
+			return a.loadCurrentAt(pos, false)
+		}
 		if !a.paused {
 			pos := a.playbackAnchorSec + time.Since(a.playbackAnchorTime).Seconds()
 			if a.durationSec > 0 && pos > a.durationSec {
@@ -498,7 +503,49 @@ func (a *Actor) syncVizDelay() {
 	a.viz.SetPresentationDelay(delay)
 }
 
+func (a *Actor) Restore(paths []string, startPath string, position float64) error {
+	return a.dispatchErr(func() error {
+		filtered := make([]string, 0, len(paths))
+		for _, p := range paths {
+			if IsSupportedPath(p) {
+				filtered = append(filtered, p)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil
+		}
+		idx := 0
+		for i, p := range filtered {
+			if p == startPath {
+				idx = i
+				break
+			}
+		}
+		path := filtered[idx]
+		if position < 0 {
+			position = 0
+		}
+		a.mu.Lock()
+		a.queue = filtered
+		a.index = idx
+		a.shuffleOrd = nil
+		a.bumpQueueRevLocked()
+		a.path = path
+		a.positionSec = position
+		a.playbackAnchorSec = position
+		a.paused = true
+		a.stream = nil
+		a.mu.Unlock()
+		a.emit()
+		return nil
+	})
+}
+
 func (a *Actor) loadCurrent() error {
+	return a.loadCurrentAt(0, false)
+}
+
+func (a *Actor) loadCurrentAt(position float64, paused bool) error {
 	a.mu.Lock()
 	if len(a.queue) == 0 {
 		a.mu.Unlock()
@@ -539,7 +586,7 @@ func (a *Actor) loadCurrent() error {
 	a.positionSec = 0
 	a.playbackAnchorSec = 0
 	a.playbackAnchorTime = time.Now()
-	a.paused = false
+	a.paused = paused
 	a.mu.Unlock()
 
 	if oldStream != nil {
@@ -571,7 +618,11 @@ func (a *Actor) loadCurrent() error {
 	a.startPositionLoopLocked()
 	a.mu.Unlock()
 	a.syncVizDelay()
-	a.emit()
+	if position > 0 {
+		_ = a.seekPlayback(position)
+	} else {
+		a.emit()
+	}
 
 	go a.watchPlaybackEnd(path, loadGen, done)
 	return nil
@@ -583,20 +634,27 @@ func (a *Actor) restartPlaybackFrom(seconds float64) error {
 
 func (a *Actor) seekPlayback(seconds float64) error {
 	a.mu.Lock()
-	if a.stream == nil || a.path == "" {
+	if a.path == "" {
 		a.mu.Unlock()
 		return nil
-	}
-	stream := a.stream
-	srcRate := a.sourceSampleRate
-	if srcRate <= 0 {
-		srcRate = outputSampleRate
 	}
 	if seconds < 0 {
 		seconds = 0
 	}
 	if a.durationSec > 0 && seconds > a.durationSec {
 		seconds = a.durationSec
+	}
+	if a.stream == nil {
+		a.positionSec = seconds
+		a.playbackAnchorSec = seconds
+		a.mu.Unlock()
+		a.emit()
+		return nil
+	}
+	stream := a.stream
+	srcRate := a.sourceSampleRate
+	if srcRate <= 0 {
+		srcRate = outputSampleRate
 	}
 	samples := int(seconds * float64(srcRate))
 	a.mu.Unlock()

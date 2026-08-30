@@ -10,11 +10,37 @@ import (
 	"strings"
 )
 
+const PreviewSize = 600
+
 var (
 	discogsFitInRe      = regexp.MustCompile(`/fit-in/[0-9]+x[0-9]+/`)
+	discogsIPathRe      = regexp.MustCompile(`^(https://i\.discogs\.com/[^/]+)(/.*)$`)
 	discogsReleaseIDRe  = regexp.MustCompile(`discogs\.com/release/([0-9]+)`)
 	discogsReleaseAPIRe = regexp.MustCompile(`api\.discogs\.com/releases/([0-9]+)`)
 )
+
+func sizedDiscogsURL(raw string, size int) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" {
+		return ""
+	}
+	fit := fmt.Sprintf("/fit-in/%dx%d/", size, size)
+	if discogsFitInRe.MatchString(raw) {
+		return discogsFitInRe.ReplaceAllString(raw, fit)
+	}
+	if m := discogsIPathRe.FindStringSubmatch(raw); len(m) == 3 && !strings.HasPrefix(m[2], "/fit-in/") {
+		return m[1] + strings.TrimSuffix(fit, "/") + m[2]
+	}
+	return raw
+}
+
+// PreviewURL is a 600px Discogs image for the art panel, not the 150px list thumb.
+func PreviewURL(r Result) string {
+	if u := sizedDiscogsURL(r.URL, PreviewSize); u != "" {
+		return u
+	}
+	return sizedDiscogsURL(r.Thumb, PreviewSize)
+}
 
 type discogsSearchRow struct {
 	Title       string `json:"title"`
@@ -122,7 +148,7 @@ func searchDiscogsArtistID(id string) []Result {
 			thumb = u
 		}
 		out = append(out, Result{
-			URL:    u,
+			URL:    sizedDiscogsURL(u, PreviewSize),
 			Thumb:  thumb,
 			Label:  name,
 			Source: "discogs",
@@ -217,7 +243,7 @@ func searchDiscogs(query, catno, year, kind string) []Result {
 		artURL := ""
 		thumb := row.Thumb
 		if thumb != "" && thumb != "null" {
-			artURL = discogsFitInRe.ReplaceAllString(thumb, "/fit-in/600x600/")
+			artURL = sizedDiscogsURL(thumb, PreviewSize)
 		}
 		if artURL == "" {
 			continue
@@ -291,7 +317,7 @@ func discogsReleaseImages(resourceURL string, row discogsSearchRow) []Result {
 			imgLabel = label + " (" + t + ")"
 		}
 		out = append(out, Result{
-			URL:    u,
+			URL:    sizedDiscogsURL(u, PreviewSize),
 			Thumb:  thumb,
 			Label:  imgLabel,
 			Source: "discogs",

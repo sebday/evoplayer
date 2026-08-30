@@ -20,8 +20,8 @@ const (
 	punchAttack    = 0.85
 	punchRelease   = 0.32
 	punchBassBars  = 18
-	punchFloor     = 0.22
-	punchBassBoost = 0.55
+	punchFloor     = 0.16
+	punchBassBoost = 0.72
 )
 
 type frequencyBand struct {
@@ -63,6 +63,7 @@ type Analyzer struct {
 	peaks    []float64
 	fall     []float64
 	display  []float32
+	emit     []float32
 
 	autoSensitivity float64
 	sensitivityInit bool
@@ -70,6 +71,7 @@ type Analyzer struct {
 	presentationDelay int
 	punchEnv          float64
 	delayFn           func() int
+	bassSkip          int
 
 	tickStop chan struct{}
 	tickWG   sync.WaitGroup
@@ -92,6 +94,7 @@ func NewAnalyzer(sampleRate float64) *Analyzer {
 		peaks:      make([]float64, BarCount),
 		fall:       make([]float64, BarCount),
 		display:    make([]float32, BarCount),
+		emit:       make([]float32, BarCount),
 	}
 	a.ApplyConfig(DefaultConfig())
 	return a
@@ -169,6 +172,7 @@ func (a *Analyzer) resetProcessingLocked() {
 	a.autoSensitivity = 1
 	a.sensitivityInit = true
 	a.punchEnv = 0
+	a.bassSkip = 0
 }
 
 func (a *Analyzer) stopTicker() {
@@ -332,9 +336,12 @@ func (a *Analyzer) emitLocked() ([]float32, func([]float32)) {
 	if a.onUpdate == nil {
 		return nil, nil
 	}
-	levels := make([]float32, BarCount)
-	copy(levels, a.display)
-	return levels, a.onUpdate
+	if cap(a.emit) < BarCount {
+		a.emit = make([]float32, BarCount)
+	}
+	a.emit = a.emit[:BarCount]
+	copy(a.emit, a.display)
+	return a.emit, a.onUpdate
 }
 
 func ringIndex(idx, size int) int {
@@ -444,7 +451,10 @@ func (a *Analyzer) applyPunchLocked() {
 func (a *Analyzer) analyzeLocked() {
 	a.refreshDelayLocked()
 	a.fillFFTLocked(FFTSize, a.window, a.re, a.im)
-	a.fillFFTLocked(BassFFTSize, a.bassWindow, a.bassRe, a.bassIm)
+	a.bassSkip++
+	if a.bassSkip&1 == 1 {
+		a.fillFFTLocked(BassFFTSize, a.bassWindow, a.bassRe, a.bassIm)
+	}
 
 	for i, band := range a.bands {
 		re, im := a.re, a.im

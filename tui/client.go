@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/sebday/evoplayer/server/art"
 	"github.com/sebday/evoplayer/server/cli"
 	"github.com/sebday/evoplayer/server/ipc"
 	"github.com/sebday/evoplayer/server/jobs"
@@ -43,20 +45,43 @@ func fetchNav(env paths.Env) ([]navItem, error) {
 	return navFromIndex(items), nil
 }
 
-func fetchTracks(env paths.Env, name string) ([]library.Track, error) {
+const tracksPageSize = 400
+
+func fetchTracksPage(env paths.Env, name string, offset, limit int) (playlist.TracksPage, error) {
 	resp, err := cli.IPC(env, "library.playlist.tracks", map[string]any{
 		"name":   name,
-		"offset": 0,
-		"limit":  400,
+		"offset": offset,
+		"limit":  limit,
 	})
 	if err != nil {
-		return nil, err
+		return playlist.TracksPage{}, err
 	}
 	var page playlist.TracksPage
 	if err := decodeData(resp, &page); err != nil {
+		return playlist.TracksPage{}, err
+	}
+	return page, nil
+}
+
+func completeTracksPage(first playlist.TracksPage, loadAll func(total int) (playlist.TracksPage, error)) ([]library.Track, error) {
+	if first.Total <= len(first.Items) {
+		return first.Items, nil
+	}
+	full, err := loadAll(first.Total)
+	if err != nil {
 		return nil, err
 	}
-	return page.Items, nil
+	return full.Items, nil
+}
+
+func fetchTracks(env paths.Env, name string) ([]library.Track, error) {
+	page, err := fetchTracksPage(env, name, 0, tracksPageSize)
+	if err != nil {
+		return nil, err
+	}
+	return completeTracksPage(page, func(total int) (playlist.TracksPage, error) {
+		return fetchTracksPage(env, name, 0, total)
+	})
 }
 
 func fetchBrowse(env paths.Env, rel string) (library.BrowseResult, error) {
@@ -71,6 +96,24 @@ func fetchBrowse(env paths.Env, rel string) (library.BrowseResult, error) {
 	}
 	err = decodeData(resp, &out)
 	return out, err
+}
+
+func fetchSearch(env paths.Env, query string) ([]library.Track, error) {
+	resp, err := cli.IPC(env, "library.search", map[string]any{
+		"mode":  "search",
+		"query": query,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var tracks []library.Track
+	if err := decodeData(resp, &tracks); err != nil {
+		return nil, err
+	}
+	if len(tracks) > 400 {
+		tracks = tracks[:400]
+	}
+	return tracks, nil
 }
 
 func fetchBrowseQueue(env paths.Env, rel string) ([]string, error) {
@@ -161,6 +204,11 @@ func togglePlayback(env paths.Env) error {
 
 func skipTrack(env paths.Env, method string) error {
 	_, err := cli.IPC(env, method, nil)
+	return err
+}
+
+func seekPlayback(env paths.Env, seconds float64) error {
+	_, err := cli.IPC(env, "playback.seek", map[string]float64{"seconds": seconds})
 	return err
 }
 
@@ -292,4 +340,15 @@ func unsubViz(env paths.Env) tea.Cmd {
 		_, err := cli.IPC(env, "viz.unsubscribe", nil)
 		return vizSubMsg{subscribed: false, err: err}
 	}
+}
+
+func searchCover(env paths.Env, path, query string) (art.SearchResponse, error) {
+	if strings.TrimSpace(query) != "" {
+		return art.SearchQuery(query), nil
+	}
+	return art.SearchTrack(env, path)
+}
+
+func applyCover(env paths.Env, path, url, scope string) (library.InstallResult, error) {
+	return library.ApplyImageURL(library.EnvFrom(env), path, url, scope)
 }

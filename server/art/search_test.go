@@ -20,3 +20,23 @@ func TestDiscogsJoinQuery(t *testing.T) {
 		t.Fatalf("join = %q", got)
 	}
 }
+
+func TestPreviewURLUses600FitIn(t *testing.T) {
+	got := PreviewURL(Result{
+		Thumb: "https://i.discogs.com/x/fit-in/150x150/R-1.jpg",
+		URL:   "https://i.discogs.com/x/fit-in/150x150/R-1.jpg",
+	})
+	if got != "https://i.discogs.com/x/fit-in/600x600/R-1.jpg" {
+		t.Fatalf("preview url = %q", got)
+	}
+}
+
+func TestPreviewURLPrefersFullCoverAt600(t *testing.T) {
+	got := PreviewURL(Result{
+		Thumb: "https://i.discogs.com/x/fit-in/150x150/R-1.jpg",
+		URL:   "https://i.discogs.com/x/discogs-images/R-1.jpg",
+	})
+	if got != "https://i.discogs.com/x/fit-in/600x600/discogs-images/R-1.jpg" {
+		t.Fatalf("preview url = %q", got)
+	}
+}

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/sebday/evoplayer/server/ipc"
@@ -18,6 +20,7 @@ import (
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
 	"github.com/sebday/evoplayer/server/status"
+	"github.com/sebday/evoplayer/server/viz"
 	"github.com/sebday/evoplayer/server/warm"
 )
 
@@ -31,6 +34,7 @@ type Daemon struct {
 	vizMu             sync.Mutex
 	vizSubs           int
 	vizSeq            atomic.Uint64
+	vizFrame          *viz.FrameWriter
 	warm              *warm.Scheduler
 	scrobbleMu        sync.Mutex
 	scrobbleDedupeKey string
@@ -40,6 +44,10 @@ type Daemon struct {
 	syncing           bool
 	syncDelay         time.Duration
 	syncInterval      time.Duration
+	persistMu         sync.Mutex
+	persistTimer      *time.Timer
+	persistPath       string
+	persistState      string
 }
 
 type mprisCloser interface {
@@ -75,7 +83,9 @@ func New(env paths.Env) *Daemon {
 	}
 	d.Actor = playback.NewActor(func(st playback.Status) {
 		d.broadcastState()
+		d.persistPlayerState(st)
 	})
+	d.vizFrame = viz.NewFrameWriter(viz.FramePath(env.SocketPath))
 	d.Actor.SetVizOnUpdate(func(levels []float32) {
 		d.broadcastViz(levels)
 	})
@@ -99,9 +109,14 @@ func (d *Daemon) Run() error {
 		return fmt.Errorf("ipc listen: %w", err)
 	}
 	defer d.Server.Close()
+	defer d.flushPlayerState()
 	defer d.Actor.CloseOutput()
+	defer d.vizFrame.Close()
 	if d.mpris != nil {
 		defer d.mpris.Close()
+	}
+	if err := d.resumePlayback(false); err != nil {
+		fmt.Fprintf(os.Stderr, "evoplayer: restore: %v\n", err)
 	}
 	go func() {
 		if err := d.Actor.EnsureOutput(); err != nil {
@@ -112,6 +127,13 @@ func (d *Daemon) Run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	d.scheduleLibraryScan(ctx)
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sig
+		d.flushPlayerState()
+		_ = d.Server.Close()
+	}()
 	return d.Server.Serve()
 }
 

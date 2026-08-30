@@ -443,7 +443,7 @@ function folderActionReserve(iconCount, showCount) {
     iconCount = Number(iconCount) || 0
     var reserve = iconCount * 28 + Math.max(0, iconCount - 1) * 6 + 10
     if (showCount)
-        reserve += 28
+        reserve += 36
     return reserve
 }
 

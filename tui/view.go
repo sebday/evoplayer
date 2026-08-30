@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/sebday/evoplayer/server/library"
 )
 
@@ -16,259 +17,173 @@ func (m model) View() string {
 	if m.frames != nil && m.frames.freeze && m.frames.view != "" {
 		return m.frames.view
 	}
-	m.search.Width = max(8, m.searchBarWidth())
-	header := m.renderHeader()
+	m.search.Width = max(8, m.browseInnerWidth())
+	nowPlaying := m.renderNowPlayingBar()
 	footer := m.renderFooter()
-	headerH := lipgloss.Height(header)
-	footerH := lipgloss.Height(footer)
-	bodyRowH := m.bodyRowHeight(headerH, footerH)
-	body, place := m.renderListWithArt(bodyRowH)
-	body = padToHeight(body, bodyRowH)
-	inner := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	nowPlayingH := lipgloss.Height(nowPlaying)
+	footerH := footerBlockHeight(footer)
+	bodyH := max(5, m.contentHeight()-nowPlayingH-footerH)
+	body, place := m.renderBody(bodyH)
+	body = padToHeight(body, bodyH)
+	var inner string
+	if footer != "" {
+		inner = lipgloss.JoinVertical(lipgloss.Left, nowPlaying, body, footer)
+	} else {
+		inner = lipgloss.JoinVertical(lipgloss.Left, nowPlaying, body)
+	}
 	padX, padY := m.framePad()
 	out := lipgloss.NewStyle().Padding(padY, padX).Render(inner)
+	g := m.playerGeom()
 	if place.seq != "" {
-		frame := 0
 		if m.art != nil {
 			m.art.shown = true
-			m.art.frame++
-			frame = m.art.frame
 		}
-		row := padY + headerH + place.row
-		col := padX + place.col
-		out = overlayArt(out, place.seq, row, col, frame)
+		row, col := 0, 0
+		if place.atCursor {
+			row = padY + nowPlayingH + place.row
+			col = padX + place.col
+		}
+		m.storeArtOverlay(place.seq, row, col, g.artworkCols, g.artworkRows)
 	} else if m.art != nil && m.art.shown {
 		m.art.shown = false
+		m.clearStoredArtOverlay()
 		out = clearArtOverlay() + out
 	}
 	if m.frames != nil {
 		m.frames.view = out
+		nowPlayingW := g.nowPlayingInnerW
+		nowPlayingRow := padY + 2 + nowPlayingPadY
+		nowPlayingCol := padX + nowPlayingContentCol()
+		vizRow, vizCol, vizW := 0, 0, 0
+		if g.vizW >= 8 {
+			vizRow = nowPlayingRow
+			vizCol = vizPaintCol(nowPlayingCol, nowPlayingW)
+			vizW = g.vizW
+		}
+		browseW := paneInnerWidth(g.browseW)
+		browseH := paneInnerHeight(bodyH)
+		playlistW := paneInnerWidth(g.playlistW)
+		bodyStart := padY + nowPlayingH + 1
+		browseRow := bodyStart + 1 + panePadY
+		browseCol := padX + paneContentCol()
+		playlistCol := padX + g.browseW + paneContentCol()
+		lastNowPlaying := m.renderNowPlayingChrome(nowPlayingW)
+		lastBrowse := m.renderBrowseInner(browseW, browseH)
+		lastPlaylist := m.renderPlaylistInner(playlistW, browseH)
 		m.frames.mu.Lock()
-		m.frames.vizRow = padY + headerH + bodyRowH + 2
-		m.frames.vizCol = padX + 2
-		m.frames.vizW = max(8, m.contentWidth()-2)
+		m.frames.vizRow = vizRow
+		m.frames.vizCol = vizCol
+		m.frames.vizW = vizW
+		m.frames.nowPlayingRow = nowPlayingRow
+		m.frames.nowPlayingCol = nowPlayingCol
+		m.frames.nowPlayingW = nowPlayingW
+		m.frames.lastNowPlaying = lastNowPlaying
+		m.frames.browseRow = browseRow
+		m.frames.browseCol = browseCol
+		m.frames.browseW = browseW
+		m.frames.browseH = browseH
+		m.frames.lastBrowse = lastBrowse
+		m.frames.playlistRow = browseRow
+		m.frames.playlistCol = playlistCol
+		m.frames.playlistW = playlistW
+		m.frames.playlistH = browseH
+		m.frames.lastPlaylist = lastPlaylist
 		m.frames.mu.Unlock()
 	}
 	return out
-}
-
-func (m model) renderHeader() string {
-	contentW := m.contentWidth()
-	innerW := max(8, contentW-4)
-	logo := renderLogoText()
-	active := m.focus == focusNav || m.focus == focusSearch
-	var row string
-	if m.libraryScanning() {
-		row = styleMuted().Render("Please wait for library to finish scanning")
-	} else {
-		searchW := m.searchBarWidth()
-		search := m.renderSearch(searchW)
-		icons := m.renderHeaderIcons()
-		gap := 2
-		used := lipgloss.Width(icons) + lipgloss.Width(search) + gap*2
-		tabsW := innerW - used
-		if tabsW < 8 {
-			tabsW = 8
-		}
-		tabs := m.renderHeaderTabs(tabsW)
-		rightPad := innerW - lipgloss.Width(icons) - lipgloss.Width(tabs) - lipgloss.Width(search) - gap
-		if rightPad < 1 {
-			rightPad = 1
-		}
-		leftGap := strings.Repeat(" ", gap)
-		row = lipgloss.JoinHorizontal(lipgloss.Top, icons, leftGap, tabs, strings.Repeat(" ", rightPad), search)
-	}
-	return fieldsetInline(logo, row, contentW, active, m.pulsePhase, 1)
-}
-
-func (m model) renderHeaderIcons() string {
-	var parts []string
-	for i, item := range m.nav {
-		g := navGlyph(item)
-		if g == "" {
-			continue
-		}
-		if i == m.navIdx {
-			parts = append(parts, styleSelected().Render(g))
-		} else {
-			parts = append(parts, styleMuted().Render(g))
-		}
-	}
-	return strings.Join(parts, "  ")
-}
-
-func (m model) renderHeaderTabs(width int) string {
-	var parts []string
-	for i, item := range m.nav {
-		if navIsIcon(item) {
-			continue
-		}
-		label := item.Label
-		if i == m.navIdx {
-			label = styleSelected().Render(label)
-		} else {
-			label = styleMuted().Render(label)
-		}
-		if item.Count > 0 {
-			label += " " + styleMuted().Render(fmt.Sprintf("%d", item.Count))
-		}
-		parts = append(parts, label)
-	}
-	row := strings.Join(parts, "   ")
-	return lipgloss.NewStyle().MaxWidth(width).Render(row)
 }
 
 func (m model) renderSearch(width int) string {
 	return padExact(m.search.View(), max(6, width))
 }
 
-func (m model) renderPaneInner(innerH int) string {
-	var body string
-	switch {
-	case m.helpSelected():
-		body = m.renderHelpBody()
-	case m.downloadSelected():
-		body = m.renderDownload()
-	case m.loading:
-		body = styleMuted().Render("loading…")
-	case m.err != "":
-		body = styleWarn().Render(m.err)
-	case m.listLen() == 0:
-		if m.filetreeSelected() {
-			body = styleMuted().Render("no folders")
-		} else {
-			body = styleMuted().Render("no tracks")
-		}
-	default:
-		sub := m.paneSubtitle()
-		tracks := m.renderTracks(m.listVisible())
-		if sub != "" {
-			body = sub + "\n\n" + tracks
-		} else {
-			body = tracks
-		}
-	}
-	if m.currentSelected() && !m.staticSelected() {
-		title := m.nowPlayingTitleRow(m.listInnerWidth())
-		head := m.renderNowPlayingHead(m.listInnerWidth())
-		prefix := title
-		if head != "" {
-			prefix = title + "\n" + head
-		}
-		if body == "" {
-			body = prefix
-		} else {
-			body = prefix + "\n\n" + body
-		}
-	}
-	return clipLines(body, innerH)
+func (m model) renderTrackList(tracks []library.Track, idx, offset, width, h int, focused bool) string {
+	return m.renderTrackListCols(tracks, idx, offset, width, h, focused, trackColWidths(width))
 }
 
-func (m model) paneLegend() string {
-	if m.downloadSelected() {
-		return "Downloads"
-	}
-	if m.helpSelected() {
-		return "Help"
-	}
-	name := "Library"
-	if m.navIdx >= 0 && m.navIdx < len(m.nav) {
-		name = m.nav[m.navIdx].Label
-	}
-	n := m.listLen()
-	if m.filetreeSelected() {
-		return fmt.Sprintf("%s (%d folders)", name, m.browseFolderCount())
-	}
-	if m.currentSelected() {
-		return m.currentLegend(max(8, m.mainWidth()-6))
-	}
-	return fmt.Sprintf("%s (%d tracks)", name, n)
-}
-
-func (m model) browseFolderCount() int {
-	n := 0
-	for _, e := range m.browse {
-		if e.Type == "dir" {
-			n++
-		}
-	}
-	return n
-}
-
-func (m model) paneSubtitle() string {
-	if m.search.Value() != "" {
-		return styleMuted().Render("filter: " + m.search.Value())
-	}
-	if m.filetreeSelected() {
-		if m.browsePath != "" {
-			return styleMuted().Render(m.browsePath)
-		}
-		return ""
-	}
-	return ""
-}
-
-func (m model) renderTracks(h int) string {
-	if m.filetreeSelected() {
-		return m.renderBrowse(h)
-	}
-	width := m.listInnerWidth()
-	cols := trackColWidths(width)
+func (m model) renderPlaylistTrackList(tracks []library.Track, idx, offset, width, h int, focused bool) string {
+	cols := trackColWidthsPlaylist(width)
 	vis := max(1, h)
-	start := m.listOffset
-	end := min(len(m.filtered), start+vis)
+	start := offset
+	end := min(len(tracks), start+vis)
 	var b strings.Builder
 	for i := start; i < end; i++ {
-		t := m.filtered[i]
-		label := trackLabel(t)
-		heart := heartPrefix(t.Liked)
+		t := tracks[i]
 		playing := t.Path != "" && t.Path == m.status.Path
-		cursor, label := m.listCursor(i == m.listIdx, playing, label)
-		fmt.Fprintf(&b, "%s\n", renderTrackColumns(cols, cursor, heart, label, trackTime(t), strings.TrimSpace(t.Year), strings.TrimSpace(t.Genre), i == m.listIdx, playing))
+		selected := focused && i == idx
+		if playing {
+			cursor := "▶"
+			heart := "  "
+			if t.Liked {
+				heart = "♥ "
+			}
+			fmt.Fprintf(&b, "%s\n", renderPlaylistPlayingRow(cols, cursor, heart, trackLabel(t), trackTime(t), strings.TrimSpace(t.Year), width))
+			continue
+		}
+		cursor, label := m.listCursorLead(selected, playing, trackLabel(t), 1)
+		heart := playlistRowHeart(t.Liked, selected)
+		fmt.Fprintf(&b, "%s\n", renderTrackColumns(cols, cursor, heart, label, trackTime(t), strings.TrimSpace(t.Year), strings.TrimSpace(t.Genre), selected, playing))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (m model) renderBrowse(h int) string {
-	width := m.listInnerWidth()
-	cols := trackColWidths(width)
+func (m model) renderTrackListCols(tracks []library.Track, idx, offset, width, h int, focused bool, cols trackCols) string {
 	vis := max(1, h)
-	start := m.listOffset
+	start := offset
+	end := min(len(tracks), start+vis)
+	var b strings.Builder
+	for i := start; i < end; i++ {
+		t := tracks[i]
+		label := trackLabel(t)
+		heart := heartPrefix(t.Liked)
+		playing := t.Path != "" && t.Path == m.status.Path
+		selected := focused && i == idx
+		cursor, label := m.listCursor(selected, playing, label)
+		fmt.Fprintf(&b, "%s\n", renderTrackColumns(cols, cursor, heart, label, trackTime(t), strings.TrimSpace(t.Year), strings.TrimSpace(t.Genre), selected, playing))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (m model) renderTracks(h int) string {
+	return m.renderTrackList(m.filtered, m.browseIdx, m.browseOffset, m.browseInnerWidth(), h, m.focus == focusBrowse)
+}
+
+func (m model) renderBrowse(h int) string {
+	return m.renderBrowseWidth(h, m.browseInnerWidth())
+}
+
+func (m model) renderBrowseWidth(h, width int) string {
+	vis := max(1, h)
+	offset := m.browseOffset
+	focused := m.focus == focusBrowse
+	start := offset
 	end := min(len(m.browse), start+vis)
 	var b strings.Builder
 	for i := start; i < end; i++ {
-		e := m.browse[i]
-		label := browseLabel(e)
-		heart := heartPrefix(false)
-		timeStr, year, genre := "", "", ""
-		switch e.Type {
-		case "dir":
-			if e.Count > 0 {
-				timeStr = fmt.Sprintf("%d", e.Count)
-			}
-		case "track":
-			timeStr = trackTime(e.Track)
-			year = strings.TrimSpace(e.Year)
-			genre = strings.TrimSpace(e.Genre)
-			heart = heartPrefix(e.Liked)
-		}
-		selected := i == m.listIdx
-		playing := e.Type == "track" && e.Path != "" && e.Path == m.status.Path
-		cursor, label := m.listCursor(selected, playing, label)
-		if !selected && !playing && (e.Type == "dir" || e.Type == "parent") {
-			label = styleMuted().Render(label)
-		}
-		fmt.Fprintf(&b, "%s\n", renderTrackColumns(cols, cursor, heart, label, timeStr, year, genre, selected, playing))
+		fmt.Fprintf(&b, "%s\n", m.renderBrowseRow(i, width, focused))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m model) listCursor(selected, playing bool, label string) (cursor, out string) {
+	return m.listCursorLead(selected, playing, label, 2)
+}
+
+func (m model) listCursorLead(selected, playing bool, label string, width int) (cursor, out string) {
 	if playing {
+		if width <= 1 {
+			return styleGood().Render("▶"), styleGood().Render(label)
+		}
 		return styleGood().Render("▶ "), styleGood().Render(label)
 	}
 	if selected {
+		if width <= 1 {
+			return styleSelected().Render(">"), styleSelected().Render(label)
+		}
 		return styleSelected().Render("> "), styleSelected().Render(label)
+	}
+	if width <= 1 {
+		return " ", label
 	}
 	return "  ", label
 }
@@ -278,8 +193,11 @@ type trackCols struct {
 }
 
 func trackColWidths(total int) trackCols {
+	return trackColWidthsLead(total, 5)
+}
+
+func trackColWidthsLead(total, lead int) trackCols {
 	const (
-		lead  = 5 // cursor + heart
 		timeW = 6
 		yearW = 4
 		gaps  = 6 // three 2-space gutters
@@ -297,6 +215,60 @@ func trackColWidths(total int) trackCols {
 	return trackCols{name: nameW, time: timeW, year: yearW, genre: genreW}
 }
 
+// trackColWidthsBrowse lays out name + optional count for narrow tree rows.
+func trackColWidthsBrowse(total, lead int) trackCols {
+	const (
+		timeW = 5
+		gap   = 2
+	)
+	nameW := total - lead - timeW - gap
+	if nameW < 6 {
+		nameW = 6
+	}
+	return trackCols{name: nameW, time: timeW}
+}
+
+func playlistRowHeart(liked, selected bool) string {
+	if liked {
+		st := styleGood()
+		if selected {
+			st = styleSelected()
+		}
+		return st.Render("♥") + " "
+	}
+	return "  "
+}
+
+func trackColWidthsPlaylist(total int) trackCols {
+	const (
+		lead   = 1 // compact cursor
+		heartW = 2 // ♥ before time
+		timeW  = 6
+		yearW  = 4
+		gaps   = 4 // name-heart and time-year gutters
+	)
+	nameW := total - lead - heartW - timeW - yearW - gaps
+	if nameW < 8 {
+		nameW = 8
+	}
+	return trackCols{name: nameW, time: timeW, year: yearW}
+}
+
+func playlistHeartAndTime(heart, timeStr string, timeW int) string {
+	return heart + padLeft(clipEllipsis(timeStr, timeW), timeW)
+}
+
+func renderPlaylistPlayingRow(cols trackCols, cursor, heart, name, timeStr, year string, lineWidth int) string {
+	nameCell := padRight(clipEllipsis(name, cols.name), cols.name)
+	row := cursor + nameCell + "  " +
+		playlistHeartAndTime(heart, timeStr, cols.time) + "  " +
+		padLeft(clipEllipsis(year, cols.year), cols.year)
+	if lineWidth > 0 {
+		row = padExact(row, lineWidth)
+	}
+	return styleNowPlayingRow().Render(row)
+}
+
 func renderTrackColumns(cols trackCols, cursor, heart, name, timeStr, year, genre string, selected, playing bool) string {
 	nameCell := padRight(clipEllipsis(name, cols.name), cols.name)
 	if playing {
@@ -312,6 +284,20 @@ func renderTrackColumns(cols trackCols, cursor, heart, name, timeStr, year, genr
 		if !strings.Contains(heart, "\x1b") {
 			heart = meta.Render(heart)
 		}
+	}
+	if cols.time == 0 && cols.year == 0 && cols.genre == 0 {
+		return cursor + heart + nameCell
+	}
+	if cols.year == 0 && cols.genre == 0 {
+		return cursor + heart + nameCell + "  " +
+			meta.Render(padLeft(clipEllipsis(timeStr, cols.time), cols.time))
+	}
+	if cols.genre == 0 {
+		timeCell := heart + meta.Render(padLeft(clipEllipsis(timeStr, cols.time), cols.time))
+		return cursor + nameCell + "  " +
+			timeCell +
+			"  " +
+			meta.Render(padLeft(clipEllipsis(year, cols.year), cols.year))
 	}
 	return cursor + heart + nameCell + "  " +
 		meta.Render(padLeft(clipEllipsis(timeStr, cols.time), cols.time)) +
@@ -336,9 +322,9 @@ func clipEllipsis(s string, width int) string {
 		return s
 	}
 	if width <= 3 {
-		return lipgloss.NewStyle().MaxWidth(width).Render(s)
+		return ansi.Truncate(s, width, "")
 	}
-	return lipgloss.NewStyle().MaxWidth(width-3).Render(s) + "..."
+	return ansi.Truncate(s, width, "...")
 }
 
 func padLeft(s string, width int) string {
@@ -358,30 +344,55 @@ func padRight(s string, width int) string {
 }
 
 type frameCache struct {
-	mu       sync.Mutex
-	view     string
-	freeze   bool
-	vizRow   int
-	vizCol   int
-	vizW     int
-	waveW    int
-	waveH    int
-	waveN    int
-	wavePath string
-	waveRows []string
-	waveFill []float64
-	playedTo int
+	mu             sync.Mutex
+	view           string
+	freeze         bool
+	vizRow         int
+	vizCol         int
+	vizW           int
+	waveW          int
+	waveH          int
+	waveN          int
+	wavePath       string
+	waveRows       []string
+	waveFill       []float64
+	playedTo       int
+	nowPlayingRow  int
+	nowPlayingCol  int
+	nowPlayingW    int
+	lastNowPlaying string
+	browseRow      int
+	browseCol      int
+	browseW        int
+	browseH        int
+	lastBrowse     string
+	playlistRow    int
+	playlistCol    int
+	playlistW      int
+	playlistH      int
+	lastPlaylist   string
+	artRow         int
+	artCol         int
+	artSeq         string
+	artPlace       string
+	artDirty       bool
+	quitting       bool
 }
 
 func (m model) renderFooter() string {
-	width := m.contentWidth()
-	innerW := max(8, width-4)
-	viz := m.renderFooterViz(innerW)
-	h := lipgloss.Height(viz) + 2
-	if viz == "" {
-		h = 3
+	hints := m.renderFooterHints()
+	if hints == "" {
+		return ""
 	}
-	return fieldsetPad(m.renderPlayTime(), viz, width, h, false, 0, 0, 1, "", m.renderFooterHints(), 4)
+	width := m.contentWidth()
+	return fieldsetInlineFlush("", hints, width, false, 0, 0)
+}
+
+func footerBlockHeight(footer string) int {
+	if footer == "" {
+		return 0
+	}
+	return lipgloss.Height(footer)
 }
 
 func (m model) renderFooterViz(width int) string {
@@ -405,40 +416,10 @@ func (m model) renderPlayTime() string {
 }
 
 func (m model) renderFooterHints() string {
-	hints := []string{
-		hint("←→↑↓", "browse"),
-	}
-	space := m.spaceHint()
-	if m.helpSelected() {
-		hints = append(hints,
-			hint("l", "like"),
-			space,
-			hint("/", "find"),
-			hint("?", "help"),
-			hint("q", "quit"),
-		)
-		return joinHints(hints)
-	}
 	if m.downloadSelected() {
-		hints = append(hints,
-			hint("⏎", "run"),
-			space,
-			hint("?", "help"),
-			hint("q", "quit"),
-		)
-		return joinHints(hints)
+		return hint("⏎", "run")
 	}
-	hints = append(hints,
-		hint("⏎", "play"),
-		hint("+", "add"),
-		hint("l", "like"),
-		space,
-		hint("v", "vis"),
-		hint("/", "find"),
-		hint("?", "help"),
-		hint("q", "quit"),
-	)
-	return joinHints(hints)
+	return ""
 }
 
 func joinHints(hints []string) string {

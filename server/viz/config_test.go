@@ -10,7 +10,7 @@ func TestDefaultConfigMatchesPunchyPreset(t *testing.T) {
 	if c.NoiseReduction != 34 || c.Monstercat != 1 {
 		t.Fatalf("unexpected smoothing defaults: %+v", c)
 	}
-	if c.FrameRate != 45 || c.LowCutoff != 50 || c.HighCutoff != 10000 {
+	if c.FrameRate != 30 || c.LowCutoff != 50 || c.HighCutoff != 10000 {
 		t.Fatalf("unexpected spectrum defaults: %+v", c)
 	}
 }

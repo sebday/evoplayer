@@ -15,6 +15,10 @@ import (
 	"github.com/sebday/evoplayer/server/playback"
 )
 
+// artCacheMax is the stored cover size. The TUI panel and Discogs preview
+// are about 600px; 72px thumbs stay separate for list rows.
+const artCacheMax = 600
+
 // ResolveArtPath returns cached art for a track without extracting.
 func ResolveArtPath(env Env, path string) string {
 	return artCacheFind(env, path)
@@ -114,7 +118,7 @@ func ClearArt(env Env, trackPath string) error {
 
 func normalizeJPG(src, dest string) error {
 	if err := exec.Command("ffmpeg", "-y", "-loglevel", "error", "-i", src,
-		"-vf", "scale=1200:1200:force_original_aspect_ratio=decrease",
+		"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease", artCacheMax, artCacheMax),
 		"-q:v", "2", dest).Run(); err == nil {
 		if st, err := os.Stat(dest); err == nil && st.Size() > 0 {
 			return nil

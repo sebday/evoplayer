@@ -18,7 +18,7 @@ const (
 )
 
 func (m model) renderDownload() string {
-	width := m.listInnerWidth()
+	width := m.playlistInnerWidth()
 	var b strings.Builder
 	b.WriteString(styleMuted().Render("YouTube or SoundCloud URL"))
 	b.WriteByte('\n')
@@ -75,7 +75,7 @@ func (m model) renderDownloadAction(idx int, icon, label string, width int) stri
 }
 
 func (m model) downloadControlSelected(idx int) bool {
-	return m.downloadSelected() && m.focus == focusList && m.listIdx == idx
+	return m.downloadSelected() && m.focus == focusPlaylist && m.playlistIdx == idx
 }
 
 func (m model) downloadStatus() string {
@@ -164,7 +164,7 @@ func (m model) startImportIncoming() (tea.Model, tea.Cmd) {
 }
 
 func (m model) activateDownloadControl() (tea.Model, tea.Cmd) {
-	switch m.listIdx {
+	switch m.playlistIdx {
 	case dlCtrlURL, dlCtrlDownload:
 		return m.startURLDownload()
 	case dlCtrlImport:
