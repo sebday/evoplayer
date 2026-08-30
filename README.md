@@ -10,7 +10,7 @@ I used Soundcloud for years and ignored my mp3 collection. This TUI (and probabl
 cmd/evoplayer/     thin main (serve, tui, CLI)
 server/            daemon, playback, library, ipc, cli
 tui/               terminal player
-gui/               Quickshell dashboard (optional, not default)
+gui/               quickshell dashboard (optional, not default)
 tests/
 scripts/           install (binary + desktop entry)
 ```
@@ -38,10 +38,3 @@ The music library is a tree of folders, not a genre taxonomy. Set the root with 
 
 A genre tag is only a hint for which of those folders to use. Untagged downloads stay in `.incoming` until you pick a folder; import then moves the file into that folder (`youtube/` or `mixes/` plus year for long mixes).
 
-## Dev
-
-```bash
-go test ./...
-```
-
-See [CONTRIB.md](CONTRIB.md) for commit message and branching conventions.
