@@ -8,16 +8,20 @@ import (
 	"strings"
 
 	"github.com/sebday/evoplayer/server/audio"
+	"github.com/sebday/evoplayer/server/jobs"
 	"github.com/sebday/evoplayer/server/tags"
 )
 
 func RunImport(env Env) error {
-	return RunImportCtx(context.Background(), env)
+	return RunImportCtx(context.Background(), env, nil)
 }
 
-func RunImportCtx(ctx context.Context, env Env) error {
+func RunImportCtx(ctx context.Context, env Env, rep Reporter) error {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if rep == nil {
+		rep = nopReporter{}
 	}
 	incoming := filepath.Join(env.MusicRoot, ".incoming")
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
@@ -33,27 +37,28 @@ func RunImportCtx(ctx context.Context, env Env) error {
 	}
 	defer db.Close()
 
+	pending := incomingAudioFiles(entries, incoming)
+	rep.Line(LogInfo("importing .incoming"))
+	rep.Line(LogInfof("%d files", len(pending)))
+	if len(pending) == 0 {
+		rep.Line(LogInfo("nothing to import"))
+		fmt.Fprintln(os.Stderr, "evoplayer: nothing to import in .incoming/")
+		return nil
+	}
+
 	moved := 0
 	failed := 0
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
-	for _, e := range entries {
+	for _, src := range pending {
 		if err := ctx.Err(); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
-		if e.IsDir() {
-			continue
-		}
-		src := filepath.Join(incoming, e.Name())
-		if incomingSkipFile(src) {
-			continue
-		}
-		if !audio.IsAudio(src) {
-			continue
-		}
+		base := filepath.Base(src)
+		rep.Progress(jobs.Progress{Phase: base, Done: moved + failed, Total: len(pending)})
 		info, err := os.Stat(src)
 		if err != nil || info.Size() == 0 {
 			continue
@@ -62,23 +67,28 @@ func RunImportCtx(ctx context.Context, env Env) error {
 		dest, err := incomingDest(env, src, probed)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: skip import (no dest): %s\n", src)
+			rep.Line(LogSkip(base + " (no genre)"))
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			failed++
+			rep.Line(LogFail(base))
 			continue
 		}
 		if _, err := os.Stat(dest); err == nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: skip existing dest: %s\n", dest)
+			rep.Line(LogSkip(relMusicPath(env.MusicRoot, dest) + " (exists)"))
 			continue
 		}
 		if err := os.Rename(src, dest); err != nil {
 			failed++
+			rep.Line(LogFail(base))
 			continue
 		}
 		st, statErr := os.Stat(dest)
 		if statErr != nil {
 			failed++
+			rep.Line(LogFail(base))
 			continue
 		}
 		genre := probed.Tag.Genre
@@ -100,20 +110,50 @@ func RunImportCtx(ctx context.Context, env Env) error {
 			return err
 		}
 		moved++
+		rep.Line(LogOK(relMusicPath(env.MusicRoot, dest)))
+		rep.Progress(jobs.Progress{Phase: base, Done: moved + failed, Total: len(pending)})
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	_ = SyncLiked(db, env)
-	if moved == 0 && failed == 0 {
-		fmt.Fprintln(os.Stderr, "evoplayer: nothing to import in .incoming/")
-		return nil
-	}
+	rep.Line(LogInfof("imported %d", moved))
 	fmt.Fprintf(os.Stderr, "evoplayer: imported %d file(s) from .incoming/\n", moved)
 	if failed > 0 {
+		rep.Line(LogFail(fmt.Sprintf("%d failed", failed)))
 		return fmt.Errorf("evoplayer: import failed for %d file(s)", failed)
 	}
 	return nil
+}
+
+func incomingAudioFiles(entries []os.DirEntry, incoming string) []string {
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		src := filepath.Join(incoming, e.Name())
+		if incomingSkipFile(src) {
+			continue
+		}
+		if !audio.IsAudio(src) {
+			continue
+		}
+		info, err := os.Stat(src)
+		if err != nil || info.Size() == 0 {
+			continue
+		}
+		out = append(out, src)
+	}
+	return out
+}
+
+func relMusicPath(root, path string) string {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, "..") {
+		return filepath.Base(path)
+	}
+	return rel
 }
 
 func incomingSkipFile(path string) bool {

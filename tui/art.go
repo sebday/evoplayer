@@ -3,11 +3,11 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	_ "golang.org/x/image/webp"
 	"image"
 	"image/color"
 	_ "image/jpeg"
 	_ "image/png"
-	_ "golang.org/x/image/webp"
 	"io"
 	"os"
 	"strconv"
@@ -46,16 +46,6 @@ var (
 
 func probeArtProtocol() {
 	_ = artProtocol()
-}
-
-func resetArtProtocol() {
-	artProtoMu.Lock()
-	artProtoSet = false
-	artProto = 0
-	artQueryW, artQueryH = 0, 0
-	artCellW, artCellH = 0, 0
-	artProtoMu.Unlock()
-	termimg.ClearFeatureCache()
 }
 
 func artProtocol() termimg.Protocol {

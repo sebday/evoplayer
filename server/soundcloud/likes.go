@@ -8,11 +8,19 @@ import (
 )
 
 func (c *Client) LikesTracks() ([]Track, error) {
+	return c.LikesTracksProgress(nil)
+}
+
+func (c *Client) LikesTracksProgress(onPage func(n int)) ([]Track, error) {
 	if c.OAuthToken == "" {
 		return nil, fmt.Errorf("soundcloud: oauth_token required (brave cookie or pass show %s)", secrets.SoundcloudPassPath())
 	}
+	userID, err := c.meID()
+	if err != nil {
+		return nil, err
+	}
 	var tracks []Track
-	next := "/me/likes?limit=50&linked_partitioning=1"
+	next := fmt.Sprintf("/users/%d/track_likes?limit=50&linked_partitioning=1", userID)
 	for next != "" {
 		path := next
 		if strings.HasPrefix(path, apiBase) {
@@ -31,7 +39,27 @@ func (c *Client) LikesTracks() ([]Track, error) {
 				tracks = append(tracks, item.Track)
 			}
 		}
+		if onPage != nil {
+			onPage(len(tracks))
+		}
 		next = strings.TrimSpace(page.NextHref)
 	}
 	return tracks, nil
+}
+
+func (c *Client) meID() (int64, error) {
+	body, err := c.getJSONWithClientID("/me")
+	if err != nil {
+		return 0, err
+	}
+	var me struct {
+		ID int64 `json:"id"`
+	}
+	if err := decodeJSON(body, &me); err != nil {
+		return 0, err
+	}
+	if me.ID == 0 {
+		return 0, fmt.Errorf("soundcloud: /me returned no user id")
+	}
+	return me.ID, nil
 }

@@ -97,10 +97,6 @@ func (m model) renderSearch(width int) string {
 	return padExact(m.search.View(), max(6, width))
 }
 
-func (m model) renderTrackList(tracks []library.Track, idx, offset, width, h int, focused bool) string {
-	return m.renderTrackListCols(tracks, idx, offset, width, h, focused, trackColWidths(width))
-}
-
 func (m model) renderPlaylistTrackList(tracks []library.Track, idx, offset, width, h int, focused bool) string {
 	cols := trackColWidthsPlaylist(width)
 	vis := max(1, h)
@@ -127,48 +123,6 @@ func (m model) renderPlaylistTrackList(tracks []library.Track, idx, offset, widt
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func (m model) renderTrackListCols(tracks []library.Track, idx, offset, width, h int, focused bool, cols trackCols) string {
-	vis := max(1, h)
-	start := offset
-	end := min(len(tracks), start+vis)
-	var b strings.Builder
-	for i := start; i < end; i++ {
-		t := tracks[i]
-		label := trackLabel(t)
-		heart := heartPrefix(t.Liked)
-		playing := t.Path != "" && t.Path == m.status.Path
-		selected := focused && i == idx
-		cursor, label := m.listCursor(selected, playing, label)
-		fmt.Fprintf(&b, "%s\n", renderTrackColumns(cols, cursor, heart, label, trackTime(t), strings.TrimSpace(t.Year), strings.TrimSpace(t.Genre), selected, playing))
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func (m model) renderTracks(h int) string {
-	return m.renderTrackList(m.filtered, m.browseIdx, m.browseOffset, m.browseInnerWidth(), h, m.focus == focusBrowse)
-}
-
-func (m model) renderBrowse(h int) string {
-	return m.renderBrowseWidth(h, m.browseInnerWidth())
-}
-
-func (m model) renderBrowseWidth(h, width int) string {
-	vis := max(1, h)
-	offset := m.browseOffset
-	focused := m.focus == focusBrowse
-	start := offset
-	end := min(len(m.browse), start+vis)
-	var b strings.Builder
-	for i := start; i < end; i++ {
-		fmt.Fprintf(&b, "%s\n", m.renderBrowseRow(i, width, focused))
-	}
-	return strings.TrimRight(b.String(), "\n")
-}
-
-func (m model) listCursor(selected, playing bool, label string) (cursor, out string) {
-	return m.listCursorLead(selected, playing, label, 2)
-}
-
 func (m model) listCursorLead(selected, playing bool, label string, width int) (cursor, out string) {
 	if playing {
 		if width <= 1 {
@@ -190,29 +144,6 @@ func (m model) listCursorLead(selected, playing bool, label string, width int) (
 
 type trackCols struct {
 	name, time, year, genre int
-}
-
-func trackColWidths(total int) trackCols {
-	return trackColWidthsLead(total, 5)
-}
-
-func trackColWidthsLead(total, lead int) trackCols {
-	const (
-		timeW = 6
-		yearW = 4
-		gaps  = 6 // three 2-space gutters
-	)
-	genreW := 12
-	nameW := total - lead - timeW - yearW - genreW - gaps
-	if nameW < 10 {
-		shrink := 10 - nameW
-		genreW = max(6, genreW-shrink)
-		nameW = total - lead - timeW - yearW - genreW - gaps
-		if nameW < 8 {
-			nameW = 8
-		}
-	}
-	return trackCols{name: nameW, time: timeW, year: yearW, genre: genreW}
 }
 
 // trackColWidthsBrowse lays out name + optional count for narrow tree rows.
@@ -243,9 +174,9 @@ func trackColWidthsPlaylist(total int) trackCols {
 	const (
 		lead   = 1 // compact cursor
 		heartW = 2 // ♥ before time
-		timeW  = 6
+		timeW  = 5
 		yearW  = 4
-		gaps   = 4 // name-heart and time-year gutters
+		gaps   = 2 // name-time and time-year gutters
 	)
 	nameW := total - lead - heartW - timeW - yearW - gaps
 	if nameW < 8 {
@@ -260,8 +191,8 @@ func playlistHeartAndTime(heart, timeStr string, timeW int) string {
 
 func renderPlaylistPlayingRow(cols trackCols, cursor, heart, name, timeStr, year string, lineWidth int) string {
 	nameCell := padRight(clipEllipsis(name, cols.name), cols.name)
-	row := cursor + nameCell + "  " +
-		playlistHeartAndTime(heart, timeStr, cols.time) + "  " +
+	row := cursor + nameCell + " " +
+		playlistHeartAndTime(heart, timeStr, cols.time) + " " +
 		padLeft(clipEllipsis(year, cols.year), cols.year)
 	if lineWidth > 0 {
 		row = padExact(row, lineWidth)
@@ -294,9 +225,9 @@ func renderTrackColumns(cols trackCols, cursor, heart, name, timeStr, year, genr
 	}
 	if cols.genre == 0 {
 		timeCell := heart + meta.Render(padLeft(clipEllipsis(timeStr, cols.time), cols.time))
-		return cursor + nameCell + "  " +
+		return cursor + nameCell + " " +
 			timeCell +
-			"  " +
+			" " +
 			meta.Render(padLeft(clipEllipsis(year, cols.year), cols.year))
 	}
 	return cursor + heart + nameCell + "  " +
@@ -385,7 +316,7 @@ func (m model) renderFooter() string {
 		return ""
 	}
 	width := m.contentWidth()
-	return fieldsetInlineFlush("", hints, width, false, 0, 0)
+	return fieldsetInlineFlush("", hints, width, false, 0)
 }
 
 func footerBlockHeight(footer string) int {
@@ -403,27 +334,8 @@ func (m model) renderFooterViz(width int) string {
 	return strings.Join(m.overlayWaveRows(width, vizPaintRows, playX), "\n")
 }
 
-func (m model) renderPlayTime() string {
-	pos := playbackLabel(m.status.PositionLabel, m.status.Position)
-	dur := playbackLabel(m.status.DurationLabel, m.status.Duration)
-	if pos == "" {
-		pos = "0:00"
-	}
-	if dur == "" {
-		dur = "0:00"
-	}
-	return pos + "/" + dur
-}
-
 func (m model) renderFooterHints() string {
-	if m.downloadSelected() {
-		return hint("⏎", "run", 0, false)
-	}
 	return ""
-}
-
-func joinHints(hints []string) string {
-	return strings.Join(hints, "   ")
 }
 
 func (m model) spaceHint() string {
@@ -438,13 +350,6 @@ func hint(key, label string, panelNum int, active bool) string {
 	hex := panelBorderHex(panelNum, active)
 	keyStyle := logoColor().NewStyle().Foreground(lipgloss.Color(hex)).Bold(true)
 	return keyStyle.Render(key) + " " + styleMuted().Render(label)
-}
-
-func heartPrefix(liked bool) string {
-	if liked {
-		return styleGood().Render("♥") + "  "
-	}
-	return "   "
 }
 
 func dur(sec float64) string {

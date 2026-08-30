@@ -102,10 +102,6 @@ func EnsureDB(env Env) (*sql.DB, error) {
 	return db, nil
 }
 
-func Rebuild(db *sql.DB, env Env) error {
-	return rebuildFromJSON(db, env)
-}
-
 func rebuildFromJSON(db *sql.DB, env Env) error {
 	_, _ = db.Exec(`DELETE FROM tracks`)
 	if err := ImportTagsCaches(db, env); err != nil {

@@ -227,21 +227,6 @@ func toggleLike(env paths.Env, path string) (playlist.FavoriteResult, error) {
 	return out, err
 }
 
-func fetchUpNext(env paths.Env, limit int) ([]library.Track, error) {
-	if limit <= 0 {
-		limit = 8
-	}
-	resp, err := cli.IPC(env, "queue.up_next", map[string]any{"limit": limit})
-	if err != nil {
-		return nil, err
-	}
-	var tracks []library.Track
-	if err := decodeData(resp, &tracks); err != nil {
-		return nil, err
-	}
-	return tracks, nil
-}
-
 func fetchJob(env paths.Env) (jobs.State, error) {
 	var st jobs.State
 	resp, err := cli.IPC(env, "job.status", nil)
@@ -256,6 +241,20 @@ func fetchJob(env paths.Env) (jobs.State, error) {
 	}
 	err = decodeData(resp, &st)
 	return st, err
+}
+
+func cancelJob(env paths.Env) error {
+	resp, err := cli.IPC(env, "job.cancel", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		if resp.Error != "" {
+			return fmt.Errorf("%s", resp.Error)
+		}
+		return fmt.Errorf("cancel failed")
+	}
+	return nil
 }
 
 func runLibraryJob(env paths.Env, method string, params map[string]any) (jobs.State, error) {

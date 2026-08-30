@@ -171,14 +171,12 @@ func decryptChromiumValue(encrypted, password []byte) (string, error) {
 func cookiePlaintext(plain []byte) string {
 	candidates := [][]byte{plain}
 	if len(plain) > 32 {
-		candidates = append(candidates, plain[32:])
+		candidates = [][]byte{plain[32:], plain}
 	}
 	for _, raw := range candidates {
-		tok := strings.TrimSpace(string(raw))
-		if tok == "" || strings.ContainsRune(tok, '\x00') {
-			continue
+		if tok := normalizeSoundcloudOAuth(string(raw)); tok != "" {
+			return tok
 		}
-		return tok
 	}
 	return ""
 }

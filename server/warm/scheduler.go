@@ -95,10 +95,6 @@ func (s *Scheduler) EnqueueMany(paths []string, priority Priority, art bool) {
 	}
 }
 
-func (s *Scheduler) EnqueueFull(path string, priority Priority) {
-	s.enqueue(path, priority)
-}
-
 func (s *Scheduler) enqueue(path string, priority Priority) {
 	path = stringPath(path)
 	if path == "" {

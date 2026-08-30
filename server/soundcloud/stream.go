@@ -10,19 +10,46 @@ import (
 )
 
 func (c *Client) DownloadTrackStream(track *Track, destPath string) error {
-	tc, err := pickTranscoding(track)
-	if err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return err
 	}
+	order := orderedTranscodings(track)
+	if len(order) == 0 {
+		return fmt.Errorf("soundcloud: no transcodings for track %d", track.ID)
+	}
+	var lastErr error
+	drmFailed := false
+	for _, tc := range order {
+		if err := c.downloadTranscoding(tc, destPath); err != nil {
+			lastErr = err
+			if strings.Contains(tc.Format.Protocol, "encrypted") && isFFmpegDecryptErr(err) {
+				drmFailed = true
+			}
+			continue
+		}
+		return nil
+	}
+	if drmFailed {
+		return fmt.Errorf("drm protected")
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("soundcloud: no transcodings for track %d", track.ID)
+	}
+	return lastErr
+}
+
+func (c *Client) downloadTranscoding(tc Transcoding, destPath string) error {
 	streamURL, err := c.streamInfoURL(tc.URL)
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
-		return err
-	}
 	tmp := destPath + ".part"
-	if err := downloadFile(c.HTTP, streamURL, tmp); err != nil {
+	if strings.Contains(tc.Format.Protocol, "hls") {
+		if err := ffmpegToMP3(streamURL, tmp); err != nil {
+			os.Remove(tmp)
+			return err
+		}
+	} else if err := downloadFile(c.HTTP, streamURL, tmp); err != nil {
 		os.Remove(tmp)
 		return err
 	}

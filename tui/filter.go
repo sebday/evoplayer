@@ -17,6 +17,7 @@ type navItem struct {
 func navFromIndex(items []playlist.IndexItem) []navItem {
 	out := []navItem{
 		{ID: "filetree", Label: "browse", Kind: "filetree"},
+		{ID: "settings", Label: "settings", Kind: "settings"},
 		{ID: "download", Label: "download", Kind: "download"},
 		{ID: "help", Label: "Help", Kind: "help"},
 	}
@@ -46,24 +47,44 @@ func playlistTabLabel(name string) string {
 
 func navIsIcon(item navItem) bool {
 	switch item.Kind {
-	case "filetree", "download", "help":
+	case "filetree", "settings", "download", "help":
 		return true
 	default:
 		return false
 	}
-}
-
-func navOnMenu(item navItem) bool {
-	return item.ID != "help"
 }
 
 func navIsStatic(id string) bool {
 	switch id {
-	case "download", "help":
+	case "settings", "download", "help":
 		return true
 	default:
 		return false
 	}
+}
+
+func toolNavItems() []navItem {
+	return []navItem{
+		{ID: "settings", Label: "settings", Kind: "settings"},
+		{ID: "download", Label: "download", Kind: "download"},
+	}
+}
+
+func (m model) sidebarTools() []navItem {
+	if m.searching() {
+		return nil
+	}
+	return toolNavItems()
+}
+
+func (m model) playlistSlotCount() int {
+	if m.searching() {
+		return 0
+	}
+	if m.playlistsPending() {
+		return 1
+	}
+	return len(m.sidebarPlaylists())
 }
 
 func (m model) sidebarPlaylists() []navItem {
@@ -96,17 +117,6 @@ func (m model) playlistsPending() bool {
 	return len(m.nav) == 0
 }
 
-func navGlyph(item navItem) string {
-	switch item.ID {
-	case "filetree":
-		return "⌂ files"
-	case "download":
-		return "⬇ download"
-	default:
-		return ""
-	}
-}
-
 func navIndex(nav []navItem, id string) int {
 	for i, item := range nav {
 		if item.ID == id {
@@ -129,21 +139,6 @@ func retainNavIdx(nav []navItem, prev string) int {
 		return 0
 	}
 	return 0
-}
-
-func filterTracks(tracks []library.Track, query string) []library.Track {
-	q := strings.ToLower(strings.TrimSpace(query))
-	if q == "" {
-		return tracks
-	}
-	out := make([]library.Track, 0, len(tracks))
-	for _, t := range tracks {
-		hay := strings.ToLower(t.Artist + " " + t.Title + " " + t.Album + " " + t.Genre)
-		if strings.Contains(hay, q) {
-			out = append(out, t)
-		}
-	}
-	return out
 }
 
 func tracksToBrowse(tracks []library.Track) []library.BrowseEntry {
@@ -169,8 +164,6 @@ func browseTracks(entries []library.BrowseEntry) []library.Track {
 
 func browseLabel(e library.BrowseEntry) string {
 	switch e.Type {
-	case "parent":
-		return ".."
 	case "dir":
 		name := strings.TrimSpace(e.Name)
 		if name == "" {

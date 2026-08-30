@@ -25,42 +25,6 @@ Item {
         return v !== "" && v !== "0" && v.toLowerCase() !== "false"
     }
 
-    function agentDebugEnabled() {
-        var v = String(Quickshell.env("EVOPLAYER_AGENT_DEBUG") || "")
-        return v !== "" && v !== "0" && v.toLowerCase() !== "false"
-    }
-
-    // #region agent log
-    readonly property string agentDebugLogPath: (home || "") + "/Projects/evoplayer/.cursor/debug-f38fb2.log"
-
-    function agentDebug(hypothesisId, location, message, data) {
-        if (!agentDebugEnabled())
-            return
-        var payload = JSON.stringify({
-            sessionId: "f38fb2",
-            runId: "pre-fix",
-            hypothesisId: hypothesisId,
-            location: location,
-            message: message,
-            data: data || {},
-            timestamp: Date.now()
-        })
-        agentDebugLogProc.enqueue(payload)
-    }
-
-    function pumpAgentDebugLog() {
-        if (agentDebugLogProc.running || !agentDebugLogProc._queue.length)
-            return
-        var line = agentDebugLogProc._queue.shift()
-        agentDebugLogProc._line = line
-        agentDebugLogProc.command = [
-            "bash", "-c",
-            "printf '%s\\n' " + JSON.stringify(line) + " >> " + JSON.stringify(agentDebugLogPath)
-        ]
-        agentDebugLogProc.running = true
-    }
-    // #endregion
-
     function traceIPC(msg) {
         if (ipcTraceEnabled())
             console.warn("[evoplayer-ipc] " + msg)
@@ -899,16 +863,6 @@ Item {
     }
 
     function showNowplaying() {
-        // #region agent log
-        agentDebug("H5", "DashboardModule.qml:showNowplaying", "tab switch start", {
-            playlistsOpen: playlistsPanelOpen,
-            playing: playerPlaying,
-            path: String(transportSnap.path || ""),
-            guard: panelTransitionGuard,
-            transportPending: transportApplyPending,
-            playbackPending: playbackStatePending
-        })
-        // #endregion
         traceIPC("showNowplaying playlistsOpen=" + playlistsPanelOpen
             + " playing=" + playerPlaying + " path=" + String(transportSnap.path || ""))
         savePlaylistView(selectedPlaylist)
@@ -924,13 +878,6 @@ Item {
             playerScreen = "nowplaying"
             forceRevealNowPlaying()
             syncVizSubscription()
-            // #region agent log
-            agentDebug("H5", "DashboardModule.qml:showNowplaying", "tab switch deferred", {
-                nowplayingActive: root.nowplayingTabActive,
-                playing: root.playerPlaying,
-                path: String(root.transportSnap.path || "")
-            })
-            // #endregion
         })
     }
 
@@ -2180,25 +2127,10 @@ Item {
                     || m.indexOf("playback.volume.") === 0
                     || m.indexOf("queue.") === 0) {
                 traceIPC("blocked " + m + " (panelTransitionGuard)")
-                // #region agent log
-                agentDebug(m.indexOf("queue.") === 0 ? "H2" : "H1",
-                    "DashboardModule.qml:monitorTransport", "blocked by guard", { method: m })
-                // #endregion
                 return false
             }
         }
         traceIPC("ipc " + method + (params ? " " + JSON.stringify(params) : ""))
-        // #region agent log
-        var hyp = "H1"
-        if (String(method).indexOf("queue.") === 0)
-            hyp = "H2"
-        else if (method === "viz.subscribe" || method === "viz.unsubscribe")
-            hyp = "H4"
-        agentDebug(hyp, "DashboardModule.qml:monitorTransport", "ipc send", {
-            method: method,
-            params: params || null
-        })
-        // #endregion
         var payload = String(method).indexOf("queue.") === 0 ? queueIpcParams(params) : params
         playerMonitor.ipcCallVoid(method, payload)
         return true
@@ -3142,15 +3074,6 @@ Item {
         // so switching to Now Playing does not churn subscribe/unsubscribe IPC.
         var want = root.active && String(snap.path || "") !== ""
             && (root.nowplayingTabActive || String(snap.state || "") === "playing")
-        // #region agent log
-        agentDebug("H4", "DashboardModule.qml:syncVizSubscription", "viz sync", {
-            want: want,
-            subscribed: _vizSubscribed,
-            nowplaying: root.nowplayingTabActive,
-            state: String(snap.state || ""),
-            path: String(snap.path || "").split("/").pop()
-        })
-        // #endregion
         if (want) {
             if (_vizSubscribed)
                 return
@@ -5227,13 +5150,6 @@ Item {
     }
 
     function togglePlayback() {
-        // #region agent log
-        agentDebug("H1", "DashboardModule.qml:togglePlayback", "toggle requested", {
-            guard: panelTransitionGuard,
-            playing: playerPlaying,
-            path: String(transportSnap.path || "").split("/").pop()
-        })
-        // #endregion
         traceIPC("togglePlayback guard=" + panelTransitionGuard + " playing=" + playerPlaying)
         if (panelTransitionGuard)
             return
@@ -5270,15 +5186,9 @@ Item {
         if (!playbackStatePending)
             return
         if (panelTransitionGuard) {
-            // #region agent log
-            agentDebug("H5", "DashboardModule.qml:flushPlaybackToggle", "deferred by guard", {})
-            // #endregion
             playbackToggleTimer.restart()
             return
         }
-        // #region agent log
-        agentDebug("H1", "DashboardModule.qml:flushPlaybackToggle", "sending toggle", {})
-        // #endregion
         runPlayer(["toggle"], null, cmdProc)
     }
 
@@ -5696,13 +5606,6 @@ Item {
             return
         traceIPC("playQueueAt start=" + String(startPath).split("/").pop()
             + " count=" + pathList.length + " guard=" + panelTransitionGuard)
-        // #region agent log
-        agentDebug("H2", "DashboardModule.qml:playQueueAt", "queue replace requested", {
-            start: String(startPath).split("/").pop(),
-            count: pathList.length,
-            guard: panelTransitionGuard
-        })
-        // #endregion
         if (panelTransitionGuard)
             return
         startPath = String(startPath)
@@ -5851,11 +5754,6 @@ Item {
         if (!transportApplyPending || !transportApplyTarget)
             return
         if (panelTransitionGuard) {
-            // #region agent log
-            agentDebug("H5", "DashboardModule.qml:flushTransportApply", "deferred by guard", {
-                kind: String(transportApplyTarget.kind || "")
-            })
-            // #endregion
             transportApplyTimer.restart()
             return
         }
@@ -5864,12 +5762,6 @@ Item {
             return
         }
         var t = transportApplyTarget
-        // #region agent log
-        agentDebug("H2", "DashboardModule.qml:flushTransportApply", "flush transport", {
-            kind: String(t.kind || ""),
-            index: t.index
-        })
-        // #endregion
         if (t.kind === "jump")
             jumpCurrentAtNow(t.index)
         else if (t.kind === "current")
@@ -6715,17 +6607,6 @@ Item {
     }
 
     Process {
-        id: agentDebugLogProc
-        property var _queue: []
-        property string _line: ""
-        function enqueue(line) {
-            _queue.push(String(line || ""))
-            pumpAgentDebugLog()
-        }
-        onExited: Qt.callLater(pumpAgentDebugLog)
-    }
-
-    Process {
         id: statusQueryProc
         property var _onDone: null
         stdout: StdioCollector {
@@ -6866,12 +6747,6 @@ Item {
         target: root
         function onActiveChanged() { root.syncVizSubscription() }
         function onNowplayingTabActiveChanged() {
-            // #region agent log
-            root.agentDebug("H5", "DashboardModule.qml:onNowplayingTabActiveChanged", "tab active changed", {
-                active: root.nowplayingTabActive,
-                playing: root.playerPlaying
-            })
-            // #endregion
             root.syncVizSubscription()
         }
         function onPlayerPlayingChanged() { root.syncVizSubscription() }

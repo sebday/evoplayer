@@ -53,14 +53,6 @@ func EmbedMP3(path string, targets map[string]string, picture []byte, pictureMIM
 	return tag.Save()
 }
 
-// EmbedMP3Picture attaches a front-cover image to an mp3 file.
-func EmbedMP3Picture(path string, picture []byte, mime string) error {
-	if len(picture) == 0 {
-		return fmt.Errorf("tags: empty picture")
-	}
-	return EmbedMP3(path, nil, picture, mime)
-}
-
 // PictureMIME guesses image MIME from magic bytes.
 func PictureMIME(data []byte) string {
 	if len(data) >= 3 && data[0] == 0xff && data[1] == 0xd8 {

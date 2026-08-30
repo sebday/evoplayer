@@ -341,11 +341,6 @@ func liveOverlayLayers(waveFill, levels, peaks []float64, maxHalf float64, clip 
 	return bar, peak
 }
 
-func liveOverlayFill(waveFill, levels, peaks []float64, maxHalf float64, clip bool) []float64 {
-	bar, _ := liveOverlayLayers(waveFill, levels, peaks, maxHalf, clip, vizModeBars)
-	return bar
-}
-
 func hasLiveFill(fill []float64) bool {
 	for _, v := range fill {
 		if v > 0 {
@@ -509,10 +504,6 @@ func wavePlayCol(frac float64, width int) int {
 
 const wavePlayhead = '│'
 
-func wavePlayheadRune() rune {
-	return wavePlayhead
-}
-
 var (
 	waveWhitePrefix = paletteFG(15)
 	waveMutedPrefix = paletteFG(8)
@@ -652,22 +643,11 @@ func (m model) overlayWaveRows(width, height, playedTo int) []string {
 	if mode == vizModeNone || !m.playing() {
 		return colorizeWaveRows(m.ensureWaveRows(width, height), playedTo)
 	}
-	live, peak := liveOverlayLayers(fill, m.vizLevels, m.vizPeaks, waveMaxHalf(height), len(m.wavePeaks) > 0, mode)
+	live, peak := liveOverlayLayers(fill, nil, nil, waveMaxHalf(height), len(m.wavePeaks) > 0, mode)
 	if !hasLiveFill(live) && !hasLiveFill(peak) {
 		return colorizeWaveRows(m.ensureWaveRows(width, height), playedTo)
 	}
 	return renderOverlayRows(fill, live, peak, width, height, playedTo, mode)
-}
-
-func (m model) vizInnerLines() []string {
-	if m.frames == nil || m.frames.vizW < 8 {
-		return nil
-	}
-	innerW := m.frames.vizW
-	waveW := vizWaveWidth(innerW)
-	playX := wavePlayCol(waveformPlayedFrac(m.status.Position, m.status.Duration), waveW)
-	m.ensureWaveFill(waveW, vizPaintRows)
-	return composeVizLines(m.frames, m.vizLevels, m.vizPeaks, playX, len(m.wavePeaks) > 0, m.vizMode)
 }
 
 func composeVizLines(frames *frameCache, levels, livePeaks []float64, playX int, hasWave bool, mode vizMode) []string {

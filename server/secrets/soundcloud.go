@@ -3,10 +3,13 @@ package secrets
 import (
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
 const soundcloudPassRel = "soundcloud/oauth-token"
+
+var soundcloudOAuthRe = regexp.MustCompile(`\d+-\d+-\d+-[A-Za-z0-9]+`)
 
 type Token struct {
 	Token  string
@@ -42,18 +45,42 @@ func resolveSoundcloud(home string, show passFunc, keyring func(string) []byte) 
 			if err != nil || strings.TrimSpace(tok) == "" {
 				continue
 			}
-			return Token{Token: strings.TrimSpace(tok), Source: store.Source}
+			return Token{Token: normalizeSoundcloudOAuth(tok), Source: store.Source}
 		}
 	}
 	if show != nil {
 		if tok, err := show(soundcloudPassRel); err == nil {
-			tok = strings.TrimSpace(tok)
+			tok = normalizeSoundcloudOAuth(tok)
 			if tok != "" {
 				return Token{Token: tok, Source: "pass"}
 			}
 		}
 	}
 	return Token{}
+}
+
+func normalizeSoundcloudOAuth(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	var best string
+	for _, m := range soundcloudOAuthRe.FindAllString(s, -1) {
+		if len(m) > len(best) {
+			best = m
+		}
+	}
+	if best != "" {
+		return best
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if r < 33 || r > 126 {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 type passFunc func(rel string) (string, error)

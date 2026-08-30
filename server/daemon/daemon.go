@@ -430,6 +430,8 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		}
 		d.Actor.VizAnalyzer().ApplyConfig(merged)
 		return d.vizConfigView(), nil
+	case "config.set":
+		return d.handleConfigSet(req)
 	case "viz.subscribe":
 		d.vizMu.Lock()
 		d.vizSubs++

@@ -58,6 +58,15 @@ func TestResolveSoundcloudFallsBackToPass(t *testing.T) {
 	}
 }
 
+func TestNormalizeSoundcloudOAuthExtractsEmbeddedToken(t *testing.T) {
+	raw := "\xf8\xb5\x8fj{\xc9\x97\x7f{\x06ix\x98%0ws\v-;\x17\x1a\x7f\xef\xcf\xfb2-329470-4587087-OxdIQgBWgnHRifB8"
+	got := normalizeSoundcloudOAuth(raw)
+	want := "2-329470-4587087-OxdIQgBWgnHRifB8"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
 func encryptChromiumValue(plain string, password []byte) ([]byte, error) {
 	key, err := pbkdf2.Key(sha1.New, string(password), []byte("saltysalt"), 1, 16)
 	if err != nil {

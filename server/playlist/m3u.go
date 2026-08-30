@@ -116,24 +116,6 @@ func writeM3U(path string, paths []string) error {
 	return os.Rename(tmpName, path)
 }
 
-// RefreshAll rebuilds genre playlists, mixes.m3u, and all.m3u from likes.
-func RefreshAll(env Env) error {
-	genres, err := listMusicGenres(env.MusicRoot)
-	if err != nil {
-		return err
-	}
-	for _, g := range genres {
-		if err := writeGenreM3U(env, g); err != nil {
-			return err
-		}
-	}
-	_ = os.Remove(filepath.Join(env.PlaylistDir, "favorites.m3u"))
-	if err := writeMixesM3U(env); err != nil {
-		return err
-	}
-	return writeLikesM3U(env, filepath.Join(env.PlaylistDir, "all.m3u"))
-}
-
 func likedPathsForGenre(env Env, genre string) ([]string, error) {
 	raw, err := os.ReadFile(env.LikesFile)
 	if err != nil {

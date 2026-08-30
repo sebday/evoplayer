@@ -183,17 +183,20 @@ func (m model) renderNowPlayingBar() string {
 		inner = lipgloss.JoinHorizontal(lipgloss.Top, chrome, " ", wave)
 	}
 	h := lipgloss.Height(inner) + 2
-	return fieldsetPad(m.nowPlayingLegend(g.nowPlayingInnerW), "", inner, m.mainWidth(), h, false, 0, nowPlayingPadY, nowPlayingPadX, "", m.nowPlayingHintLegend(), 1)
+	return fieldsetPad(m.nowPlayingLegend(g.nowPlayingInnerW), "", inner, m.mainWidth(), h, false, nowPlayingPadY, nowPlayingPadX, "", m.nowPlayingHintLegend(), 1)
 }
 
 func (m model) nowPlayingHintLegend() string {
-	return m.spaceHint() + "  " + hint("/", "find", 1, false) + "  " + hint("?", "help", 1, false) + "  " + hint("q", "quit", 1, false)
+	return m.spaceHint() + "  " + hint("/", "find", 1, false) + "  " + hint("?", "help", 1, false)
 }
 
 func (m model) renderBody(height int) (string, artworkPlacement) {
 	g := m.playerGeom()
 	g.bodyH = height
 	browse := m.renderBrowsePane(g)
+	if m.downloadSelected() {
+		return lipgloss.JoinHorizontal(lipgloss.Top, browse, m.renderDownloadPane(g)), artworkPlacement{}
+	}
 	playlist := m.renderPlaylistPane(g)
 	artwork, place := m.renderArtworkPane(g)
 	joined := lipgloss.JoinHorizontal(lipgloss.Top, browse, playlist, artwork)
@@ -215,12 +218,8 @@ func paneInnerHeight(bodyH int) int {
 func (m model) renderBrowsePane(g playerGeom) string {
 	innerW := paneInnerWidth(g.browseW)
 	innerH := paneInnerHeight(g.bodyH)
-	pulse := -1.0
 	browseFocused := m.focus == focusBrowse || m.focus == focusSearch
-	if browseFocused {
-		pulse = m.pulsePhase
-	}
-	return fieldsetPad(m.browseLegend(innerW), m.browseLegendTick(), m.renderBrowseInner(innerW, innerH), g.browseW, g.bodyH, browseFocused, pulse, panePadY, panePadX, m.browseHintLegend(), "", 2)
+	return fieldsetPad(m.browseLegend(innerW), m.browseLegendTick(), m.renderBrowseInner(innerW, innerH), g.browseW, g.bodyH, browseFocused, panePadY, panePadX, m.browseHintLegend(), "", 2)
 }
 
 func (m model) browseLegendTick() string {
@@ -238,15 +237,15 @@ func (m model) browseHintLegend() string {
 func (m model) renderPlaylistPane(g playerGeom) string {
 	innerW := paneInnerWidth(g.playlistW)
 	innerH := paneInnerHeight(g.bodyH)
-	pulse := -1.0
-	if m.focus == focusPlaylist {
-		pulse = m.pulsePhase
-	}
 	bottomLeft := hint("l", "like", 3, m.focus == focusPlaylist)
 	if m.artPicker {
 		bottomLeft = hint("⏎", "set", 3, m.focus == focusPlaylist) + "  " + hint("s", "track", 3, m.focus == focusPlaylist)
+	} else if m.settingsSelected() {
+		bottomLeft = hint("⏎", "save", 3, m.focus == focusPlaylist)
+	} else if m.helpSelected() {
+		bottomLeft = ""
 	}
-	return fieldsetPad(m.playlistLegend(innerW), "", m.renderPlaylistInner(innerW, innerH), g.playlistW, g.bodyH, m.focus == focusPlaylist, pulse, panePadY, panePadX, bottomLeft, "", 3)
+	return fieldsetPad(m.playlistLegend(innerW), "", m.renderPlaylistInner(innerW, innerH), g.playlistW, g.bodyH, m.focus == focusPlaylist, panePadY, panePadX, bottomLeft, "", 3)
 }
 
 func (m model) renderArtworkPane(g playerGeom) (string, artworkPlacement) {
@@ -260,7 +259,7 @@ func (m model) renderArtworkPane(g playerGeom) (string, artworkPlacement) {
 	if overlay && !place.atCursor {
 		pane = fieldsetArt(m.artworkLegend(), layout, g.artworkW, g.bodyH, panePadX, g.artworkCols, hint("a", "art", 4, false), 4)
 	} else {
-		pane = fieldsetPad(m.artworkLegend(), "", layout, g.artworkW, g.bodyH, false, 0, 0, panePadX, "", hint("a", "art", 4, false), 4)
+		pane = fieldsetPad(m.artworkLegend(), "", layout, g.artworkW, g.bodyH, false, 0, panePadX, "", hint("a", "art", 4, false), 4)
 	}
 	return pane, place
 }
@@ -286,13 +285,12 @@ func (m model) renderBrowseInner(width, innerH int) string {
 
 func (m model) renderBrowseRows(width, vis int) string {
 	playlists := m.sidebarPlaylists()
+	tools := m.sidebarTools()
 	pending := m.playlistsPending()
 	nBrowse := len(m.browse)
-	nPlaylists := len(playlists)
-	if pending {
-		nPlaylists = 1
-	}
-	total := nBrowse + nPlaylists
+	nPlaylists := m.playlistSlotCount()
+	nTools := len(tools)
+	total := nBrowse + nPlaylists + nTools
 	if total == 0 {
 		if m.searching() {
 			return styleMuted().Render("no matches")
@@ -307,17 +305,25 @@ func (m model) renderBrowseRows(width, vis int) string {
 	end := min(total, start+vis)
 	focused := m.focus == focusBrowse || m.focus == focusSearch
 	browseFocused := m.focus == focusBrowse || m.focus == focusSearch
-	var browseLines, playlistLines []string
+	var browseLines, playlistLines, toolLines []string
 	for i := start; i < end; i++ {
 		if i < nBrowse {
 			browseLines = append(browseLines, m.renderBrowseRow(i, width, focused))
 			continue
 		}
-		if pending {
+		rel := i - nBrowse
+		if pending && rel == 0 {
 			playlistLines = append(playlistLines, styleMuted().Render("loading…"))
 			continue
 		}
-		playlistLines = append(playlistLines, m.renderPlaylistRow(playlists[i-nBrowse], i, width, focused))
+		if rel < nPlaylists {
+			playlistLines = append(playlistLines, m.renderPlaylistRow(playlists[rel], i, width, focused))
+			continue
+		}
+		ti := rel - nPlaylists
+		if ti >= 0 && ti < nTools {
+			toolLines = append(toolLines, m.renderPlaylistRow(tools[ti], i, width, focused))
+		}
 	}
 	var parts []string
 	if len(browseLines) == 0 && m.leftLoading() && nBrowse == 0 && !m.searching() {
@@ -336,6 +342,14 @@ func (m model) renderBrowseRows(width, vis int) string {
 			block.WriteString(styleMuted().Render("loading…"))
 		}
 		parts = append(parts, block.String())
+	}
+	if len(toolLines) > 0 {
+		block := strings.Join(toolLines, "\n")
+		if len(parts) > 0 {
+			parts = append(parts, "", block)
+		} else {
+			parts = append(parts, block)
+		}
 	}
 	return strings.TrimRight(strings.Join(parts, "\n"), "\n")
 }
@@ -370,7 +384,7 @@ func (m model) renderBrowseRow(i, width int, focused bool) string {
 	} else if selected {
 		cur = styleSelected().Render(cur)
 		name = styleSelected().Render(name)
-	} else if e.Type == "dir" || e.Type == "parent" {
+	} else if e.Type == "dir" {
 		name = styleMuted().Render(name)
 	} else {
 		name = styleText().Render(name)
@@ -401,8 +415,10 @@ func (m model) renderPlaylistInner(width, innerH int) string {
 		return clipLines(m.renderArtPicker(width), innerH)
 	case m.helpSelected():
 		return clipLines(m.renderHelpBody(), innerH)
+	case m.settingsSelected():
+		return clipLines(m.renderSettings(width), innerH)
 	case m.downloadSelected():
-		return clipLines(m.renderDownload(), innerH)
+		return clipLines(m.renderDownloadLanding(width, innerH), innerH)
 	case m.err != "" && m.focus == focusPlaylist:
 		return clipLines(styleWarn().Render(m.err), innerH)
 	case len(m.queueFiltered) == 0:
@@ -458,7 +474,10 @@ func (m model) playlistLegend(maxW int) string {
 		return clipWidth("cover", maxW)
 	}
 	if m.downloadSelected() {
-		return clipWidth("Downloads", maxW)
+		return clipWidth("download", maxW)
+	}
+	if m.settingsSelected() {
+		return clipWidth("settings", maxW)
 	}
 	if m.helpSelected() {
 		return clipWidth("Help", maxW)
@@ -490,13 +509,6 @@ func (m model) playlistInnerWidth() int {
 
 func (m model) browseInnerWidth() int {
 	return paneInnerWidth(m.playerGeom().browseW)
-}
-
-func (m model) listInnerWidth() int {
-	if m.focus == focusPlaylist {
-		return m.playlistInnerWidth()
-	}
-	return m.browseInnerWidth()
 }
 
 func (m model) artworkLegend() string {
@@ -536,13 +548,6 @@ func (m model) cachedArtwork(cols, rows int) (layout, seq string, overlay bool) 
 	m.art.seq = seq
 	m.art.overlay = overlay
 	return layout, seq, overlay
-}
-
-func playbackLabel(label string, sec float64) string {
-	if label != "" {
-		return label
-	}
-	return dur(sec)
 }
 
 func clipWidth(s string, width int) string {
@@ -656,18 +661,6 @@ func (m *model) patchPlaylist() {
 	m.patchPane(row, col, w, h, m.renderPlaylistInner(w, h), &m.frames.lastPlaylist)
 }
 
-func (m model) renderNowPlayingHead(width int) string {
-	return m.renderNowPlaying(width)
-}
-
-func (m model) nowPlayingHeadRows() int {
-	head := m.renderNowPlayingHead(m.listInnerWidth())
-	if head == "" {
-		return 0
-	}
-	return lipgloss.Height(head) + 1
-}
-
 func (m model) renderNowPlaying(width int) string {
 	width = max(24, width)
 	rows := m.nowPlayingDisplay(width)
@@ -745,22 +738,11 @@ func (m model) nowPlayingMarqueeRow(width int) string {
 }
 
 func (m model) nowPlayingRelease(width int) string {
-	khz := styleText().Render(nowPlayingKHZ)
-	khzW := lipgloss.Width(khz)
 	release := nowPlayingUpper(m.nowPlayingReleaseLine())
-	leftW := width - khzW - 1
-	if leftW < 4 {
-		return padExact(lipgloss.NewStyle().Width(width).Align(lipgloss.Right).Render(khz), width)
+	if release == "" {
+		return padExact("", width)
 	}
-	left := ""
-	if release != "" {
-		left = styleText().Render(clipEllipsis(release, leftW))
-	}
-	gap := width - lipgloss.Width(left) - khzW
-	if gap < 1 {
-		gap = 1
-	}
-	return padExact(left+strings.Repeat(" ", gap)+khz, width)
+	return padExact(styleText().Render(clipEllipsis(release, width)), width)
 }
 
 func (m model) nowPlayingReleaseLine() string {
@@ -801,32 +783,28 @@ func (m model) nowPlayingMeters(width int) string {
 	if width < 8 {
 		return ""
 	}
-	volW := min(12, max(6, width-8))
-	panW := min(7, max(0, width-volW-1))
+	const heartW = 2 // space + heart
+	volW := min(12, max(6, width-8-heartW))
+	panW := min(7, max(0, width-volW-1-heartW))
 	vol := nowPlayingVolume(m.status.Volume, volW)
 	if panW >= 5 {
-		return padExact(vol+" "+nowPlayingPan(panW), width)
+		return padExact(vol+" "+nowPlayingPan(panW)+" "+nowPlayingHeart(m.status.Liked), width)
 	}
-	return padExact(vol, width)
+	return padExact(vol+" "+nowPlayingHeart(m.status.Liked), width)
 }
 
 func (m model) nowPlayingStatusLines() [3]string {
 	line1 := styleMuted().Render("MONO") + " " + styleGood().Render("STEREO")
-	line2 := nowPlayingToggle("EQ", m.vizMode != vizModeNone) + " " + nowPlayingToggle("PL", true)
-	dot := styleGood().Render("*")
-	w := max(lipgloss.Width(line1), lipgloss.Width(line2), lipgloss.Width(dot))
+	line2 := styleText().Render(nowPlayingKHZ)
+	line3 := nowPlayingToggle("EQ", m.vizMode != vizModeNone) + " " + nowPlayingToggle("PL", true)
+	w := max(lipgloss.Width(line1), lipgloss.Width(line2), lipgloss.Width(line3))
+	left := lipgloss.NewStyle().Width(w).Align(lipgloss.Left)
+	right := lipgloss.NewStyle().Width(w).Align(lipgloss.Right)
 	return [3]string{
-		lipgloss.NewStyle().Width(w).Align(lipgloss.Right).Render(line1),
-		lipgloss.NewStyle().Width(w).Align(lipgloss.Right).Render(line2),
-		lipgloss.NewStyle().Width(w).Align(lipgloss.Right).Render(dot),
+		left.Render(line1),
+		right.Render(line2),
+		right.Render(line3),
 	}
-}
-
-func (m model) nowPlayingSeek(width int) string {
-	if width < 5 {
-		return nowPlayingSeekBar(m.status.Position, m.status.Duration, width)
-	}
-	return " " + nowPlayingSeekBar(m.status.Position, m.status.Duration, width-2) + " "
 }
 
 func nowPlayingTransportBtn(glyph string, active bool) string {
@@ -912,21 +890,11 @@ func nowPlayingPan(width int) string {
 	return nowPlayingDotSlider(width/2, width)
 }
 
-func nowPlayingSeekBar(pos, dur float64, width int) string {
-	if width < 1 {
-		return ""
+func nowPlayingHeart(liked bool) string {
+	if liked {
+		return styleLiked().Render("♥")
 	}
-	fill := 0
-	if dur > 0 {
-		fill = int(math.Round(pos / dur * float64(width)))
-	}
-	if fill < 0 {
-		fill = 0
-	}
-	if fill > width {
-		fill = width
-	}
-	return styleGood().Render(strings.Repeat("─", fill)) + styleMuted().Render(strings.Repeat("─", width-fill))
+	return " "
 }
 
 func nowPlayingDotSlider(x, width int) string {

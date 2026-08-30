@@ -96,13 +96,6 @@ func traceIPCParams(method string, params json.RawMessage) string {
 }
 
 func traceIPCIn(req ipc.Request, before playback.Status) {
-	hyp := ipcHypothesis(req.Method)
-	if agentDebugEnabled() && hyp != "" {
-		agentDebugLog(hyp, "daemon.go:traceIPCIn", "ipc req", map[string]any{
-			"id": req.ID, "method": req.Method, "before": tracePlaybackSnap(before),
-			"params": traceIPCParams(req.Method, req.Params),
-		})
-	}
 	if !ipcTraceEnabled() || !ipcTraceInteresting(req.Method) {
 		return
 	}
@@ -117,14 +110,6 @@ func traceIPCIn(req ipc.Request, before playback.Status) {
 }
 
 func traceIPCOut(req ipc.Request, before, after playback.Status, err error, dur time.Duration) {
-	hyp := ipcHypothesis(req.Method)
-	if agentDebugEnabled() && hyp != "" {
-		agentDebugLog(hyp, "daemon.go:traceIPCOut", "ipc res", map[string]any{
-			"id": req.ID, "method": req.Method, "ok": err == nil,
-			"before": tracePlaybackSnap(before), "after": tracePlaybackSnap(after),
-			"durMs": dur.Milliseconds(), "err": errString(err),
-		})
-	}
 	if !ipcTraceEnabled() || !ipcTraceInteresting(req.Method) {
 		return
 	}
@@ -142,32 +127,7 @@ func traceIPCOut(req ipc.Request, before, after playback.Status, err error, dur 
 		tracePlaybackSnap(before), tracePlaybackSnap(after), errMsg)
 }
 
-func ipcHypothesis(method string) string {
-	switch {
-	case method == "playback.toggle" || method == "playback.stop":
-		return "H1"
-	case strings.HasPrefix(method, "queue."):
-		return "H2"
-	case method == "viz.subscribe" || method == "viz.unsubscribe":
-		return "H4"
-	default:
-		return ""
-	}
-}
-
-func errString(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
 func traceMPRIS(action string, before playback.Status) {
-	if agentDebugEnabled() {
-		agentDebugLog("H3", "daemon.go:traceMPRIS", action, map[string]any{
-			"before": tracePlaybackSnap(before),
-		})
-	}
 	if !ipcTraceEnabled() {
 		return
 	}

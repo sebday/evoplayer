@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/sebday/evoplayer/server/download"
@@ -317,7 +318,8 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 		return map[string]any{"cancelled": cancelled, "name": name}, nil
 	case "library.import":
 		st, err := d.jobs.Start("import", func(ctx context.Context) error {
-			if err := library.RunImportCtx(ctx, library.EnvFrom(d.Env)); err != nil {
+			rep := daemonJobReporter{d: d}
+			if err := library.RunImportCtx(ctx, library.EnvFrom(d.Env), rep); err != nil {
 				return err
 			}
 			d.jobs.SetResult(map[string]any{
@@ -369,11 +371,12 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 		}
 		_ = ipc.DecodeParams(req.Params, &p)
 		st, err := d.jobs.Start("download", func(ctx context.Context) error {
-			if err := soundcloud.DownloadEnv(d.Env); err != nil {
+			rep := daemonJobReporter{d: d}
+			if err := soundcloud.DownloadEnvReport(d.Env, rep); err != nil {
 				return err
 			}
 			if p.Import {
-				if err := library.RunImportCtx(ctx, library.EnvFrom(d.Env)); err != nil {
+				if err := library.RunImportCtx(ctx, library.EnvFrom(d.Env), rep); err != nil {
 					return err
 				}
 			}
@@ -396,12 +399,20 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 			return nil, ipc.ErrInvalidParams("url required")
 		}
 		st, err := d.jobs.Start("download-url", func(ctx context.Context) error {
+			rep := daemonJobReporter{d: d}
+			if download.DetectSource(p.URL) == "soundcloud" {
+				if opts, err := soundcloud.LoadOptions(d.Env); err == nil && opts.OAuthSource != "" {
+					rep.Line(soundcloud.LogInfof("soundcloud auth from %s", opts.OAuthSource))
+				}
+				rep.Progress(jobs.Progress{Phase: "downloading"})
+			}
 			path, err := download.DownloadURLCtx(ctx, d.Env, p.URL, func(phase string, pct int) {
 				d.jobs.SetProgress(jobs.Progress{Phase: phase, Done: pct, Total: 100})
 			})
 			if err != nil {
 				return err
 			}
+			rep.Line(soundcloud.LogOK(filepath.Base(path)))
 			env := library.EnvFrom(d.Env)
 			folders := library.GenreChoices(env)
 			d.jobs.SetResult(map[string]any{
@@ -410,7 +421,7 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 				"genres":  folders,
 			})
 			if p.Import {
-				if err := library.RunImportCtx(ctx, env); err != nil {
+				if err := library.RunImportCtx(ctx, env, rep); err != nil {
 					return err
 				}
 				d.jobs.SetResult(map[string]any{
@@ -469,4 +480,16 @@ func methodDomain(method string) string {
 		return method[:i]
 	}
 	return method
+}
+
+type daemonJobReporter struct {
+	d *Daemon
+}
+
+func (r daemonJobReporter) Progress(p jobs.Progress) {
+	r.d.jobs.SetProgress(p)
+}
+
+func (r daemonJobReporter) Line(s string) {
+	r.d.jobs.AppendLog(s)
 }

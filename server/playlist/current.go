@@ -97,39 +97,6 @@ func ReadCurrentPaths(env Env) ([]string, error) {
 	return legacyPaths, nil
 }
 
-func UpNextTracks(env Env, currentPath string, limit int) ([]library.Track, error) {
-	if limit <= 0 {
-		limit = 5
-	}
-	cachePath := env.currentTracksJSON()
-	raw, err := os.ReadFile(cachePath)
-	if err != nil {
-		return nil, nil
-	}
-	var items []library.Track
-	if json.Unmarshal(raw, &items) != nil {
-		return nil, nil
-	}
-	idx := -1
-	for i, item := range items {
-		if item.Path == currentPath {
-			idx = i
-			break
-		}
-	}
-	if idx < 0 {
-		return nil, nil
-	}
-	end := idx + 1 + limit
-	if end > len(items) {
-		end = len(items)
-	}
-	if idx+1 >= end {
-		return nil, nil
-	}
-	return items[idx+1 : end], nil
-}
-
 func ExtendCurrent(env Env, currentPath string) (ExtendResult, []string, []string, bool, error) {
 	paths, err := ReadCurrentPaths(env)
 	if err != nil {

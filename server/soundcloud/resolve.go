@@ -57,21 +57,13 @@ func (c *Client) ResolveURL(pageURL string) (*Track, error) {
 }
 
 func (c *Client) streamInfoURL(transcodingURL string) (string, error) {
-	body, err := c.getJSONWithClientID(strings.TrimPrefix(transcodingURL, apiBase))
+	url := transcodingURL
+	if strings.HasPrefix(transcodingURL, apiBase) {
+		url = apiBase + strings.TrimPrefix(transcodingURL, apiBase)
+	}
+	body, err := c.getJSONPublic(url)
 	if err != nil {
-		if strings.HasPrefix(transcodingURL, "http") {
-			if err2 := c.ensureClientID(); err2 != nil {
-				return "", err
-			}
-			sep := "?"
-			if strings.Contains(transcodingURL, "?") {
-				sep = "&"
-			}
-			body, err = c.getJSON(transcodingURL + sep + "client_id=" + c.ClientID)
-		}
-		if err != nil {
-			return "", err
-		}
+		return "", err
 	}
 	var out struct {
 		URL string `json:"url"`
@@ -86,24 +78,33 @@ func (c *Client) streamInfoURL(transcodingURL string) (string, error) {
 }
 
 func pickTranscoding(track *Track) (Transcoding, error) {
-	var progressive, hls Transcoding
+	order := orderedTranscodings(track)
+	if len(order) == 0 {
+		return Transcoding{}, fmt.Errorf("soundcloud: no transcodings for track %d", track.ID)
+	}
+	return order[0], nil
+}
+
+func orderedTranscodings(track *Track) []Transcoding {
+	var progressiveHQ, progressive, hls, encrypted []Transcoding
 	for _, t := range track.Media.Transcodings {
 		switch t.Format.Protocol {
 		case "progressive":
-			if progressive.URL == "" || t.Quality == "hq" {
-				progressive = t
+			if t.Quality == "hq" {
+				progressiveHQ = append(progressiveHQ, t)
+			} else {
+				progressive = append(progressive, t)
 			}
 		case "hls":
-			if hls.URL == "" {
-				hls = t
-			}
+			hls = append(hls, t)
+		case "cbc-encrypted-hls", "ctr-encrypted-hls":
+			encrypted = append(encrypted, t)
 		}
 	}
-	if progressive.URL != "" {
-		return progressive, nil
-	}
-	if hls.URL != "" {
-		return hls, nil
-	}
-	return Transcoding{}, fmt.Errorf("soundcloud: no transcodings for track %d", track.ID)
+	out := make([]Transcoding, 0, len(track.Media.Transcodings))
+	out = append(out, progressiveHQ...)
+	out = append(out, progressive...)
+	out = append(out, hls...)
+	out = append(out, encrypted...)
+	return out
 }

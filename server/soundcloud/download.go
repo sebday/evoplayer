@@ -10,6 +10,7 @@ import (
 
 	"github.com/sebday/evoplayer/server/audio"
 	"github.com/sebday/evoplayer/server/config"
+	"github.com/sebday/evoplayer/server/jobs"
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/secrets"
 	"github.com/sebday/evoplayer/server/tags"
@@ -61,11 +62,20 @@ func LoadOptions(env paths.Env) (DownloadOptions, error) {
 }
 
 func Download(opts DownloadOptions) error {
+	return DownloadReport(opts, nopReporter{})
+}
+
+func DownloadReport(opts DownloadOptions, rep Reporter) error {
+	if rep == nil {
+		rep = nopReporter{}
+	}
 	if opts.MusicRoot == "" {
 		return fmt.Errorf("evoplayer: music root not configured")
 	}
 	if opts.OAuthSource != "" {
-		fmt.Fprintf(os.Stderr, "evoplayer: soundcloud auth from %s\n", opts.OAuthSource)
+		msg := LogInfof("soundcloud auth from %s", opts.OAuthSource)
+		fmt.Fprintf(os.Stderr, "evoplayer: %s\n", msg)
+		rep.Line(msg)
 	}
 	incoming := filepath.Join(opts.MusicRoot, ".incoming")
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
@@ -79,23 +89,77 @@ func Download(opts DownloadOptions) error {
 	if err != nil {
 		return err
 	}
-	tracks, err := client.LikesTracks()
+	rep.Progress(jobs.Progress{Phase: "fetching likes"})
+	rep.Line(LogInfo("fetching likes"))
+	tracks, err := client.LikesTracksProgress(func(n int) {
+		rep.Progress(jobs.Progress{Phase: fmt.Sprintf("fetching likes (%d)", n), Done: n})
+		if n > 0 && n%200 == 0 {
+			rep.Line(LogInfof("fetched %d likes", n))
+		}
+	})
 	if err != nil {
+		rep.Line(LogFail(err.Error()))
 		return err
 	}
+	rep.Line(LogInfof("%d likes", len(tracks)))
+	pending := make([]Track, 0, len(tracks))
 	for _, track := range tracks {
-		if archive.Has(track.ID) {
+		if !archive.Has(track.ID) {
+			pending = append(pending, track)
+		}
+	}
+	archived := len(tracks) - len(pending)
+	rep.Line(LogInfof("%d already archived", archived))
+	total := len(pending)
+	if total == 0 {
+		rep.Line(LogInfo("no new likes to download"))
+		return NormalizeIncoming(opts.MusicRoot)
+	}
+	rep.Line(LogInfof("%d tracks to download", total))
+	done := 0
+	for _, track := range pending {
+		label := strings.TrimSpace(track.User.Username)
+		if title := strings.TrimSpace(track.Title); title != "" {
+			if label != "" {
+				label += " - " + title
+			} else {
+				label = title
+			}
+		}
+		rep.Progress(jobs.Progress{Phase: label, Done: done, Total: total})
+		dest := trackDestPath(incoming, track)
+		if _, err := os.Stat(dest); err == nil {
+			if err := archive.Add(track.ID); err != nil {
+				fmt.Fprintf(os.Stderr, "evoplayer: warn: archive write: %v\n", err)
+				rep.Line(LogWarn(fmt.Sprintf("archive write failed: %v", err)))
+			}
+			done++
+			msg := LogSkip(filepath.Base(dest))
+			fmt.Fprintf(os.Stderr, "evoplayer: %s\n", msg)
+			rep.Line(msg)
+			rep.Progress(jobs.Progress{Phase: msg, Done: done, Total: total})
 			continue
 		}
-		dest := trackDestPath(incoming, track)
 		if err := downloadTrack(client, &track, dest); err != nil {
+			var msg string
+			if isDRMError(err) {
+				msg = LogSkip(label + " (drm)")
+			} else {
+				msg = LogFail(fmt.Sprintf("%s (%v)", label, err))
+			}
 			fmt.Fprintf(os.Stderr, "evoplayer: warn: soundcloud download failed %d: %v\n", track.ID, err)
+			rep.Line(msg)
 			continue
 		}
 		if err := archive.Add(track.ID); err != nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: warn: archive write: %v\n", err)
+			rep.Line(LogWarn(fmt.Sprintf("archive write failed: %v", err)))
 		}
-		fmt.Fprintf(os.Stderr, "evoplayer: downloaded: %s\n", filepath.Base(dest))
+		done++
+		msg := LogOK(filepath.Base(dest))
+		fmt.Fprintf(os.Stderr, "evoplayer: %s\n", msg)
+		rep.Line(msg)
+		rep.Progress(jobs.Progress{Phase: msg, Done: done, Total: total})
 	}
 	return NormalizeIncoming(opts.MusicRoot)
 }
@@ -115,7 +179,7 @@ func DownloadTrackURL(env paths.Env, pageURL string) (string, error) {
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
 		return "", err
 	}
-	client := NewClient(opts.ClientID, opts.OAuthToken)
+	client := NewClient(opts.ClientID, "")
 	track, err := client.ResolveURL(pageURL)
 	if err != nil {
 		return "", err
@@ -140,21 +204,22 @@ func downloadTrack(client *Client, track *Track, dest string) error {
 	if _, err := os.Stat(dest); err == nil {
 		return nil
 	}
-	raw := dest + ".raw"
-	if err := client.DownloadTrackStream(track, raw); err != nil {
-		os.Remove(raw)
-		return err
-	}
-	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(raw), "."))
-	if ext != "mp3" {
-		if err := ffmpegToMP3(raw, dest); err != nil {
-			os.Remove(raw)
+	err := client.DownloadTrackStream(track, dest)
+	if err != nil {
+		os.Remove(dest)
+		if pageURL := strings.TrimSpace(track.PermalinkURL); pageURL != "" {
+			if yerr := downloadYtDlp(pageURL, dest, client.OAuthToken, client.ClientID); yerr == nil {
+				err = nil
+			} else if isDRMError(yerr) || isDRMError(err) {
+				return fmt.Errorf("drm protected")
+			}
+		}
+		if err != nil {
+			if isDRMError(err) {
+				return fmt.Errorf("drm protected")
+			}
 			return err
 		}
-		os.Remove(raw)
-	} else if err := os.Rename(raw, dest); err != nil {
-		os.Remove(raw)
-		return err
 	}
 	meta := trackMeta(track)
 	var picture []byte
@@ -252,4 +317,12 @@ func DownloadEnv(env paths.Env) error {
 		return err
 	}
 	return Download(opts)
+}
+
+func DownloadEnvReport(env paths.Env, rep Reporter) error {
+	opts, err := LoadOptions(env)
+	if err != nil {
+		return err
+	}
+	return DownloadReport(opts, rep)
 }

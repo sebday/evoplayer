@@ -7,12 +7,13 @@ Public command: `evoplayer` (`~/.local/bin/evoplayer`)
 With no arguments, `evoplayer` opens the terminal player (and starts `serve` if the socket is missing). `evoplayer tui` is an alias.
 
 Native Go commands (daemon IPC or direct library access):
-- `serve`, `tui`, `start`, `restart`, `stop`, `toggle`, `next`, `prev`, `seek`, `volume`, `shuffle`
+- `serve`, `tui`, `start`, `restart`, `stop`, `close`, `toggle`, `next`, `prev`, `seek`, `volume`, `shuffle`
 - `load`, `status`, `open`, `queue append|play|extend|up-next` (`up-next` reads the daemon playback queue)
 - `playback …`, `library …`, `browse`, `meta`, `genres`, `tracks`, `cache`, `find`, `scrobble`
 - `history`, `config`, `tags`, `vinyl`, `placement`, `lastfm`, `jsonlog`
-- `warm`, `download` (soundcloud likes sync; `download url <url>` for youtube via yt-dlp, or soundcloud), `import`, `stats`, `job`
+- `warm`, `download` (soundcloud likes sync; `download url <url>` for youtube via yt-dlp, or soundcloud), `stats`, `job`
 - `art` (search, set, apply, clear, notify-cache), `sort`, `playlist`, `favorite`, `current`
+- `viz` (`stream`, `get`)
 
 Unknown subcommands return a usage error from the Go CLI.
 
@@ -32,8 +33,6 @@ Viz NDJSON stream for scripts/Waybar:
 evoplayer viz stream --fps 30
 evoplayer viz get
 ```
-
-SoundCloud likes sync reads `oauth_token` from a logged-in Brave (then Chromium) cookie, else `pass show omarchy/soundcloud/oauth-token` (`EVOPLAYER_PASS_PREFIX`). It is not stored in music.toml.
 
 SoundCloud likes sync reads `oauth_token` from a logged-in Brave (then Chromium) cookie, else `pass show omarchy/soundcloud/oauth-token` (`EVOPLAYER_PASS_PREFIX`). It is not stored in music.toml.
 

@@ -29,6 +29,7 @@ func capabilities() map[string]any {
 			{"name": "viz.config", "params": nil},
 			{"name": "viz.config.apply", "params": nil},
 			{"name": "viz.config.set", "params": map[string]string{"frame_rate": "int", "sensitivity": "int"}},
+			{"name": "config.set", "params": map[string]string{"section": "string", "key": "string", "value": "string"}},
 			{"name": "library.meta", "params": map[string]string{"path": "string"}},
 			{"name": "library.browse", "params": map[string]string{"path": "string"}},
 			{"name": "library.warm", "params": map[string]string{"path": "string"}},

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"strings"
 	"testing"
@@ -15,20 +16,6 @@ import (
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
 )
-
-func TestFilterTracks(t *testing.T) {
-	tracks := []library.Track{
-		{Title: "World Series", Artist: "Sound Power", Genre: "misc"},
-		{Title: "Fabriclive", Artist: "DJ Hype", Genre: "Drum & Bass"},
-	}
-	got := filterTracks(tracks, "hype")
-	if len(got) != 1 || got[0].Title != "Fabriclive" {
-		t.Fatalf("got %#v", got)
-	}
-	if n := len(filterTracks(tracks, "")); n != 2 {
-		t.Fatalf("empty query = %d", n)
-	}
-}
 
 func TestSearchQueriesFullLibrary(t *testing.T) {
 	m := newModel(paths.Env{})
@@ -58,6 +45,9 @@ func TestSearchQueriesFullLibrary(t *testing.T) {
 	}
 	if n := len(m.sidebarPlaylists()); n != 0 {
 		t.Fatalf("playlists should hide during library search, got %#v", m.sidebarPlaylists())
+	}
+	if n := len(m.sidebarTools()); n != 0 {
+		t.Fatalf("settings and download should hide during library search, got %#v", m.sidebarTools())
 	}
 	m.search.SetValue("")
 	if cmd = m.applyFilter(); cmd != nil {
@@ -201,7 +191,7 @@ func TestSearchRowsShowArtist(t *testing.T) {
 	m.browse = []library.BrowseEntry{
 		{Type: "track", Track: library.Track{Path: "/tmp/wot.mp3", Title: "Wot Do U Call It", Artist: "Wiley"}},
 	}
-	got := lipglossStrip(m.renderBrowseWidth(5, 40))
+	got := lipglossStrip(m.renderBrowseRows(40, 5))
 	if !strings.Contains(got, "Wiley") || !strings.Contains(got, "Wot Do U Call It") {
 		t.Fatalf("search hits should show artist and title, got %q", got)
 	}
@@ -216,20 +206,23 @@ func TestNavFromIndex(t *testing.T) {
 	if got[0].ID != "filetree" || got[0].Label != "browse" {
 		t.Fatalf("first should be browse, got %#v", got[0])
 	}
-	if got[1].ID != "download" {
-		t.Fatalf("second should be download, got %#v", got[1])
+	if got[1].ID != "settings" {
+		t.Fatalf("second should be settings, got %#v", got[1])
 	}
-	if got[2].ID != "help" {
-		t.Fatalf("third should be help, got %#v", got[2])
+	if got[2].ID != "download" {
+		t.Fatalf("third should be download, got %#v", got[2])
 	}
-	if got[3].ID != "all" || got[3].Label != "likes" {
-		t.Fatalf("all should display as likes, got %#v", got[3])
+	if got[3].ID != "help" {
+		t.Fatalf("fourth should be help, got %#v", got[3])
 	}
-	if got[4].ID != "current" || got[4].Label != "now playing" {
-		t.Fatalf("current should display as now playing, got %#v", got[4])
+	if got[4].ID != "all" || got[4].Label != "likes" {
+		t.Fatalf("all should display as likes, got %#v", got[4])
 	}
-	if got[5].ID != "mixes" || got[5].Label != "mixes" {
-		t.Fatalf("mixes should display as mixes, got %#v", got[5])
+	if got[5].ID != "current" || got[5].Label != "now playing" {
+		t.Fatalf("current should display as now playing, got %#v", got[5])
+	}
+	if got[6].ID != "mixes" || got[6].Label != "mixes" {
+		t.Fatalf("mixes should display as mixes, got %#v", got[6])
 	}
 	if retainNavIdx(got, "") != 0 {
 		t.Fatalf("empty prev should land on filetree, got %d", retainNavIdx(got, ""))
@@ -286,6 +279,26 @@ func TestLikeTargetsPlayingUnlessPlaylistCaret(t *testing.T) {
 	if !ok || got.Path != "/queued.mp3" {
 		t.Fatalf("playlist caret on another track should like that track, got %#v ok=%v", got, ok)
 	}
+}
+
+func TestUpperLikeAlwaysTargetsPlaying(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.status.Path = "/playing.mp3"
+	m.focus = focusPlaylist
+	m.queueFiltered = []library.Track{
+		{Path: "/playing.mp3"},
+		{Path: "/queued.mp3"},
+	}
+	m.playlistIdx = 1
+	got, ok := m.playingLikeTarget()
+	if !ok || got.Path != "/playing.mp3" {
+		t.Fatalf("playing target = %#v ok=%v", got, ok)
+	}
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	if cmd == nil {
+		t.Fatal("L should toggle like for the playing track")
+	}
+	_ = next
 }
 
 func TestSidebarPlaylistsIncludeGenreDirs(t *testing.T) {
@@ -376,16 +389,13 @@ func TestKeyBeforeBrowseLoadsMovesTree(t *testing.T) {
 	if key.String() != "down" {
 		t.Fatalf("key string %q", key.String())
 	}
-	if n := m.browseLen(); n != 0 {
-		t.Fatalf("want empty browse, len=%d", n)
+	if n := m.browseLen(); n != 3 {
+		t.Fatalf("want loading playlist plus tools, len=%d", n)
 	}
 	next, _ := m.Update(key)
 	got := next.(model)
-	if got.browseIdx != 0 {
-		t.Fatalf("down with empty browse should stay at 0, got %d", got.browseIdx)
-	}
-	if got.pendingBrowse != 1 {
-		t.Fatalf("empty browse should queue the move, pending=%d", got.pendingBrowse)
+	if got.browseIdx != 1 {
+		t.Fatalf("down should move through the visible list, got %d", got.browseIdx)
 	}
 	next, _ = got.Update(browseMsg{path: "", entries: []library.BrowseEntry{
 		{Type: "dir", Name: "grime"},
@@ -393,7 +403,7 @@ func TestKeyBeforeBrowseLoadsMovesTree(t *testing.T) {
 	}})
 	got = next.(model)
 	if got.browseIdx != 1 {
-		t.Fatalf("queued down should apply after browse loads, idx=%d", got.browseIdx)
+		t.Fatalf("caret should stay after browse loads, idx=%d", got.browseIdx)
 	}
 }
 
@@ -482,6 +492,31 @@ func TestPlaylistArrowsKeepArtworkOverlay(t *testing.T) {
 	}
 }
 
+func TestSettingsKeepsArtworkOverlay(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.focus = focusBrowse
+	m.nav = navFromIndex([]playlist.IndexItem{{Name: "all", Count: 1, Kind: "system"}})
+	m.navIdx = navIndex(m.nav, "filetree")
+	m.browse = []library.BrowseEntry{{Type: "dir", Name: "grime"}}
+	m.browseIdx = len(m.browse) + m.playlistSlotCount() - 1
+	m.status.Art = "/art/playing.jpg"
+	before := m.View()
+	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = got.(model)
+	if !m.settingsSelected() {
+		t.Fatalf("down should land on settings, nav=%s idx=%d", m.currentNavID(), m.browseIdx)
+	}
+	if !m.frames.freeze {
+		t.Fatal("settings should patch like playlist and leave the artwork overlay")
+	}
+	if m.View() != before {
+		t.Fatal("settings should not rebuild View")
+	}
+}
+
 func TestPlaylistHeartSitsBeforeTime(t *testing.T) {
 	m := newModel(paths.Env{})
 	m.queueFiltered = []library.Track{
@@ -545,7 +580,7 @@ func TestFiletreeOmitsParentRow(t *testing.T) {
 			t.Fatal("filetree should not include a parent row")
 		}
 	}
-	got := lipglossStrip(m.renderBrowse(10))
+	got := lipglossStrip(m.renderBrowseRows(m.browseInnerWidth(), 10))
 	if !strings.Contains(got, "2008/") {
 		t.Fatalf("want folder row, got %q", got)
 	}
@@ -564,7 +599,7 @@ func TestBrowseTrackRowsShowNameOnly(t *testing.T) {
 	}
 	m.browseIdx = 0
 	m.focus = focusBrowse
-	got := lipglossStrip(m.renderBrowse(5))
+	got := lipglossStrip(m.renderBrowseRows(m.browseInnerWidth(), 5))
 	if !strings.Contains(got, "Wot Do U Call It") {
 		t.Fatalf("want track title, got %q", got)
 	}
@@ -1122,33 +1157,18 @@ func TestPlayingTrackRowIsGreen(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.ready = true
-	m.nav = navFromIndex([]playlist.IndexItem{{Name: "all", Count: 2, Kind: "system"}})
-	m.navIdx = navIndex(m.nav, "all")
-	m.browseIdx = 1
-	m.filtered = []library.Track{
-		{Path: "/tmp/x.mp3", Title: "World Series", Artist: "Sound Power", Duration: 201, Year: "2004", Genre: "Grime"},
-		{Path: "/tmp/y.mp3", Title: "Fabriclive 36", Artist: "DJ Hype", Duration: 369, Year: "2006", Genre: "Drum & Bass"},
+	m.queueFiltered = []library.Track{
+		{Path: "/tmp/x.mp3", Title: "World Series", Artist: "Sound Power", Duration: 201, Year: "2004"},
+		{Path: "/tmp/y.mp3", Title: "Fabriclive 36", Artist: "DJ Hype", Duration: 369, Year: "2006"},
 	}
 	m.status.Path = "/tmp/x.mp3"
-	got := m.renderTrackList(m.filtered, m.browseIdx, m.browseOffset, 80, 5, false)
+	got := m.renderPlaylistTrackList(m.queueFiltered, 0, 0, 80, 5, false)
 	plain := lipglossStrip(got)
 	if !strings.Contains(plain, "▶") {
 		t.Fatalf("playing row should keep the play marker, got %q", plain)
 	}
-	green := "[32m"
-	if !strings.Contains(got, green) {
-		t.Fatalf("playing row should use terminal green, got %q", got)
-	}
-	lines := strings.Split(got, "\n")
-	if len(lines) < 1 || !strings.Contains(lines[0], green) {
-		t.Fatalf("playing title row should be green, got %q", got)
-	}
-	row := lipglossStrip(lines[0])
-	if !strings.Contains(row, "Sound Power") {
-		t.Fatalf("missing playing title: %q", row)
-	}
-	if strings.Count(lines[0], green) < 2 {
-		t.Fatalf("name and meta should both be green, got %q", lines[0])
+	if !strings.Contains(got, "42m") {
+		t.Fatalf("playing row should use green background, got %q", got)
 	}
 }
 
@@ -1157,14 +1177,11 @@ func TestIdleTrackNamesAreWhite(t *testing.T) {
 	m.width = 120
 	m.height = 40
 	m.ready = true
-	m.nav = navFromIndex([]playlist.IndexItem{{Name: "all", Count: 2, Kind: "system"}})
-	m.navIdx = navIndex(m.nav, "all")
-	m.browseIdx = 0
-	m.filtered = []library.Track{
-		{Path: "/tmp/x.mp3", Title: "World Series", Artist: "Sound Power", Duration: 201, Year: "2004", Genre: "Grime"},
-		{Path: "/tmp/y.mp3", Title: "Fabriclive 36", Artist: "DJ Hype", Duration: 369, Year: "2006", Genre: "Drum & Bass"},
+	m.queueFiltered = []library.Track{
+		{Path: "/tmp/x.mp3", Title: "World Series", Artist: "Sound Power", Duration: 201, Year: "2004"},
+		{Path: "/tmp/y.mp3", Title: "Fabriclive 36", Artist: "DJ Hype", Duration: 369, Year: "2006"},
 	}
-	got := m.renderTrackList(m.filtered, m.browseIdx, m.browseOffset, 80, 5, false)
+	got := m.renderPlaylistTrackList(m.queueFiltered, 0, 0, 80, 5, false)
 	lines := strings.Split(got, "\n")
 	if len(lines) < 2 {
 		t.Fatalf("want two rows, got %q", got)
@@ -1316,6 +1333,309 @@ func TestTabCyclesTreeQueue(t *testing.T) {
 	}
 }
 
+func TestMouseWheelDoesNotScroll(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.ready = true
+	m.focus = focusBrowse
+	m.browse = []library.BrowseEntry{
+		{Type: "dir", Name: "a"},
+		{Type: "dir", Name: "b"},
+		{Type: "dir", Name: "c"},
+	}
+	got, _ := m.Update(tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelDown,
+	})
+	next := got.(model)
+	if next.browseIdx != 0 {
+		t.Fatalf("mouse wheel should not move the list, idx=%d", next.browseIdx)
+	}
+}
+
+func TestYOpensDownload(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.nav = navFromIndex(nil)
+	m.ready = true
+	m.focus = focusBrowse
+	got, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m = got.(model)
+	if !m.downloadSelected() {
+		t.Fatal("y should open download")
+	}
+	if m.focus != focusPlaylist {
+		t.Fatalf("download should focus playlist pane, got %v", m.focus)
+	}
+	if m.playlistIdx != dlCtrlURL {
+		t.Fatalf("download should select url field, idx=%d", m.playlistIdx)
+	}
+	if cmd == nil {
+		t.Fatal("y should focus the url field")
+	}
+}
+
+func TestBrowseToolsSitUnderPlaylists(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.focus = focusBrowse
+	m.nav = navFromIndex([]playlist.IndexItem{{Name: "all", Count: 3, Kind: "system"}})
+	m.browse = []library.BrowseEntry{{Type: "dir", Name: "grime"}}
+	got := lipglossStrip(m.renderBrowseInner(30, 16))
+	grimeIdx := strings.Index(got, "grime")
+	likesIdx := strings.Index(got, "likes")
+	settingsIdx := strings.Index(got, "settings")
+	downloadIdx := strings.Index(got, "download")
+	if grimeIdx < 0 || likesIdx < 0 || settingsIdx < 0 || downloadIdx < 0 {
+		t.Fatalf("want folders, playlists, then tools, got %q", got)
+	}
+	if !(grimeIdx < likesIdx && likesIdx < settingsIdx && settingsIdx < downloadIdx) {
+		t.Fatalf("want folders, playlists, settings, download, got %q", got)
+	}
+	lines := strings.Split(got, "\n")
+	likesLine, settingsLine := -1, -1
+	for i, line := range lines {
+		if likesLine < 0 && strings.Contains(line, "likes") {
+			likesLine = i
+		}
+		if settingsLine < 0 && strings.Contains(line, "settings") {
+			settingsLine = i
+		}
+	}
+	if likesLine < 0 || settingsLine != likesLine+2 {
+		t.Fatalf("want a 1-row gap under playlists, got likes=%d settings=%d in %q", likesLine, settingsLine, got)
+	}
+}
+
+func TestSettingsReplacesPlaylistPane(t *testing.T) {
+	m := newModel(paths.Env{MusicRoot: "/music"})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.nav = navFromIndex([]playlist.IndexItem{{Name: "all", Count: 3, Kind: "system"}})
+	m.navIdx = navIndex(m.nav, "settings")
+	m.settings.Paths.Root = "/music"
+	m.settings.Soundcloud.User = "seb-day"
+	m.settingsPath.SetValue("/music")
+	m.queueFiltered = []library.Track{{Title: "World Series"}}
+	got := lipglossStrip(m.View())
+	if !strings.Contains(got, "settings") {
+		t.Fatalf("settings should replace the playlist pane, got %q", got)
+	}
+	if !strings.Contains(got, "library") || !strings.Contains(got, "/music") {
+		t.Fatalf("settings should show the library root, got %q", got)
+	}
+	if !strings.Contains(got, "save") {
+		t.Fatalf("settings should show save hint, got %q", got)
+	}
+	if strings.Contains(got, "playlist (1)") {
+		t.Fatalf("playlist legend should hide while settings is open, got %q", got)
+	}
+	if !strings.Contains(got, "a art") {
+		t.Fatalf("settings should leave the artwork pane, got %q", got)
+	}
+}
+
+func TestSettingsSaveRequiresPath(t *testing.T) {
+	m := newModel(paths.Env{MusicRoot: "/music"})
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "settings")
+	m.focus = focusPlaylist
+	m.settingsPath.SetValue("   ")
+	got, cmd := m.saveSettingsRoot()
+	m = got.(model)
+	if cmd != nil {
+		t.Fatal("empty path should not issue ipc")
+	}
+	if m.err != "library path required" {
+		t.Fatalf("err = %q", m.err)
+	}
+}
+
+func TestSettingsEnterFocusesPathField(t *testing.T) {
+	m := newModel(paths.Env{MusicRoot: "/music"})
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "settings")
+	m.focus = focusPlaylist
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter should focus the library path field")
+	}
+}
+
+func TestSettingsOpenLoadsPath(t *testing.T) {
+	m := newModel(paths.Env{MusicRoot: "/music"})
+	m.ready = true
+	m.settings.Paths.Root = "/music"
+	got, cmd := m.openSettings()
+	m = got.(model)
+	if cmd == nil {
+		t.Fatal("openSettings should load settings and focus path field")
+	}
+	if m.settingsPath.Value() != "/music" {
+		t.Fatalf("settings path = %q", m.settingsPath.Value())
+	}
+}
+
+func TestDownloadReplacesPlaylistAndArt(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "download")
+	got := lipglossStrip(m.View())
+	if strings.Contains(got, "youtube and soundcloud") || strings.Contains(got, "youtube · soundcloud") {
+		t.Fatalf("download should not show the tagline, got %q", got)
+	}
+	if !strings.Contains(got, "Paste a YouTube") {
+		t.Fatalf("download should show the url field, got %q", got)
+	}
+	if strings.Contains(got, "playlist (") {
+		t.Fatalf("download should replace the playlist pane, got %q", got)
+	}
+	if strings.Contains(got, "a art") {
+		t.Fatalf("download should replace the artwork pane, got %q", got)
+	}
+	if !strings.Contains(got, "import soundcloud") || !strings.Contains(got, "import incoming") {
+		t.Fatalf("download should list soundcloud before import incoming, got %q", got)
+	}
+	landing := lipglossStrip(m.renderDownloadLanding(60, 20))
+	scIdx := strings.Index(landing, "import soundcloud")
+	inIdx := strings.Index(landing, "import incoming")
+	if scIdx < 0 || inIdx < 0 {
+		t.Fatalf("download actions should render, got %q", landing)
+	}
+	if strings.Contains(landing[scIdx:inIdx], "\n") {
+		t.Fatalf("download actions should be inline, got %q", landing)
+	}
+	if scIdx > inIdx {
+		t.Fatalf("soundcloud should sit before import incoming, got %q", landing)
+	}
+}
+
+func TestDownloadShowsCancelWhenRunning(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "download")
+	m.job = jobs.State{Name: "download", Status: "running"}
+	landing := lipglossStrip(m.renderDownloadLanding(60, 20))
+	if !strings.Contains(landing, "cancel") {
+		t.Fatalf("running download should show cancel, got %q", landing)
+	}
+}
+
+func TestDownloadCancelIssuesCmd(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "download")
+	m.focus = focusPlaylist
+	m.playlistIdx = dlCtrlCancel
+	m.job = jobs.State{Name: "download", Status: "running"}
+	_, cmd := m.cancelDownloadJob()
+	if cmd == nil {
+		t.Fatal("cancel should issue ipc")
+	}
+}
+
+func TestDownloadCancelHiddenWhenIdle(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "download")
+	landing := lipglossStrip(m.renderDownloadLanding(60, 20))
+	if strings.Contains(landing, "cancel") {
+		t.Fatalf("idle download pane should not show cancel, got %q", landing)
+	}
+}
+
+func TestSoundCloudDownloadStartsJob(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "download")
+	m.focus = focusPlaylist
+	m.playlistIdx = dlCtrlSoundCloud
+	got, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = got.(model)
+	if cmd == nil {
+		t.Fatal("enter should start the soundcloud likes job")
+	}
+}
+
+func TestDownloadJobLogRenders(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "download")
+	m.job = jobs.State{
+		Name:   "download",
+		Status: "running",
+		Log:    "· soundcloud auth from pass\n✓ artist - track.mp3\n",
+	}
+	got := lipglossStrip(m.renderDownloadLanding(60, 20))
+	if !strings.Contains(got, "✓ artist - track.mp3") {
+		t.Fatalf("download log should render, got %q", got)
+	}
+}
+
+func TestDownloadPaneDoesNotFreezeDuringImport(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "download")
+	m.job = jobs.State{Name: "import", Status: "running", Log: "· importing .incoming\n"}
+	got, _ := m.Update(tickMsg{})
+	m = got.(model)
+	if m.frames.freeze {
+		t.Fatal("import job ticks should not freeze the log")
+	}
+}
+
+func TestDownloadPaneDoesNotFreeze(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "download")
+	_ = m.View()
+	got, _ := m.Update(liveMsg{status: m.status})
+	m = got.(model)
+	if m.frames.freeze {
+		t.Fatal("download pane should keep redrawing instead of freezing")
+	}
+	m.job = jobs.State{Name: "download", Status: "running", Log: "· fetching likes\n"}
+	got, _ = m.Update(tickMsg{})
+	m = got.(model)
+	if m.frames.freeze {
+		t.Fatal("download job ticks should not freeze the log")
+	}
+	got, _ = m.Update(jobMsg{state: jobs.State{
+		Name:   "download",
+		Status: "running",
+		Log:    "· soundcloud auth from brave\n· fetching likes\n· fetched 200 likes\n",
+		Progress: &jobs.Progress{Phase: "fetching likes (200)", Done: 200},
+	}})
+	m = got.(model)
+	if m.frames.freeze {
+		t.Fatal("job updates should redraw the download log")
+	}
+	gotView := lipglossStrip(m.View())
+	if !strings.Contains(gotView, "· fetched 200 likes") {
+		t.Fatalf("download log should update live, got %q", gotView)
+	}
+	if !strings.Contains(gotView, "fetching likes (200)") {
+		t.Fatalf("download status should show likes progress, got %q", gotView)
+	}
+}
+
 func TestTabToPlaylistSelectsPlayingTrack(t *testing.T) {
 	m := newModel(paths.Env{})
 	m.width = 120
@@ -1337,6 +1657,58 @@ func TestTabToPlaylistSelectsPlayingTrack(t *testing.T) {
 	if m.playlistIdx != 1 {
 		t.Fatalf("playlist caret should land on the playing track, idx=%d", m.playlistIdx)
 	}
+}
+
+func TestSkipScrollsPlaylistForPlayingTrack(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.focus = focusPlaylist
+	vis := m.playlistListVisible()
+	if vis < 3 {
+		t.Fatalf("need a visible playlist window, got %d", vis)
+	}
+	tracks := make([]library.Track, vis+10)
+	for i := range tracks {
+		tracks[i] = library.Track{Path: fmt.Sprintf("/tmp/%d.mp3", i), Title: fmt.Sprintf("t%d", i)}
+	}
+	m.queue = tracks
+	m.queueFiltered = tracks
+
+	t.Run("next", func(t *testing.T) {
+		m.playlistIdx = 0
+		m.playlistOffset = 3
+		playingIdx := m.playlistOffset + vis - 1
+		m.status.Path = tracks[playingIdx].Path
+		next := m.status
+		next.Path = tracks[playingIdx+1].Path
+		got, _ := m.Update(liveMsg{status: next})
+		m = got.(model)
+		if m.playlistOffset != 4 {
+			t.Fatalf("next track off-screen should scroll down 1 row, offset=%d want 4", m.playlistOffset)
+		}
+		if m.playlistIdx != 0 {
+			t.Fatalf("caret should stay put, idx=%d", m.playlistIdx)
+		}
+	})
+
+	t.Run("prev", func(t *testing.T) {
+		m.playlistIdx = 0
+		m.playlistOffset = 5
+		playingIdx := 5
+		m.status.Path = tracks[playingIdx].Path
+		prev := m.status
+		prev.Path = tracks[playingIdx-1].Path
+		got, _ := m.Update(liveMsg{status: prev})
+		m = got.(model)
+		if m.playlistOffset != 4 {
+			t.Fatalf("previous track off-screen should scroll up 1 row, offset=%d want 4", m.playlistOffset)
+		}
+		if m.playlistIdx != 0 {
+			t.Fatalf("caret should stay put, idx=%d", m.playlistIdx)
+		}
+	})
 }
 
 func TestTabToPlaylistKeepsCaretWithoutPlayingTrack(t *testing.T) {
@@ -1408,8 +1780,8 @@ func TestPanelHintLegends(t *testing.T) {
 	if !strings.Contains(now, "space") || !strings.Contains(now, "pause") {
 		t.Fatalf("now playing should show space pause on the bottom right, got %q", now)
 	}
-	if !strings.Contains(now, "quit") {
-		t.Fatalf("now playing should show quit on the bottom right, got %q", now)
+	if strings.Contains(now, "quit") {
+		t.Fatalf("now playing should not show quit, got %q", now)
 	}
 	tree := lipglossStrip(m.renderBrowsePane(g))
 	if strings.Contains(tree, "find") || strings.Contains(tree, "quit") || strings.Contains(tree, "space") {
@@ -1580,7 +1952,7 @@ func TestWinampChromeShowsTransport(t *testing.T) {
 		t.Fatalf("marquee should show artist and title, got %q", got)
 	}
 	if !strings.Contains(got, "48 KHZ") {
-		t.Fatalf("want format on the EQ row, got %q", got)
+		t.Fatalf("want format in the status column, got %q", got)
 	}
 	if !strings.Contains(got, "2008") || !strings.Contains(got, "DUB POLICE") || !strings.Contains(got, "DPZ007") {
 		t.Fatalf("want year and label/cat no under the marquee, got %q", got)
@@ -1589,18 +1961,34 @@ func TestWinampChromeShowsTransport(t *testing.T) {
 	if len(display) < 2 {
 		t.Fatalf("want display rows, got %q", got)
 	}
-	titleRow, releaseRow := display[0], display[1]
+	titleRow, releaseRow, meterRow := display[0], display[1], display[2]
 	if strings.Contains(titleRow, "48 KHZ") {
 		t.Fatalf("48 KHZ should not sit on the title row, got %q", titleRow)
 	}
-	khzAt := strings.Index(releaseRow, "48 KHZ")
-	eqAt := strings.Index(releaseRow, "EQ")
-	yearAt := strings.Index(releaseRow, "2008")
-	if khzAt < 0 || eqAt < 0 || khzAt > eqAt {
-		t.Fatalf("48 KHZ should sit to the left of EQ, got %q", releaseRow)
+	if strings.Contains(releaseRow, "EQ") {
+		t.Fatalf("EQ should sit under 48 KHZ, got %q", releaseRow)
 	}
-	if yearAt < 0 || khzAt < yearAt {
+	stereoAt := strings.Index(titleRow, "STEREO")
+	khzAt := strings.Index(releaseRow, "48 KHZ")
+	yearAt := strings.Index(releaseRow, "2008")
+	if khzAt < 0 || stereoAt < 0 {
+		t.Fatalf("want STEREO over 48 KHZ, title=%q release=%q", titleRow, releaseRow)
+	}
+	if khzAt < yearAt {
 		t.Fatalf("year should sit left of 48 KHZ, got %q", releaseRow)
+	}
+	stereoEnd := lipgloss.Width(titleRow[:stereoAt]) + lipgloss.Width("STEREO")
+	khzEnd := lipgloss.Width(releaseRow[:khzAt]) + lipgloss.Width("48 KHZ")
+	if stereoEnd != khzEnd {
+		t.Fatalf("48 KHZ should right-align with STEREO, title=%q release=%q", titleRow, releaseRow)
+	}
+	plAt := strings.Index(meterRow, "PL")
+	if plAt < 0 {
+		t.Fatalf("EQ PL should sit on the meter row, got %q", meterRow)
+	}
+	plEnd := lipgloss.Width(meterRow[:plAt]) + lipgloss.Width("PL")
+	if stereoEnd != plEnd {
+		t.Fatalf("EQ PL should right-align with STEREO, title=%q meter=%q", titleRow, meterRow)
 	}
 	if !strings.Contains(got, "STEREO") || !strings.Contains(got, "PL") {
 		t.Fatalf("status chrome should live in the now playing display, got %q", got)
@@ -1624,6 +2012,29 @@ func TestWinampChromeShowsTransport(t *testing.T) {
 		if lipgloss.Width(line) != w {
 			t.Fatalf("row %d width %d want %d: %q", i, lipgloss.Width(line), w, line)
 		}
+	}
+}
+
+func TestNowPlayingLikedHeart(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.status.Path = "/tmp/x.mp3"
+	m.status.Title = "Genesis"
+	m.status.Artist = "Busta Rhymes"
+	got := lipglossStrip(m.renderNowPlaying(72))
+	if strings.Contains(got, "♥") {
+		t.Fatalf("unliked track should not show a heart, got %q", got)
+	}
+	m.status.Liked = true
+	raw := m.renderNowPlaying(72)
+	got = lipglossStrip(raw)
+	if !strings.Contains(got, "♥") {
+		t.Fatalf("liked track should show a heart, got %q", got)
+	}
+	if !strings.Contains(raw, "\x1b[31m") && !strings.Contains(raw, "\x1b[38;5;1m") {
+		t.Fatalf("liked heart should use terminal colour 1, got %q", raw)
 	}
 }
 
@@ -1665,10 +2076,6 @@ func TestWinampSlidersKeepRowGeometry(t *testing.T) {
 	if lipgloss.Width(nowPlayingDotSlider(0, 20)) != lipgloss.Width(nowPlayingDotSlider(19, 20)) {
 		t.Fatal("balance dot position should not change row width")
 	}
-	seek := lipglossStrip(nowPlayingSeekBar(30, 60, 20))
-	if strings.Contains(seek, "•") {
-		t.Fatalf("progress bar should not keep a cursor, got %q", seek)
-	}
 }
 
 func TestFooterHintsHaveBorderTails(t *testing.T) {
@@ -1695,8 +2102,8 @@ func TestFooterIsHintsOnly(t *testing.T) {
 	m.nav = navFromIndex(nil)
 	m.navIdx = navIndex(m.nav, "download")
 	footer := lipglossStrip(m.renderFooter())
-	if !strings.Contains(footer, "run") {
-		t.Fatalf("download footer should keep run, got %q", footer)
+	if footer != "" {
+		t.Fatalf("download should keep hints on the pane, not the footer, got %q", footer)
 	}
 	if strings.Contains(footer, "1:47/4:25") {
 		t.Fatalf("time belongs in now playing, not the hints footer, got %q", footer)

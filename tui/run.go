@@ -16,7 +16,7 @@ func Run(env paths.Env, exe string) error {
 	}
 	probeArtProtocol()
 	m := newModel(env)
-	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithOutput(newArtRestorer(os.Stdout, m.frames)))
+	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithOutput(newArtRestorer(os.Stdout, m.frames)))
 	_, err := p.Run()
 	_ = termimg.ClearAll()
 	return err

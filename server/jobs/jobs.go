@@ -3,11 +3,13 @@ package jobs
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
 
 const progressNotifyInterval = 250 * time.Millisecond
+const maxJobLogLines = 24
 
 type State struct {
 	ID        string    `json:"id"`
@@ -17,6 +19,7 @@ type State struct {
 	StartedAt string    `json:"started_at,omitempty"`
 	EndedAt   string    `json:"ended_at,omitempty"`
 	Progress  *Progress `json:"progress,omitempty"`
+	Log       string    `json:"log,omitempty"`
 	Result    any       `json:"result,omitempty"`
 }
 
@@ -54,6 +57,7 @@ func (m *Manager) Start(name string, fn func(ctx context.Context) error) (State,
 		Name:      name,
 		Status:    "running",
 		StartedAt: time.Now().Format(time.RFC3339),
+		Log:       "",
 	}
 	m.current = &st
 	m.cancel = cancel
@@ -110,6 +114,39 @@ func (m *Manager) Cancel() bool {
 	return true
 }
 
+func (m *Manager) AppendLog(line string) {
+	line = strings.TrimSpace(line)
+	line = strings.TrimPrefix(line, "evoplayer:")
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return
+	}
+	m.mu.Lock()
+	if m.current == nil {
+		m.mu.Unlock()
+		return
+	}
+	var lines []string
+	if m.current.Log != "" {
+		lines = strings.Split(strings.TrimRight(m.current.Log, "\n"), "\n")
+	}
+	lines = append(lines, line)
+	if len(lines) > maxJobLogLines {
+		lines = lines[len(lines)-maxJobLogLines:]
+	}
+	next := strings.Join(lines, "\n") + "\n"
+	if next == m.current.Log {
+		m.mu.Unlock()
+		return
+	}
+	m.current.Log = next
+	cb := m.onChange
+	m.mu.Unlock()
+	if cb != nil {
+		cb()
+	}
+}
+
 func (m *Manager) SetProgress(p Progress) {
 	m.mu.Lock()
 	if m.current == nil {
@@ -149,6 +186,7 @@ func (m *Manager) BroadcastEvent() map[string]any {
 		"name":   st.Name,
 		"status": st.Status,
 		"error":  st.Error,
+		"log":    st.Log,
 	}
 	if st.Progress != nil {
 		ev["progress"] = st.Progress

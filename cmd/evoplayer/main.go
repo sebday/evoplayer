@@ -193,11 +193,3 @@ func repoRoot() string {
 	}
 	return dir
 }
-
-func usage() {
-	fmt.Fprintln(os.Stderr, "usage: evoplayer [command] [args...]")
-	fmt.Fprintln(os.Stderr, "  (none)  terminal player")
-	fmt.Fprintln(os.Stderr, "  serve   backend (playback, library, ipc)")
-	fmt.Fprintln(os.Stderr, "  tui     alias for the terminal player")
-	os.Exit(1)
-}
