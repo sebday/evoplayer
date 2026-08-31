@@ -49,6 +49,7 @@ func Saved(env paths.Env) playback.Status {
 		Position float64 `json:"position"`
 		Title    string  `json:"title"`
 		Artist   string  `json:"artist"`
+		Volume   *int    `json:"volume"`
 	}
 	if json.Unmarshal(b, &saved) != nil || saved.Path == "" {
 		return playback.StoppedStatus()
@@ -61,6 +62,9 @@ func Saved(env paths.Env) playback.Status {
 		Position: saved.Position,
 		Title:    saved.Title,
 		Artist:   saved.Artist,
+	}
+	if saved.Volume != nil {
+		st.Volume = clampVolume(*saved.Volume)
 	}
 	return Enrich(env, st.WithLabels())
 }

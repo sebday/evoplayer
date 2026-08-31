@@ -9,18 +9,34 @@ import (
 	"github.com/sebday/evoplayer/server/playback"
 )
 
-// Write saves the current track so a later daemon start can restore it paused.
-func Write(env paths.Env, st playback.Status) error {
-	if st.Path == "" || env.PlayerState == "" {
-		return nil
+type playerStatePayload struct {
+	Path     string  `json:"path,omitempty"`
+	Genre    string  `json:"genre,omitempty"`
+	Playlist string  `json:"playlist,omitempty"`
+	Position float64 `json:"position,omitempty"`
+	Title    string  `json:"title,omitempty"`
+	Artist   string  `json:"artist,omitempty"`
+	Volume   *int    `json:"volume,omitempty"`
+}
+
+func readPlayerState(env paths.Env) (playerStatePayload, error) {
+	out := playerStatePayload{}
+	if env.PlayerState == "" {
+		return out, os.ErrNotExist
 	}
-	payload := map[string]interface{}{
-		"path":     st.Path,
-		"genre":    st.Genre,
-		"playlist": st.Playlist,
-		"position": st.Position,
-		"title":    st.Title,
-		"artist":   st.Artist,
+	b, err := os.ReadFile(env.PlayerState)
+	if err != nil {
+		return out, err
+	}
+	if json.Unmarshal(b, &out) != nil {
+		return playerStatePayload{}, err
+	}
+	return out, nil
+}
+
+func writePlayerState(env paths.Env, payload playerStatePayload) error {
+	if env.PlayerState == "" {
+		return nil
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
@@ -30,4 +46,57 @@ func Write(env paths.Env, st playback.Status) error {
 		return err
 	}
 	return os.WriteFile(env.PlayerState, b, 0o644)
+}
+
+func clampVolume(vol int) int {
+	if vol < 0 {
+		return 0
+	}
+	if vol > 100 {
+		return 100
+	}
+	return vol
+}
+
+// SavedVolume returns the last persisted output level, if any.
+func SavedVolume(env paths.Env) (int, bool) {
+	payload, err := readPlayerState(env)
+	if err != nil || payload.Volume == nil {
+		return 0, false
+	}
+	return clampVolume(*payload.Volume), true
+}
+
+// WriteVolume persists the output level without requiring a loaded track.
+func WriteVolume(env paths.Env, volume int) error {
+	payload, err := readPlayerState(env)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	v := clampVolume(volume)
+	payload.Volume = &v
+	return writePlayerState(env, payload)
+}
+
+// Write saves the current track so a later daemon start can restore it paused.
+func Write(env paths.Env, st playback.Status) error {
+	if env.PlayerState == "" {
+		return nil
+	}
+	payload, err := readPlayerState(env)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if st.Path == "" {
+		return nil
+	}
+	payload.Path = st.Path
+	payload.Genre = st.Genre
+	payload.Playlist = st.Playlist
+	payload.Position = st.Position
+	payload.Title = st.Title
+	payload.Artist = st.Artist
+	v := clampVolume(st.Volume)
+	payload.Volume = &v
+	return writePlayerState(env, payload)
 }

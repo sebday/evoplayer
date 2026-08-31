@@ -105,6 +105,8 @@ func (m model) playerGeom() playerGeom {
 	bodyH = max(5, m.contentHeight()-nowPlayingH-footerH)
 	if maxRows := max(4, bodyH-2); artworkRows > maxRows {
 		artworkRows = maxRows
+		artworkCols = squareArtworkCols(artworkRows, cw, ch)
+		artworkW = artworkCols + chromeW
 	}
 
 	return playerGeom{
@@ -129,6 +131,21 @@ func squareArtworkRows(cols, cw, ch int) int {
 	}
 	rows := (cols*cw + ch/2) / ch
 	return max(4, rows)
+}
+
+func squareArtworkCols(rows, cw, ch int) int {
+	if cw < 1 {
+		cw = 8
+	}
+	if ch < 1 {
+		ch = 16
+	}
+	cols := (rows*ch + cw/2) / cw
+	return max(8, cols)
+}
+
+func artPaneHeight(rows int) int {
+	return max(6, rows+2)
 }
 
 func padNowPlayingGap(chrome string, rows int) string {
@@ -255,11 +272,12 @@ func (m model) renderArtworkPane(g playerGeom) (string, artworkPlacement) {
 		place.seq = seq
 		place.atCursor = !strings.Contains(layout, kittyPlaceholder)
 	}
+	artH := artPaneHeight(g.artworkRows)
 	var pane string
 	if overlay && !place.atCursor {
-		pane = fieldsetArt(m.artworkLegend(), layout, g.artworkW, g.bodyH, panePadX, g.artworkCols, hint("a", "art", 4, false), 4)
+		pane = fieldsetArt(m.artworkLegend(), layout, g.artworkW, artH, panePadX, g.artworkCols, hint("a", "art", 4, false), 4)
 	} else {
-		pane = fieldsetPad(m.artworkLegend(), "", layout, g.artworkW, g.bodyH, false, 0, panePadX, "", hint("a", "art", 4, false), 4)
+		pane = fieldsetPad(m.artworkLegend(), "", layout, g.artworkW, artH, false, 0, panePadX, "", hint("a", "art", 4, false), 4)
 	}
 	return pane, place
 }

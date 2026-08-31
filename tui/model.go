@@ -487,15 +487,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		same := m.status.Path == msg.status.Path && m.status.QueueRevision == msg.status.QueueRevision
 		oldPath := m.status.Path
 		oldArt := m.artPath
+		oldStatusArt := m.status.Art
 		revChanged := m.status.QueueRevision != msg.status.QueueRevision
 		m.status = msg.status
 		m.refreshNowPlayingAssets()
+		artChanged := oldStatusArt != m.status.Art || oldArt != m.artPath
 		if m.focus == focusPlaylist && oldPath != m.status.Path {
 			if m.scrollPlaylistForPlayingTrack() && m.canPatchLists() {
 				m.patchPlaylist()
 			}
 		}
-		if same && oldArt == m.artPath && m.canFreeze() && !m.downloadJobLive() {
+		if same && !artChanged && m.canFreeze() && !m.downloadJobLive() {
 			m.freezeFrame()
 			m.patchNowPlaying()
 		}

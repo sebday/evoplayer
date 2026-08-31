@@ -101,7 +101,6 @@ func Browse(env Env, opt BrowseOptions) (BrowseResult, error) {
 	if err != nil {
 		return BrowseResult{}, err
 	}
-	propagateFolderArt(env, tracks)
 	for _, t := range tracks {
 		out.Entries = append(out.Entries, BrowseEntry{Type: "track", Track: t})
 	}
@@ -324,7 +323,6 @@ func collectQueueTracks(env Env, rel, dir string) ([]Track, error) {
 	dir = filepath.Clean(dir)
 	if db, err := EnsureDB(env); err == nil {
 		if tracks, err := collectQueueTracksDB(env, db, dir); err == nil && len(tracks) > 0 {
-			propagateFolderArtByDirectory(env, tracks)
 			return tracks, nil
 		}
 	}
@@ -332,7 +330,6 @@ func collectQueueTracks(env Env, rel, dir string) ([]Track, error) {
 	if err != nil {
 		return nil, err
 	}
-	propagateFolderArtByDirectory(env, tracks)
 	return tracks, nil
 }
 
@@ -410,7 +407,6 @@ func TracksForGenre(env Env, genre string) ([]Track, error) {
 	if db, err := EnsureDB(env); err == nil && db != nil {
 		tracks, err := tracksUnderDir(env, db, dir)
 		if err == nil && len(tracks) > 0 {
-			propagateFolderArt(env, tracks)
 			return tracks, nil
 		}
 	}
@@ -428,7 +424,6 @@ func TracksForGenre(env Env, genre string) ([]Track, error) {
 		}
 	}
 	tracks, _, err := listTracksPage(env, nil, os.ErrNotExist, genre, dir, 0, 100000)
-	propagateFolderArt(env, tracks)
 	return tracks, err
 }
 
@@ -449,72 +444,4 @@ FROM tracks WHERE path = ? OR path LIKE ? ORDER BY path`, dir, dir+string(os.Pat
 		}
 	}
 	return out, rows.Err()
-}
-
-func propagateFolderArtByDirectory(env Env, tracks []Track) {
-	if len(tracks) == 0 {
-		return
-	}
-	byDir := make(map[string][]int)
-	order := make([]string, 0)
-	for i, t := range tracks {
-		if t.Path == "" {
-			continue
-		}
-		dir := filepath.Dir(t.Path)
-		if _, ok := byDir[dir]; !ok {
-			order = append(order, dir)
-		}
-		byDir[dir] = append(byDir[dir], i)
-	}
-	for _, dir := range order {
-		idxs := byDir[dir]
-		group := make([]Track, len(idxs))
-		for j, i := range idxs {
-			group[j] = tracks[i]
-		}
-		propagateFolderArt(env, group)
-		for j, i := range idxs {
-			tracks[i].Art = group[j].Art
-			tracks[i].Thumb = group[j].Thumb
-		}
-	}
-}
-
-func propagateFolderArt(env Env, tracks []Track) {
-	if len(tracks) == 0 {
-		return
-	}
-	var sharedArt, sharedThumb string
-	for i := range tracks {
-		if sharedArt == "" && tracks[i].Art != "" {
-			sharedArt = tracks[i].Art
-		}
-		if sharedThumb == "" && tracks[i].Thumb != "" {
-			sharedThumb = tracks[i].Thumb
-		}
-	}
-	if sharedArt == "" {
-		for _, t := range tracks {
-			if t.Path == "" {
-				continue
-			}
-			if art := artCacheFind(env, t.Path); art != "" {
-				sharedArt = art
-				sharedThumb = resolveThumb(env, art)
-				break
-			}
-		}
-	}
-	if sharedArt == "" && sharedThumb == "" {
-		return
-	}
-	for i := range tracks {
-		if tracks[i].Art == "" && sharedArt != "" {
-			tracks[i].Art = sharedArt
-		}
-		if tracks[i].Thumb == "" && sharedThumb != "" {
-			tracks[i].Thumb = sharedThumb
-		}
-	}
 }

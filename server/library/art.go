@@ -18,13 +18,9 @@ func artCacheFind(env Env, path string) string {
 	if path == "" {
 		return ""
 	}
-	folder := filepath.Join(env.ArtDir, artFolderKey(env.MusicRoot, path)+".jpg")
-	if isDecodableArtFile(folder) {
-		return folder
-	}
-	legacy := filepath.Join(env.ArtDir, cacheKey(env.MusicRoot, path)+".jpg")
-	if isDecodableArtFile(legacy) {
-		return legacy
+	track := filepath.Join(env.ArtDir, cacheKey(env.MusicRoot, path)+".jpg")
+	if isDecodableArtFile(track) {
+		return track
 	}
 	return ""
 }

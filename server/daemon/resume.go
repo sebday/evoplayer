@@ -24,6 +24,12 @@ func readSavedPlayback(env paths.Env) (path string, position float64, ok bool) {
 }
 
 func (d *Daemon) persistPlayerState(st playback.Status) {
+	volumeChanged := d.persistVolume != st.Volume
+	d.persistVolume = st.Volume
+	if volumeChanged && st.Path == "" {
+		_ = status.WriteVolume(d.Env, st.Volume)
+		return
+	}
 	if st.Path == "" {
 		return
 	}
@@ -33,7 +39,7 @@ func (d *Daemon) persistPlayerState(st playback.Status) {
 	stateChanged := st.State != d.persistState
 	d.persistPath = st.Path
 	d.persistState = st.State
-	if pathChanged || stateChanged {
+	if pathChanged || stateChanged || volumeChanged {
 		if d.persistTimer != nil {
 			d.persistTimer.Stop()
 			d.persistTimer = nil
@@ -64,7 +70,11 @@ func (d *Daemon) flushPlayerState() {
 	}
 	d.persistMu.Unlock()
 	st := status.EnrichLight(d.Env, d.Actor.Snapshot())
-	_ = status.Write(d.Env, st)
+	if st.Path != "" {
+		_ = status.Write(d.Env, st)
+		return
+	}
+	_ = status.WriteVolume(d.Env, st.Volume)
 }
 
 func (d *Daemon) resumePlayback(play bool) error {

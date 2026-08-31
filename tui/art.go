@@ -265,7 +265,26 @@ func encodeArt(img image.Image, cols, rows int) (layout, seq string, overlay boo
 func renderKittyArt(img image.Image, cols, rows int) (layout, seq string, err error) {
 	cols = max(2, cols)
 	rows = max(1, rows)
-	ti := termimg.New(img).Protocol(termimg.Kitty).Size(cols, rows).Compression(true).ZIndex(1).ImageNum(kittyArtID)
+	if img == nil {
+		return "", "", fmt.Errorf("empty art image")
+	}
+	cw, ch := artCellSize()
+	pxSide := cols * cw
+	if h := rows * ch; h < pxSide {
+		pxSide = h
+	}
+	if pxSide < 1 {
+		pxSide = 1
+	}
+	artCols := (pxSide + cw - 1) / cw
+	if artCols < 1 {
+		artCols = 1
+	}
+	artRows := (pxSide + ch - 1) / ch
+	if artRows < 1 {
+		artRows = 1
+	}
+	ti := termimg.New(img).Protocol(termimg.Kitty).SizePixels(pxSide, pxSide).Compression(true).ZIndex(1).ImageNum(kittyArtID)
 	seq, err = ti.Render()
 	if err != nil || seq == "" {
 		return "", "", err
@@ -274,7 +293,10 @@ func renderKittyArt(img image.Image, cols, rows int) (layout, seq string, err er
 	if seq == "" {
 		return "", "", fmt.Errorf("empty kitty transmit")
 	}
-	return artBlank(cols, rows), seq, nil
+	if c, r, ok := kittyPlacementCells(seq); ok && c > 0 && r > 0 {
+		artCols, artRows = c, r
+	}
+	return artBlank(artCols, artRows), seq, nil
 }
 
 func stripKittyPlaceholders(seq string) string {

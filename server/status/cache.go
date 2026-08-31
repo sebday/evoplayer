@@ -3,6 +3,7 @@ package status
 import (
 	"sync"
 
+	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/perf"
 	"github.com/sebday/evoplayer/server/playback"
@@ -73,7 +74,19 @@ func EnrichLight(env paths.Env, st playback.Status) playback.Status {
 	metaMu.RUnlock()
 	if ok {
 		perf.RecordCacheHit()
-		return mergeSavedPlaylist(env, applyCached(st, m))
+		st = applyCached(st, m)
+		if st.Art == "" {
+			if art := library.ResolveArtPath(library.EnvFrom(env), st.Path); art != "" {
+				st.Art = art
+				metaMu.Lock()
+				if cur, exists := metaByPath[st.Path]; exists {
+					cur.Art = art
+					metaByPath[st.Path] = cur
+				}
+				metaMu.Unlock()
+			}
+		}
+		return mergeSavedPlaylist(env, st)
 	}
 	perf.RecordCacheMiss()
 	return EnrichFull(env, st)

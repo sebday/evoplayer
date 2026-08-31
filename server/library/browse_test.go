@@ -31,44 +31,6 @@ func TestBrowseEntryTrackPathJSON(t *testing.T) {
 	}
 }
 
-func TestPropagateFolderArt(t *testing.T) {
-	dir := t.TempDir()
-	music := filepath.Join(dir, "music")
-	artDir := filepath.Join(dir, "art")
-	album := filepath.Join(music, "grime", "2008")
-	if err := os.MkdirAll(album, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	a := filepath.Join(album, "a.mp3")
-	b := filepath.Join(album, "b.mp3")
-	for _, p := range []string{a, b} {
-		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.MkdirAll(artDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	art := filepath.Join(artDir, "grime_2008.jpg")
-	if err := os.WriteFile(art, []byte("jpg"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	env := Env{MusicRoot: music, ArtDir: artDir}
-	tracks := []Track{
-		{Path: a, Type: "track"},
-		{Path: b, Type: "track"},
-	}
-	propagateFolderArt(env, tracks)
-	for i, want := range []string{art, art} {
-		if tracks[i].Art != want {
-			t.Fatalf("track %d art = %q, want %q", i, tracks[i].Art, want)
-		}
-		if tracks[i].Thumb != "" {
-			t.Fatalf("track %d thumb = %q, want empty (no sync thumb generation)", i, tracks[i].Thumb)
-		}
-	}
-}
-
 func TestCollectQueueTracksNestedFolder(t *testing.T) {
 	dir := t.TempDir()
 	music := filepath.Join(dir, "music")

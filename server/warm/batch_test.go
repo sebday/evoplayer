@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
 )
 
@@ -24,7 +25,7 @@ func TestTrackAssetsUsesCachedArt(t *testing.T) {
 	if err := os.MkdirAll(artDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	art := filepath.Join(artDir, "grime_2008.jpg")
+	art := filepath.Join(artDir, library.CacheKey(music, track)+".jpg")
 	if err := os.WriteFile(art, []byte("jpg"), 0o644); err != nil {
 		t.Fatal(err)
 	}

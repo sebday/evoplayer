@@ -88,9 +88,9 @@ func EnsureArt(env Env, path string) (string, bool, error) {
 	if err := os.MkdirAll(env.ArtDir, 0o755); err != nil {
 		return "", false, err
 	}
-	folder := artPathFolder(env, path)
-	if isDecodableArtFile(folder) {
-		return folder, false, nil
+	trackArt := artPathLegacy(env, path)
+	if isDecodableArtFile(trackArt) {
+		return trackArt, false, nil
 	}
 	tmp, err := os.CreateTemp(env.ArtDir, ".art.*.jpg")
 	if err != nil {
@@ -118,11 +118,11 @@ func EnsureArt(env Env, path string) (string, bool, error) {
 	} else {
 		_ = os.Remove(tmpName)
 	}
-	if err := artLinkFolderAlias(folder, content); err != nil {
+	if err := artLinkFolderAlias(trackArt, content); err != nil {
 		return "", false, err
 	}
-	if isDecodableArtFile(folder) {
-		return folder, true, nil
+	if isDecodableArtFile(trackArt) {
+		return trackArt, true, nil
 	}
 	return "", false, nil
 }

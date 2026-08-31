@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestEnsureArtResolvesFolderAlias(t *testing.T) {
+func TestEnsureArtResolvesPerTrackCache(t *testing.T) {
 	dir := t.TempDir()
 	music := filepath.Join(dir, "music")
 	artDir := filepath.Join(dir, "art")
@@ -22,18 +22,18 @@ func TestEnsureArtResolvesFolderAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := Env{MusicRoot: music, ArtDir: artDir}
-	folderArt := artPathFolder(env, track)
-	if err := os.WriteFile(folderArt, []byte("jpg"), 0o644); err != nil {
+	trackArt := artPathLegacy(env, track)
+	if err := os.WriteFile(trackArt, []byte("jpg"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	art, built, err := EnsureArt(env, track)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if art != folderArt {
-		t.Fatalf("art = %q, want %q", art, folderArt)
+	if art != trackArt {
+		t.Fatalf("art = %q, want %q", art, trackArt)
 	}
 	if built {
-		t.Fatal("expected built false for folder alias hit")
+		t.Fatal("expected built false for per-track cache hit")
 	}
 }

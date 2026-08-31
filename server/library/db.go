@@ -128,12 +128,41 @@ func CountUnder(db *sql.DB, dir string) (int, error) {
 }
 
 func ListTrackPaths(env Env) ([]string, error) {
+	return listTrackPathsQuery(env, "", "")
+}
+
+// ListTrackPathsInDir returns indexed track paths under a library-relative folder (e.g. drum&bass/soundcloud).
+func ListTrackPathsInDir(env Env, rel string) ([]string, error) {
+	rel = strings.Trim(strings.TrimPrefix(rel, "/"), "/")
+	if rel == "" {
+		return ListTrackPaths(env)
+	}
+	dir := filepath.Join(env.MusicRoot, filepath.FromSlash(rel))
+	return listTrackPathsQuery(env, dir, dir+string(os.PathSeparator)+"%")
+}
+
+func listTrackPathsQuery(env Env, exact, like string) ([]string, error) {
 	db, err := OpenDB(env.LibraryDB)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.Query(`SELECT path FROM tracks ORDER BY path`)
+	var (
+		rows *sql.Rows
+		q    string
+		args []any
+	)
+	switch {
+	case exact != "" && like != "":
+		q = `SELECT path FROM tracks WHERE path = ? OR path LIKE ? ORDER BY path`
+		args = []any{exact, like}
+	case exact != "":
+		q = `SELECT path FROM tracks WHERE path = ? ORDER BY path`
+		args = []any{exact}
+	default:
+		q = `SELECT path FROM tracks ORDER BY path`
+	}
+	rows, err = db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}

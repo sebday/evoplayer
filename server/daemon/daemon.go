@@ -48,6 +48,8 @@ type Daemon struct {
 	persistTimer      *time.Timer
 	persistPath       string
 	persistState      string
+	persistVolume     int
+	lastWarmPath      string
 }
 
 type mprisCloser interface {
@@ -59,10 +61,16 @@ func New(env paths.Env) *Daemon {
 	d := &Daemon{Env: env, jobs: jobs.NewManager()}
 	d.warm = warm.NewScheduler(env, warm.DefaultWorkers)
 	d.warm.SetOnComplete(func(path string, art bool) {
+		if path != "" {
+			status.InvalidateMeta(path)
+		}
 		d.Server.Broadcast(ipc.Event{Event: "warm", Data: map[string]any{
 			"path": path,
 			"art":  art,
 		}})
+		if d.Actor != nil && d.Actor.Snapshot().Path == path {
+			d.broadcastStateFull()
+		}
 	})
 	d.Server = ipc.NewServer(env.SocketPath, func(req ipc.Request) (interface{}, error) {
 		before := d.Actor.Snapshot()
@@ -82,9 +90,19 @@ func New(env paths.Env) *Daemon {
 		d.Actor.SetVizWanted(want)
 	}
 	d.Actor = playback.NewActor(func(st playback.Status) {
+		if st.Path != "" && st.Path != d.lastWarmPath {
+			d.lastWarmPath = st.Path
+			d.warm.Enqueue(st.Path, warm.PriorityHigh, true)
+		}
 		d.broadcastState()
 		d.persistPlayerState(st)
 	})
+	if vol, ok := status.SavedVolume(env); ok {
+		d.Actor.SetVolume(vol)
+		d.persistVolume = vol
+	} else {
+		d.persistVolume = -1
+	}
 	d.vizFrame = viz.NewFrameWriter(viz.FramePath(env.SocketPath))
 	d.Actor.SetVizOnUpdate(func(levels []float32) {
 		d.broadcastViz(levels)

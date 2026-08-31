@@ -34,6 +34,7 @@ func TestWriteRoundTrip(t *testing.T) {
 		Genre:    "Electronic",
 		Playlist: "current",
 		Position: 12.5,
+		Volume:   72,
 	}
 	if err := Write(env, st); err != nil {
 		t.Fatal(err)
@@ -41,5 +42,42 @@ func TestWriteRoundTrip(t *testing.T) {
 	got := Saved(env)
 	if got.Path != path || got.Position != 12.5 {
 		t.Fatalf("got path=%q pos=%v", got.Path, got.Position)
+	}
+	if got.Volume != 72 {
+		t.Fatalf("volume = %d, want 72", got.Volume)
+	}
+}
+
+func TestWriteVolumeRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	env := paths.Env{PlayerState: filepath.Join(dir, "player.json")}
+	if err := WriteVolume(env, 85); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := SavedVolume(env)
+	if !ok || got != 85 {
+		t.Fatalf("SavedVolume = %d, %v, want 85 true", got, ok)
+	}
+}
+
+func TestWriteVolumePreservesTrack(t *testing.T) {
+	dir := t.TempDir()
+	env := paths.Env{PlayerState: filepath.Join(dir, "player.json")}
+	path := filepath.Join(dir, "track.mp3")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(env, playback.Status{Path: path, Position: 3, Volume: 50}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteVolume(env, 90); err != nil {
+		t.Fatal(err)
+	}
+	got := Saved(env)
+	if got.Path != path || got.Position != 3 {
+		t.Fatalf("track lost: path=%q pos=%v", got.Path, got.Position)
+	}
+	if got.Volume != 90 {
+		t.Fatalf("volume = %d, want 90", got.Volume)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/playback"
 )
@@ -46,5 +47,34 @@ func TestEnrichFilenameMeta(t *testing.T) {
 	}
 	if enriched.Title != "midnight" || enriched.Artist != "loefah" {
 		t.Fatalf("got title=%q artist=%q", enriched.Title, enriched.Artist)
+	}
+}
+
+func TestEnrichLightPicksUpArtAfterCache(t *testing.T) {
+	root := t.TempDir()
+	artDir := filepath.Join(root, "art")
+	if err := os.MkdirAll(artDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	track := filepath.Join(root, "music", "sc", "a.mp3")
+	if err := os.MkdirAll(filepath.Dir(track), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(track, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	env := paths.Env{
+		MusicRoot: filepath.Join(root, "music"),
+		ArtDir:    artDir,
+	}
+	art := filepath.Join(artDir, library.CacheKey(env.MusicRoot, track)+".jpg")
+	if err := os.WriteFile(art, []byte("jpg"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := playback.Status{Path: track, State: "playing"}
+	EnrichFull(env, st)
+	got := EnrichLight(env, playback.Status{Path: track, State: "playing"})
+	if got.Art != art {
+		t.Fatalf("art = %q, want %q", got.Art, art)
 	}
 }

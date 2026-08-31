@@ -25,10 +25,111 @@ Puts `evoplayer` on `PATH` (`~/.local/bin/evoplayer` → `.build/evoplayer`).
 
 ## Usage
 
+With no arguments, `evoplayer` opens the terminal player (and starts `serve` if the socket is missing). `evoplayer tui` is the same.
+
+### Player and daemon
+
 ```bash
-evoplayer
-evoplayer serve    # backend only
+evoplayer                    # TUI (default)
+evoplayer tui
+evoplayer serve              # daemon only (playback, IPC, MPRIS, jobs)
+evoplayer start              # start daemon if needed
+evoplayer restart
+evoplayer stop
+evoplayer close              # stop playback
+evoplayer version
+```
+
+### Transport
+
+```bash
+evoplayer toggle
+evoplayer next
+evoplayer prev
+evoplayer seek <seconds>
+evoplayer shuffle [on|off|toggle]
+evoplayer volume <delta|set> [value]
+evoplayer load <path> [--folder] [--json]
+evoplayer status [--json]
+evoplayer open [--json]
+evoplayer playback <toggle|next|prev|stop|seek|volume|shuffle> …
+```
+
+### Queue
+
+```bash
+evoplayer queue append <path> [...]
+evoplayer queue play <start-path> <path> [...]
+evoplayer queue extend [--json]
+evoplayer queue up-next [--limit N] [--json]
+```
+
+### Library
+
+```bash
+evoplayer browse <path> [--json] [--offset N] [--limit N]
+evoplayer meta <path> [--json]
+evoplayer genres [--json]
+evoplayer tracks <genre> [--json]
+evoplayer find <query> [--artist|--genre|--year|--album|--label <value>] [--json]
+evoplayer cache [--force] [<genre>] [--prune-art] [--json]
+evoplayer stats [--json]
+evoplayer library browse|meta|import|cache|download …
+```
+
+### Downloads and jobs
+
+```bash
+evoplayer download [--import]              # SoundCloud likes sync
+evoplayer download url <url> [--no-import]
+evoplayer job status|stop|cancel [--json]
+```
+
+### Playlists and favorites
+
+```bash
+evoplayer playlist [name] [--json] [--offset N] [--limit N]
+evoplayer playlist create|rename|delete|star <name> …
+evoplayer favorite <path>
+evoplayer current [load|save|clear] [--json]
+```
+
+### Tags, art, and library tools
+
+```bash
+evoplayer tags read|standardize <path>
+evoplayer tags sanitize|slugify <string>
+evoplayer art search|set|apply|clear|maintain|notify-cache …
+evoplayer sort <folder> [--json]
+evoplayer vinyl by-label [root] [--execute]
+evoplayer warm <path> [--json]
+evoplayer warm --all [<folder>] [--json]
+evoplayer warm --batch <paths...>
+evoplayer placement log|undo-plan [--json] [--undoable] [--limit N]
+```
+
+### Scrobbling and history
+
+```bash
+evoplayer scrobble auth|token|nowplaying|submit|recent|touch …
+evoplayer lastfm auth-session|scrobble-api|recording-mbid …
+evoplayer history report [--json] [--week N] [--limit N]
+evoplayer jsonlog scrobble-recent|queue-up-next|merge-tracks …
+```
+
+### Config and viz
+
+```bash
+evoplayer config get|set|toml-get|toml-set|toml-json|toml-prune-derived|read-root|skip-dirs|pick …
+evoplayer viz apply|stream [--fps N]|get
+```
+
+### Examples
+
+```bash
 evoplayer download url https://soundcloud.com/you/likes
+evoplayer cache --force drum&bass
+evoplayer viz stream --fps 30
 ```
 
 ## Library folders

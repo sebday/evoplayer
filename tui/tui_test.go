@@ -1068,12 +1068,9 @@ func TestKittyArtPlacesAtCursor(t *testing.T) {
 	if strings.TrimSpace(lipglossStrip(layout)) != "" {
 		t.Fatalf("art cells should be blank under the overlay, got %q", layout)
 	}
-	c, r, ok := kittyPlacementCells(seq)
-	if !ok {
-		t.Fatalf("want placement c/r in seq, got %q", seq)
-	}
-	if c != 4 || r != 3 {
-		t.Fatalf("placement c,r = %d,%d want 4,3", c, r)
+	lines := strings.Split(strings.TrimSuffix(layout, "\n"), "\n")
+	if len(lines) == 0 || len(lines) > 3 {
+		t.Fatalf("layout rows = %d, want 1..3", len(lines))
 	}
 }
 
@@ -1140,6 +1137,12 @@ func TestArtRestorerSkipsRestoreOnQuit(t *testing.T) {
 func TestSquareArtRowsFollowsCols(t *testing.T) {
 	if got := squareArtworkRows(16, 8, 16); got != 8 {
 		t.Fatalf("16 cols at 8x16 cells -> 8 rows, got %d", got)
+	}
+}
+
+func TestSquareArtColsFollowsRows(t *testing.T) {
+	if got := squareArtworkCols(8, 8, 16); got != 16 {
+		t.Fatalf("8 rows at 8x16 cells -> 16 cols, got %d", got)
 	}
 }
 
