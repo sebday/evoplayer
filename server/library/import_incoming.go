@@ -12,16 +12,12 @@ import (
 	"github.com/sebday/evoplayer/server/tags"
 )
 
-func RunImport(env Env) error {
-	return RunImportCtx(context.Background(), env, nil)
-}
-
-func RunImportCtx(ctx context.Context, env Env, rep Reporter) error {
+func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if rep == nil {
-		rep = nopReporter{}
+		rep = jobs.NopReporter
 	}
 	incoming := filepath.Join(env.MusicRoot, ".incoming")
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
@@ -38,57 +34,68 @@ func RunImportCtx(ctx context.Context, env Env, rep Reporter) error {
 	defer db.Close()
 
 	pending := incomingAudioFiles(entries, incoming)
-	rep.Line(LogInfo("importing .incoming"))
-	rep.Line(LogInfof("%d files", len(pending)))
+	rep.Line(jobs.LogInfo("importing .incoming"))
+	rep.Line(jobs.LogInfof("%d files", len(pending)))
 	if len(pending) == 0 {
-		rep.Line(LogInfo("nothing to import"))
+		rep.Line(jobs.LogInfo("nothing to import"))
 		fmt.Fprintln(os.Stderr, "evoplayer: nothing to import in .incoming/")
 		return nil
 	}
 
 	moved := 0
 	failed := 0
+	skipped := 0
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
-	for _, src := range pending {
+	total := len(pending)
+	for i, src := range pending {
 		if err := ctx.Err(); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
 		base := filepath.Base(src)
-		rep.Progress(jobs.Progress{Phase: base, Done: moved + failed, Total: len(pending)})
+		rep.Progress(jobs.Progress{Phase: base, Done: i, Total: total})
 		info, err := os.Stat(src)
 		if err != nil || info.Size() == 0 {
+			skipped++
+			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 			continue
 		}
-		probed, _ := tags.Probe(src)
+		probed, _ := tags.ProbeImport(src)
 		dest, err := incomingDest(env, src, probed)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: skip import (no dest): %s\n", src)
-			rep.Line(LogSkip(base + " (no genre)"))
+			rep.Line(jobs.LogSkip(base + " (no genre)"))
+			skipped++
+			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			failed++
-			rep.Line(LogFail(base))
+			rep.Line(jobs.LogFail(base))
+			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 			continue
 		}
 		if _, err := os.Stat(dest); err == nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: skip existing dest: %s\n", dest)
-			rep.Line(LogSkip(relMusicPath(env.MusicRoot, dest) + " (exists)"))
+			rep.Line(jobs.LogSkip(relMusicPath(env.MusicRoot, dest) + " (exists)"))
+			skipped++
+			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 			continue
 		}
 		if err := os.Rename(src, dest); err != nil {
 			failed++
-			rep.Line(LogFail(base))
+			rep.Line(jobs.LogFail(base))
+			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 			continue
 		}
 		st, statErr := os.Stat(dest)
 		if statErr != nil {
 			failed++
-			rep.Line(LogFail(base))
+			rep.Line(jobs.LogFail(base))
+			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 			continue
 		}
 		genre := probed.Tag.Genre
@@ -110,17 +117,20 @@ func RunImportCtx(ctx context.Context, env Env, rep Reporter) error {
 			return err
 		}
 		moved++
-		rep.Line(LogOK(relMusicPath(env.MusicRoot, dest)))
-		rep.Progress(jobs.Progress{Phase: base, Done: moved + failed, Total: len(pending)})
+		rep.Line(jobs.LogOK(relMusicPath(env.MusicRoot, dest)))
+		rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	_ = SyncLiked(db, env)
-	rep.Line(LogInfof("imported %d", moved))
+	rep.Line(jobs.LogInfof("imported %d", moved))
 	fmt.Fprintf(os.Stderr, "evoplayer: imported %d file(s) from .incoming/\n", moved)
+	if skipped > 0 {
+		rep.Line(jobs.LogInfof("skipped %d", skipped))
+	}
 	if failed > 0 {
-		rep.Line(LogFail(fmt.Sprintf("%d failed", failed)))
+		rep.Line(jobs.LogFail(fmt.Sprintf("%d failed", failed)))
 		return fmt.Errorf("evoplayer: import failed for %d file(s)", failed)
 	}
 	return nil
@@ -178,6 +188,9 @@ func incomingDest(env Env, path string, probed tags.ProbeResult) (string, error)
 	if genre == "" {
 		genre = genreFolderFromTags(env, tag)
 	}
+	if genre == "" && strings.TrimSpace(tag.Genre) != "" {
+		return "", fmt.Errorf("unknown genre for %s: %s", path, tag.Genre)
+	}
 	if genre == "" {
 		return "", fmt.Errorf("unknown genre for %s", path)
 	}
@@ -190,18 +203,22 @@ func incomingDest(env Env, path string, probed tags.ProbeResult) (string, error)
 		return "", fmt.Errorf("cannot name %s", path)
 	}
 	dir := filepath.Join(env.MusicRoot, genre, "soundcloud")
-	if IsMix(path, probed.Duration) {
-		year := mixYear(tag.Year, path)
+	if incomingIsMix(path, base, probed.Duration) {
+		year := mixYear(tag.Year, path, base)
 		dir = filepath.Join(env.MusicRoot, genre, "mixes", year)
 	} else if isYouTubeSource(path, tag) {
-		year := mixYear(tag.Year, path)
+		year := mixYear(tag.Year, path, base)
 		dir = filepath.Join(env.MusicRoot, genre, "youtube", year)
 	}
 	return filepath.Join(dir, base), nil
 }
 
+func incomingIsMix(incomingPath, destBase string, dur float64) bool {
+	return IsMix(incomingPath, dur) || IsMix(destBase, dur)
+}
+
 func genreFolderFromTags(env Env, tag tags.TagInfo) string {
-	return matchLibraryFolder(env, tag.Genre)
+	return MatchLibraryGenre(env, tag.Genre)
 }
 
 func matchLibraryFolder(env Env, name string) string {
@@ -252,16 +269,18 @@ func isYouTubeSource(path string, tag tags.TagInfo) bool {
 	return strings.Contains(stem, "youtube")
 }
 
-func mixYear(yearTag, path string) string {
+func mixYear(yearTag string, paths ...string) string {
 	year := strings.TrimSpace(yearTag)
 	if len(year) >= 4 {
 		return year[:4]
 	}
-	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	for i := 0; i+4 <= len(stem); i++ {
-		part := stem[i : i+4]
-		if part >= "1985" && part <= "2026" {
-			return part
+	for _, path := range paths {
+		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		for i := 0; i+4 <= len(stem); i++ {
+			part := stem[i : i+4]
+			if part >= "1985" && part <= "2026" {
+				return part
+			}
 		}
 	}
 	return "unknown"

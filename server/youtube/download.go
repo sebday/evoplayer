@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/sebday/evoplayer/server/config"
 	"github.com/sebday/evoplayer/server/paths"
+	"github.com/sebday/evoplayer/server/syncarchive"
 	"github.com/sebday/evoplayer/server/tags"
 )
 
@@ -24,6 +26,7 @@ type ProgressFunc func(phase string, percent int)
 type Options struct {
 	MusicRoot   string
 	MusicConfig string
+	StateDir    string
 }
 
 type ytdlpInfo struct {
@@ -41,7 +44,30 @@ func LoadOptions(env paths.Env) (Options, error) {
 	return Options{
 		MusicRoot:   env.MusicRoot,
 		MusicConfig: env.MusicConfig,
+		StateDir:    env.StateDir,
 	}, nil
+}
+
+// VideoID extracts a YouTube video id from a supported URL.
+func VideoID(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Host), "www.")
+	switch host {
+	case "youtu.be":
+		return strings.Trim(u.Path, "/")
+	case "youtube.com", "m.youtube.com", "music.youtube.com":
+		if id := strings.TrimSpace(u.Query().Get("v")); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 func defaultGenre(musicConfig string) string {
@@ -50,10 +76,6 @@ func defaultGenre(musicConfig string) string {
 		return ""
 	}
 	return strings.TrimSpace(genre)
-}
-
-func DownloadURL(env paths.Env, pageURL string) (string, error) {
-	return DownloadURLCtx(context.Background(), env, pageURL, nil)
 }
 
 func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress ProgressFunc) (string, error) {
@@ -85,6 +107,14 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 	info, browser, err := ytdlpDump(ctx, bin, pageURL)
 	if err != nil {
 		return "", err
+	}
+	archive, err := syncarchive.Load(syncarchive.Path(opts.StateDir))
+	if err != nil {
+		return "", err
+	}
+	if archive.HasYT(info.ID) {
+		report("download", 100)
+		return "", nil
 	}
 	artist := info.artist()
 	title := strings.TrimSpace(info.Title)
@@ -133,12 +163,18 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 	if year > 0 {
 		meta["year"] = fmt.Sprintf("%d", year)
 	}
+	if info.Duration > 0 {
+		meta["duration_ms"] = fmt.Sprintf("%.0f", info.Duration*1000)
+	}
 	report("tag", 0)
 	picture, mime := fetchThumbnail(info)
 	if err := tags.EmbedMP3(dest, meta, picture, mime); err != nil {
 		fmt.Fprintf(os.Stderr, "evoplayer: warn: youtube tag embed: %v\n", err)
 	}
 	report("tag", 100)
+	if err := archive.AddYT(info.ID); err != nil {
+		fmt.Fprintf(os.Stderr, "evoplayer: warn: archive write: %v\n", err)
+	}
 	return dest, nil
 }
 

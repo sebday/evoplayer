@@ -18,6 +18,8 @@ type Transcoding struct {
 type Track struct {
 	ID           int64  `json:"id"`
 	Title        string `json:"title"`
+	Genre        string `json:"genre"`
+	TagList      string `json:"tag_list"`
 	PermalinkURL string `json:"permalink_url"`
 	CreatedAt    string `json:"created_at"`
 	ArtworkURL   string `json:"artwork_url"`

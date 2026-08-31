@@ -503,10 +503,6 @@ func (m model) browseVisible(innerH int) int {
 	return vis
 }
 
-func (m model) playlistInnerWidth() int {
-	return paneInnerWidth(m.playerGeom().playlistW)
-}
-
 func (m model) browseInnerWidth() int {
 	return paneInnerWidth(m.playerGeom().browseW)
 }

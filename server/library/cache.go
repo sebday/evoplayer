@@ -33,6 +33,13 @@ type cacheFile struct {
 }
 
 func CacheGenre(env Env, genre string, force bool) (CacheResult, error) {
+	return CacheGenreCtx(context.Background(), env, genre, force, nil)
+}
+
+func CacheGenreCtx(ctx context.Context, env Env, genre string, force bool, onProgress CacheProgressFunc) (CacheResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	dir := filepath.Join(env.MusicRoot, genre)
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return CacheResult{}, fmt.Errorf("evoplayer: unknown genre: %s", genre)
@@ -42,7 +49,11 @@ func CacheGenre(env Env, genre string, force bool) (CacheResult, error) {
 		return CacheResult{}, err
 	}
 	defer db.Close()
-	return cacheDirInto(db, env, dir, genre, force)
+	files, err := listAudioFiles(dir, genre)
+	if err != nil {
+		return CacheResult{}, err
+	}
+	return cacheFilesIntoCtx(ctx, db, env, files, dir, force, onProgress)
 }
 
 type CacheProgress struct {
@@ -66,28 +77,12 @@ func CacheAllCtx(ctx context.Context, env Env, force bool, onProgress CacheProgr
 	return cacheAllIntoCtx(ctx, db, env, force, onProgress)
 }
 
-func cacheAllInto(db *sql.DB, env Env, force bool) (CacheResult, error) {
-	return cacheAllIntoCtx(context.Background(), db, env, force, nil)
-}
-
 func cacheAllIntoCtx(ctx context.Context, db *sql.DB, env Env, force bool, onProgress CacheProgressFunc) (CacheResult, error) {
 	files, err := listAudioFiles(env.MusicRoot, "")
 	if err != nil {
 		return CacheResult{}, err
 	}
 	return cacheFilesIntoCtx(ctx, db, env, files, env.MusicRoot, force, onProgress)
-}
-
-func cacheDirInto(db *sql.DB, env Env, dir, genre string, force bool) (CacheResult, error) {
-	files, err := listAudioFiles(dir, genre)
-	if err != nil {
-		return CacheResult{}, err
-	}
-	return cacheFilesInto(db, env, files, dir, force)
-}
-
-func cacheFilesInto(db *sql.DB, env Env, files []cacheFile, prefix string, force bool) (CacheResult, error) {
-	return cacheFilesIntoCtx(context.Background(), db, env, files, prefix, force, nil)
 }
 
 func cacheFilesIntoCtx(ctx context.Context, db *sql.DB, env Env, files []cacheFile, prefix string, force bool, onProgress CacheProgressFunc) (CacheResult, error) {
@@ -153,10 +148,6 @@ type probedFile struct {
 	track Track
 	mtime int64
 	size  int64
-}
-
-func probeFiles(env Env, files []cacheFile) []probedFile {
-	return probeFilesCtx(context.Background(), env, files, nil)
 }
 
 func probeFilesCtx(ctx context.Context, env Env, files []cacheFile, onProgress CacheProgressFunc) []probedFile {

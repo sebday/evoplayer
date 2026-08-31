@@ -145,6 +145,10 @@ func main() {
 		err = cli.CmdSort(env, args)
 	case "viz":
 		err = cli.CmdViz(env, exe, args)
+	case "version":
+		fmt.Println(cli.BuildVersion(exe))
+	case "_job":
+		err = cli.CmdJobWorker(env, args)
 	default:
 		err = fmt.Errorf("evoplayer: unknown command %q", cmd)
 	}

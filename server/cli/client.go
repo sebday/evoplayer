@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/sebday/evoplayer/server/daemon"
@@ -40,9 +42,17 @@ func EnsureDaemon(env paths.Env, exe string) error {
 
 	secrets.Load()
 	cmd := exec.Command(exe, "serve")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); err == nil {
+		cmd.Stdin = devNull
+		cmd.Stdout = devNull
+		cmd.Stderr = devNull
+	}
 	cmd.Env = append(os.Environ(), "EVOPLAYER_ROOT="+env.LegacyRoot)
 	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	if cmd.Stderr == nil {
+		cmd.Stderr = &stderr
+	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -82,15 +92,26 @@ func daemonBinaryStale(env paths.Env, exe string) bool {
 	if err != nil || pid <= 0 || !daemon.ProcessAlive(pid) {
 		return false
 	}
-	wantStat, err := os.Stat(exe)
+	want, err := filepath.EvalSymlinks(exe)
 	if err != nil {
-		return false
+		want = exe
 	}
-	runStat, err := os.Stat(fmt.Sprintf("/proc/%d/exe", pid))
+	wantAbs, err := filepath.Abs(want)
+	if err != nil {
+		wantAbs = want
+	}
+	run, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
 	if err != nil {
 		return true
 	}
-	return !os.SameFile(wantStat, runStat)
+	if i := strings.Index(run, " (deleted)"); i >= 0 {
+		run = run[:i]
+	}
+	runAbs, err := filepath.Abs(run)
+	if err != nil {
+		runAbs = run
+	}
+	return wantAbs != runAbs
 }
 
 func restartDaemon(env paths.Env) {

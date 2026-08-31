@@ -2,6 +2,15 @@ package tags
 
 import "testing"
 
+func TestSlugifyPreservesDollar(t *testing.T) {
+	if got := Slugify("$uicideboy"); got != "$uicideboy" {
+		t.Fatalf("Slugify($uicideboy) = %q, want $uicideboy", got)
+	}
+	if got := Slugify("A$AP Rocky"); got != "a$ap_rocky" {
+		t.Fatalf("Slugify(A$AP Rocky) = %q, want a$ap_rocky", got)
+	}
+}
+
 func TestParseFilenameArtistTitle(t *testing.T) {
 	tests := []struct {
 		stem       string

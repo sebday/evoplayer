@@ -106,7 +106,7 @@ SectionPanel {
                         var url = String(youtubeUrlInput.text || "").trim()
                         if (!url)
                             return
-                        dashboard.runDaemonLibraryJob("library.download", { url: url, import: false },
+                        dashboard.runDaemonLibraryJob("library.download", { url: url },
                             "download url", { key: "download-url", stayOnScreen: true })
                     }
                 }

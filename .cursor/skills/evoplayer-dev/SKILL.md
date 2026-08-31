@@ -30,7 +30,7 @@ The Quickshell dashboard lives in `gui/` (optional; install stays TUI-only). Def
 
 ## Daemon
 
-Single runtime: `evoplayer serve` owns playback (ffmpeg+oto), queue, volume, NDJSON IPC at `$XDG_RUNTIME_DIR/evoplayer.sock`, MPRIS (`org.mpris.MediaPlayer2.evoplayer`), and async jobs (`library.import`, `library.cache`, `library.soundcloud.download`, `library.download`, `library.art.maintain`). SoundCloud likes sync and `.incoming` import run in supervised deprioritized child processes (`evoplayer _job soundcloud-download`, `evoplayer _job import-incoming`); the daemon relays NDJSON progress to `job.status` and pauses warm workers while those jobs run.
+Single runtime: `evoplayer serve` owns playback (ffmpeg+oto), queue, volume, NDJSON IPC at `$XDG_RUNTIME_DIR/evoplayer.sock`, MPRIS (`org.mpris.MediaPlayer2.evoplayer`), and async jobs (`library.import`, `library.cache`, `library.soundcloud.download`, `library.download`, `library.art.maintain`). SoundCloud likes sync, URL downloads, `.incoming` import, and user-triggered cache run in supervised deprioritized child processes (`evoplayer _job soundcloud-download`, `evoplayer _job download-url`, `evoplayer _job import-incoming`, `evoplayer _job cache`); the daemon relays NDJSON progress to `job.status` and pauses warm workers while those jobs run.
 
 IPC protocol reference: [docs/ipc.md](../../../docs/ipc.md) (`capabilities`, `queue_revision` / `if_revision`, `spectrum.get`, error codes).
 
@@ -64,7 +64,7 @@ Use `EVOPLAYER_TRACE_IPC=all` to also log `state.get`, `subscribe`, and library 
 - Downloads land in `{music_root}/.incoming/` first.
 - Import moves matched tracks into `{genre}/soundcloud/` or `{genre}/mixes/{year}/` based on embedded SoundCloud genre/tags matched against existing library genre folders (`library.MatchLibraryGenre`). There is no default genre fallback — unmatched files stay in `.incoming`.
 - `sync-archive.txt` records handled SoundCloud IDs (successes, DRM skips, etc.). Archive presence does not mean the file is in the library.
-- Heavy work runs in supervised child processes; poll with `evoplayer job status --json` (uses `DaemonUp` only — does not restart the daemon).
+- Heavy work runs in supervised child processes (`_job soundcloud-download`, `_job download-url`, `_job import-incoming`, `_job cache`); poll with `evoplayer job status --json` (uses `DaemonUp` only — does not restart the daemon). A pasted SoundCloud likes URL uses the same likes-sync worker as `evoplayer download`.
 
 ## State, cache, and secrets
 

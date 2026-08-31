@@ -3,6 +3,8 @@ package soundcloud
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/sebday/evoplayer/server/syncarchive"
 )
 
 func TestLikesURL(t *testing.T) {
@@ -15,7 +17,7 @@ func TestLikesURL(t *testing.T) {
 }
 
 func TestArchivePath(t *testing.T) {
-	got := ArchivePath("/state/player")
+	got := syncarchive.Path("/state/player")
 	want := filepath.Join("/state/player", "sync-archive.txt")
 	if got != want {
 		t.Fatalf("ArchivePath = %q, want %q", got, want)

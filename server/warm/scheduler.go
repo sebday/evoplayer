@@ -30,6 +30,7 @@ type Scheduler struct {
 	env        paths.Env
 	workers    int
 	cancel     context.CancelFunc
+	paused     bool
 	onComplete func(path string, art bool)
 	onProgress func(path string)
 }
@@ -123,6 +124,18 @@ func (s *Scheduler) ClearPending() {
 	s.mu.Unlock()
 }
 
+func (s *Scheduler) Pause() {
+	s.mu.Lock()
+	s.paused = true
+	s.mu.Unlock()
+}
+
+func (s *Scheduler) Resume() {
+	s.mu.Lock()
+	s.paused = false
+	s.mu.Unlock()
+}
+
 func (s *Scheduler) WaitIdleCtx(ctx context.Context) error {
 	for {
 		select {
@@ -157,6 +170,13 @@ func (s *Scheduler) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
+		}
+		s.mu.Lock()
+		paused := s.paused
+		s.mu.Unlock()
+		if paused {
+			time.Sleep(50 * time.Millisecond)
+			continue
 		}
 		j, ok := s.pop()
 		if !ok {

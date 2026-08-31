@@ -36,6 +36,10 @@ func EmbedMP3(path string, targets map[string]string, picture []byte, pictureMIM
 			Text:     v,
 		})
 	}
+	if v, ok := targets["duration_ms"]; ok && v != "" {
+		tag.DeleteFrames("TLEN")
+		tag.AddTextFrame("TLEN", tag.DefaultEncoding(), strings.TrimSpace(v))
+	}
 	if len(picture) > 0 {
 		mime := pictureMIME
 		if mime == "" {

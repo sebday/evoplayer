@@ -9,7 +9,7 @@ import (
 )
 
 const progressNotifyInterval = 250 * time.Millisecond
-const maxJobLogLines = 24
+const maxJobLogLines = 48
 
 type State struct {
 	ID        string    `json:"id"`

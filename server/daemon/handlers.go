@@ -6,18 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/sebday/evoplayer/server/download"
 	"github.com/sebday/evoplayer/server/ipc"
-	"github.com/sebday/evoplayer/server/jobs"
 	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/library/find"
 	"github.com/sebday/evoplayer/server/mpris"
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
-	"github.com/sebday/evoplayer/server/soundcloud"
 	"github.com/sebday/evoplayer/server/status"
 	"github.com/sebday/evoplayer/server/viz"
 	"github.com/sebday/evoplayer/server/warm"
@@ -318,8 +314,7 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 		return map[string]any{"cancelled": cancelled, "name": name}, nil
 	case "library.import":
 		st, err := d.jobs.Start("import", func(ctx context.Context) error {
-			rep := daemonJobReporter{d: d}
-			if err := library.RunImportCtx(ctx, library.EnvFrom(d.Env), rep); err != nil {
+			if err := d.runImportJob(ctx); err != nil {
 				return err
 			}
 			d.jobs.SetResult(map[string]any{
@@ -329,7 +324,6 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 			})
 			status.InvalidateAllMeta()
 			d.broadcastState()
-			d.broadcastJob()
 			d.scheduleArtMaintain()
 			return nil
 		})
@@ -344,19 +338,12 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 			Force bool   `json:"force"`
 		}
 		_ = ipc.DecodeParams(req.Params, &p)
-		st, err := d.jobs.Start("cache", func(context.Context) error {
-			env := library.EnvFrom(d.Env)
-			var res library.CacheResult
-			var err error
-			if p.Genre != "" {
-				res, err = library.CacheGenre(env, p.Genre, p.Force)
-			} else {
-				res, err = library.CacheAll(env, p.Force)
-			}
-			if err != nil {
+		st, err := d.jobs.Start("cache", func(ctx context.Context) error {
+			if err := d.runCacheJob(ctx, p.Genre, p.Force); err != nil {
 				return err
 			}
-			_ = res
+			status.InvalidateAllMeta()
+			d.broadcastState()
 			d.broadcastJob()
 			return nil
 		})
@@ -371,14 +358,8 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 		}
 		_ = ipc.DecodeParams(req.Params, &p)
 		st, err := d.jobs.Start("download", func(ctx context.Context) error {
-			rep := daemonJobReporter{d: d}
-			if err := soundcloud.DownloadEnvReport(d.Env, rep); err != nil {
+			if err := d.runSoundCloudDownloadJob(ctx, p.Import); err != nil {
 				return err
-			}
-			if p.Import {
-				if err := library.RunImportCtx(ctx, library.EnvFrom(d.Env), rep); err != nil {
-					return err
-				}
 			}
 			d.broadcastJob()
 			d.scheduleArtMaintain()
@@ -392,43 +373,33 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 	case "library.download":
 		var p struct {
 			URL    string `json:"url"`
-			Import bool   `json:"import"`
+			Import *bool  `json:"import"`
 		}
 		_ = ipc.DecodeParams(req.Params, &p)
 		if strings.TrimSpace(p.URL) == "" {
 			return nil, ipc.ErrInvalidParams("url required")
 		}
+		doImport := p.Import == nil || *p.Import
 		st, err := d.jobs.Start("download-url", func(ctx context.Context) error {
-			rep := daemonJobReporter{d: d}
-			if download.DetectSource(p.URL) == "soundcloud" {
-				if opts, err := soundcloud.LoadOptions(d.Env); err == nil && opts.OAuthSource != "" {
-					rep.Line(soundcloud.LogInfof("soundcloud auth from %s", opts.OAuthSource))
-				}
-				rep.Progress(jobs.Progress{Phase: "downloading"})
+			var err error
+			if isSoundCloudLikesURL(p.URL) {
+				err = d.runSoundCloudDownloadJob(ctx, doImport)
+			} else {
+				err = d.runDownloadURLJob(ctx, p.URL, doImport)
 			}
-			path, err := download.DownloadURLCtx(ctx, d.Env, p.URL, func(phase string, pct int) {
-				d.jobs.SetProgress(jobs.Progress{Phase: phase, Done: pct, Total: 100})
-			})
 			if err != nil {
 				return err
 			}
-			rep.Line(soundcloud.LogOK(filepath.Base(path)))
 			env := library.EnvFrom(d.Env)
 			folders := library.GenreChoices(env)
 			d.jobs.SetResult(map[string]any{
-				"files":   []any{library.PreviewIncoming(env, path)},
+				"files":   library.ListIncoming(env),
 				"folders": folders,
 				"genres":  folders,
 			})
-			if p.Import {
-				if err := library.RunImportCtx(ctx, env, rep); err != nil {
-					return err
-				}
-				d.jobs.SetResult(map[string]any{
-					"files":   library.ListIncoming(env),
-					"folders": folders,
-					"genres":  folders,
-				})
+			if doImport {
+				status.InvalidateAllMeta()
+				d.broadcastState()
 			}
 			d.broadcastJob()
 			d.scheduleArtMaintain()
@@ -480,16 +451,4 @@ func methodDomain(method string) string {
 		return method[:i]
 	}
 	return method
-}
-
-type daemonJobReporter struct {
-	d *Daemon
-}
-
-func (r daemonJobReporter) Progress(p jobs.Progress) {
-	r.d.jobs.SetProgress(p)
-}
-
-func (r daemonJobReporter) Line(s string) {
-	r.d.jobs.AppendLog(s)
 }

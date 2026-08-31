@@ -1,6 +1,7 @@
 package soundcloud
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,7 +10,10 @@ import (
 	"strings"
 )
 
-func (c *Client) DownloadTrackStream(track *Track, destPath string) error {
+func (c *Client) DownloadTrackStream(ctx context.Context, track *Track, destPath string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return err
 	}
@@ -20,7 +24,10 @@ func (c *Client) DownloadTrackStream(track *Track, destPath string) error {
 	var lastErr error
 	drmFailed := false
 	for _, tc := range order {
-		if err := c.downloadTranscoding(tc, destPath); err != nil {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := c.downloadTranscoding(ctx, tc, destPath); err != nil {
 			lastErr = err
 			if strings.Contains(tc.Format.Protocol, "encrypted") && isFFmpegDecryptErr(err) {
 				drmFailed = true
@@ -38,18 +45,18 @@ func (c *Client) DownloadTrackStream(track *Track, destPath string) error {
 	return lastErr
 }
 
-func (c *Client) downloadTranscoding(tc Transcoding, destPath string) error {
+func (c *Client) downloadTranscoding(ctx context.Context, tc Transcoding, destPath string) error {
 	streamURL, err := c.streamInfoURL(tc.URL)
 	if err != nil {
 		return err
 	}
 	tmp := destPath + ".part"
 	if strings.Contains(tc.Format.Protocol, "hls") {
-		if err := ffmpegToMP3(streamURL, tmp); err != nil {
+		if err := ffmpegToMP3(ctx, streamURL, tmp); err != nil {
 			os.Remove(tmp)
 			return err
 		}
-	} else if err := downloadFile(c.HTTP, streamURL, tmp); err != nil {
+	} else if err := downloadFile(ctx, c.HTTP, streamURL, tmp); err != nil {
 		os.Remove(tmp)
 		return err
 	}
@@ -60,11 +67,18 @@ func (c *Client) downloadTranscoding(tc Transcoding, destPath string) error {
 	return nil
 }
 
-func downloadFile(client *http.Client, url, dest string) error {
+func downloadFile(ctx context.Context, client *http.Client, url, dest string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if client == nil {
 		client = http.DefaultClient
 	}
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

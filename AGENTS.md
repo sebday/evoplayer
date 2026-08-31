@@ -5,7 +5,7 @@
 - Minimize diff scope; match existing package patterns and naming in the surrounding code.
 - Search for existing implementations before adding helpers or abstractions.
 - Prefer `go test ./...` for validation.
-- The daemon (`evoplayer serve`) is the single runtime for playback, IPC, and async jobs; heavy work runs in supervised child processes.
+- The daemon (`evoplayer serve`) is the single runtime for playback, IPC, and async jobs; heavy work (likes sync, URL downloads, import, cache) runs in supervised child processes.
 - No secrets in the repo; credentials come from pass or browser cookies per project conventions.
 
 ## Log papercuts
@@ -26,4 +26,4 @@ Project skills live in `.cursor/skills/`.
 
 ## Commits
 
-Use `type: imperative lowercase subject` — see [CONTRIB.md](CONTRIB.md) for commit format and branch naming (`master` + `<type>/<subject>` topic branches). Retired spikes live under `archive/*`.
+Use `Imperative lowercase subject`.

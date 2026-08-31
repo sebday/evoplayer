@@ -3,24 +3,12 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sebday/evoplayer/server/jobs"
 	"github.com/sebday/evoplayer/server/paths"
-	"github.com/sebday/evoplayer/server/soundcloud"
-)
-
-const (
-	downloadLogLines = 8
-)
-
-const (
-	dlCtrlURL = iota
-	dlCtrlSoundCloud
-	dlCtrlImport
-	dlCtrlCancel
-	dlCtrlCount
 )
 
 func (m model) downloadPaneWidth() int {
@@ -33,55 +21,73 @@ func (m model) renderDownloadPane(g playerGeom) string {
 	innerW := paneInnerWidth(width)
 	innerH := paneInnerHeight(g.bodyH)
 	active := m.focus == focusPlaylist
-	bottom := hint("⏎", "download", 3, active) + "  " + hint("i", "import", 3, active)
+	var bottom string
 	if m.downloadJobCancellable() {
-		bottom += "  " + hint("x", "cancel", 3, active)
+		bottom = hint("⏎", "cancel", 3, active) + "  " + hint("x", "cancel", 3, active)
+	} else {
+		bottom = hint("⏎", "download", 3, active)
 	}
-	return fieldsetPad("download", "", m.renderDownloadLanding(innerW, innerH), width, g.bodyH, active, panePadY, panePadX, bottom, "", 3)
+	lines := m.buildDownloadInnerLines(innerW, innerH)
+	return fieldsetBodyLines("download", "", lines, width, g.bodyH, active, panePadY, panePadX, bottom, "", 3)
 }
 
-func (m model) renderDownloadLanding(width, height int) string {
-	boxW := min(width, max(28, width*3/4))
+func (m model) buildDownloadInnerLines(innerW, innerH int) []string {
+	boxW := min(innerW, max(28, innerW*3/4))
 	if boxW > 56 {
 		boxW = 56
 	}
-	var b strings.Builder
-	b.WriteString(m.renderDownloadSearchBox(boxW))
-	b.WriteString("\n\n")
-	b.WriteString(m.renderDownloadActions(boxW))
-	log := m.renderDownloadJobLog(boxW)
-	status := m.downloadStatusLine(boxW)
-	if log != "" {
-		b.WriteString("\n\n")
-		b.WriteString(log)
-	}
-	if status != "" {
-		if log != "" {
-			b.WriteString("\n")
-		} else {
-			b.WriteString("\n\n")
+	urlBox := m.renderDownloadSearchBox(boxW)
+	urlH := lipgloss.Height(urlBox)
+	urlBlock := lipgloss.Place(innerW, urlH, lipgloss.Center, lipgloss.Top, urlBox)
+
+	var body []string
+	body = append(body, strings.Split(urlBlock, "\n")...)
+
+	usedBelow := 0
+	if m.downloadJobCancellable() {
+		if status := m.renderDownloadStatusLine(boxW); status != "" {
+			body = append(body, status)
+			usedBelow++
 		}
-		b.WriteString(status)
 	}
-	body := strings.TrimRight(b.String(), "\n")
-	if height < 2 || width < 8 {
-		return clipLines(body, max(1, height))
+
+	logMax := max(1, innerH-urlH-usedBelow)
+	log := m.renderDownloadJobLog(boxW, logMax)
+	if log != "" {
+		body = append(body, strings.Split(log, "\n")...)
 	}
-	align := lipgloss.Center
-	if strings.TrimSpace(m.job.Log) != "" {
-		align = lipgloss.Top
+
+	if m.downloadJobCancellable() || strings.TrimSpace(m.job.Log) != "" {
+		for len(body) < innerH {
+			body = append(body, "")
+		}
+		if len(body) > innerH {
+			body = body[:innerH]
+		}
+		return body
 	}
-	return lipgloss.Place(width, height, lipgloss.Center, align, body)
+	if len(body) >= innerH {
+		return body[:innerH]
+	}
+	padTop := (innerH - len(body)) / 2
+	lines := make([]string, innerH)
+	for i := range lines {
+		src := i - padTop
+		if src >= 0 && src < len(body) {
+			lines[i] = body[src]
+		}
+	}
+	return lines
 }
 
-func (m model) renderDownloadJobLog(width int) string {
+func (m model) renderDownloadJobLog(width, maxLines int) string {
 	log := strings.TrimSpace(m.job.Log)
 	if log == "" {
 		return ""
 	}
 	lines := strings.Split(log, "\n")
-	if len(lines) > downloadLogLines {
-		lines = lines[len(lines)-downloadLogLines:]
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
 	}
 	var b strings.Builder
 	for _, line := range lines {
@@ -98,9 +104,9 @@ func (m model) renderDownloadJobLog(width int) string {
 
 func styleDownloadLogLine(line string) string {
 	switch {
-	case strings.HasPrefix(line, soundcloud.LogGlyphOK):
+	case strings.HasPrefix(line, jobs.LogGlyphOK):
 		return styleGood().Render(line)
-	case strings.HasPrefix(line, soundcloud.LogGlyphFail), strings.HasPrefix(line, soundcloud.LogGlyphWarn):
+	case strings.HasPrefix(line, jobs.LogGlyphFail), strings.HasPrefix(line, jobs.LogGlyphWarn):
 		return styleWarn().Render(line)
 	default:
 		return styleMuted().Render(line)
@@ -108,62 +114,20 @@ func styleDownloadLogLine(line string) string {
 }
 
 func (m model) renderDownloadSearchBox(width int) string {
+	if m.downloadJobCancellable() {
+		inner := max(8, width-4)
+		cancel := styleDanger().Render(padExact("cancel", inner))
+		return fieldsetPadAlert("url", cancel, width, 3, 0, 1, 3)
+	}
 	inner := max(8, width-4)
 	m.downloadURL.Prompt = "> "
-	m.downloadURL.Placeholder = "Paste a YouTube or SoundCloud URL..."
+	m.downloadURL.Placeholder = "Paste YouTube or SoundCloud URL (track, playlist, artist, likes)…"
 	m.downloadURL.Width = inner
-	return fieldsetPad("url", "", m.downloadURL.View(), width, 3, m.downloadControlSelected(dlCtrlURL), 0, 1, "", "", 3)
+	active := m.downloadSelected() && m.focus == focusPlaylist && !m.jobBusy()
+	return fieldsetPad("url", "", m.downloadURL.View(), width, 3, active, 0, 1, "", "", 3)
 }
 
-func (m model) renderDownloadActions(width int) string {
-	gap := "  "
-	row := m.renderDownloadAction(dlCtrlSoundCloud, "import soundcloud") + gap +
-		m.renderDownloadAction(dlCtrlImport, "import incoming")
-	if lipgloss.Width(row) > width {
-		row = clipEllipsis(row, width)
-	}
-	if !m.downloadJobCancellable() {
-		return row
-	}
-	cancel := m.renderDownloadAction(dlCtrlCancel, "cancel")
-	if lipgloss.Width(cancel) > width {
-		cancel = clipEllipsis(cancel, width)
-	}
-	return row + "\n" + cancel
-}
-
-func (m model) renderDownloadAction(idx int, label string) string {
-	cursor := "  "
-	text := label
-	busy := m.jobBusy()
-	selected := m.downloadControlSelected(idx)
-	if idx == dlCtrlCancel {
-		if selected {
-			cursor = styleSelected().Render("> ")
-			text = styleWarn().Render(label)
-		} else if m.downloadJobCancellable() {
-			text = styleWarn().Render(label)
-		} else {
-			text = styleMuted().Render(label)
-		}
-		return cursor + text
-	}
-	if selected {
-		cursor = styleSelected().Render("> ")
-		text = styleSelected().Render(text)
-	} else if busy {
-		text = styleMuted().Render(text)
-	} else {
-		text = styleMuted().Render(text)
-	}
-	return cursor + text
-}
-
-func (m model) downloadControlSelected(idx int) bool {
-	return m.downloadSelected() && m.focus == focusPlaylist && m.playlistIdx == idx
-}
-
-func (m model) downloadStatusLine(width int) string {
+func (m model) renderDownloadStatusLine(width int) string {
 	status := m.downloadStatus()
 	if status == "" {
 		return ""
@@ -189,20 +153,26 @@ func (m model) downloadStatus() string {
 func formatJob(st jobs.State) string {
 	switch st.Status {
 	case "running":
-		if st.Progress != nil {
-			if st.Progress.Total > 0 {
-				if st.Progress.Phase != "" {
-					return fmt.Sprintf("%s  %d/%d  %s", st.Name, st.Progress.Done, st.Progress.Total, st.Progress.Phase)
-				}
-				return fmt.Sprintf("%s  %d/%d", st.Name, st.Progress.Done, st.Progress.Total)
-			}
-			if st.Progress.Phase != "" {
-				return fmt.Sprintf("%s  %s", st.Name, st.Progress.Phase)
-			}
-		}
 		name := st.Name
 		if name == "" {
 			name = "job"
+		}
+		if st.Progress != nil {
+			if st.Progress.Total > 0 {
+				if st.Progress.Phase != "" {
+					return fmt.Sprintf("%s  %d/%d  %s", name, st.Progress.Done, st.Progress.Total, st.Progress.Phase)
+				}
+				return fmt.Sprintf("%s  %d/%d", name, st.Progress.Done, st.Progress.Total)
+			}
+			if st.Progress.Done > 0 && st.Progress.Phase != "" {
+				return fmt.Sprintf("%s  %s (%d)", name, st.Progress.Phase, st.Progress.Done)
+			}
+			if st.Progress.Phase != "" {
+				return fmt.Sprintf("%s  %s", name, st.Progress.Phase)
+			}
+		}
+		if line := lastJobLogLine(st.Log); line != "" {
+			return name + "  " + line
 		}
 		return name + "  running…"
 	case "error":
@@ -242,6 +212,9 @@ func (m model) libraryScanning() bool {
 }
 
 func (m model) startURLDownload() (tea.Model, tea.Cmd) {
+	if m.downloadJobCancellable() {
+		return m.cancelDownloadJob()
+	}
 	url := strings.TrimSpace(m.downloadURL.Value())
 	if url == "" {
 		m.err = "url required"
@@ -252,28 +225,18 @@ func (m model) startURLDownload() (tea.Model, tea.Cmd) {
 	}
 	m.err = ""
 	m.downloadURL.Blur()
-	return m, startLibraryJob(m.env, "library.download", map[string]any{
-		"url":    url,
-		"import": false,
-	})
-}
-
-func (m model) startSoundCloudDownload() (tea.Model, tea.Cmd) {
-	if m.jobBusy() {
-		return m, nil
+	m.job = jobs.State{
+		Name:     "download-url",
+		Status:   "running",
+		Progress: &jobs.Progress{Phase: "starting…"},
 	}
-	m.err = ""
-	m.downloadURL.Blur()
-	return m, startLibraryJob(m.env, "library.soundcloud.download", nil)
-}
-
-func (m model) startImportIncoming() (tea.Model, tea.Cmd) {
-	if m.jobBusy() {
-		return m, nil
-	}
-	m.err = ""
-	m.downloadURL.Blur()
-	return m, startLibraryJob(m.env, "library.import", nil)
+	return m, tea.Batch(
+		startLibraryJob(m.env, "library.download", map[string]any{
+			"url":    url,
+			"import": true,
+		}),
+		pollJob(m.env),
+	)
 }
 
 func (m model) cancelDownloadJob() (tea.Model, tea.Cmd) {
@@ -283,21 +246,6 @@ func (m model) cancelDownloadJob() (tea.Model, tea.Cmd) {
 	m.err = ""
 	m.downloadURL.Blur()
 	return m, cancelJobCmd(m.env)
-}
-
-func (m model) activateDownloadControl() (tea.Model, tea.Cmd) {
-	switch m.playlistIdx {
-	case dlCtrlURL:
-		return m.startURLDownload()
-	case dlCtrlSoundCloud:
-		return m.startSoundCloudDownload()
-	case dlCtrlImport:
-		return m.startImportIncoming()
-	case dlCtrlCancel:
-		return m.cancelDownloadJob()
-	default:
-		return m, nil
-	}
 }
 
 func cancelJobCmd(env paths.Env) tea.Cmd {
@@ -310,11 +258,36 @@ func cancelJobCmd(env paths.Env) tea.Cmd {
 	}
 }
 
+func jobPollInterval() time.Duration {
+	return 250 * time.Millisecond
+}
+
+func lastJobLogLine(log string) string {
+	lines := strings.Split(strings.TrimSpace(log), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		for _, prefix := range []string{
+			jobs.LogGlyphOK + " ",
+			jobs.LogGlyphSkip + " ",
+			jobs.LogGlyphFail + " ",
+			jobs.LogGlyphInfo + " ",
+			jobs.LogGlyphWarn + " ",
+		} {
+			line = strings.TrimPrefix(line, prefix)
+		}
+		return line
+	}
+	return ""
+}
+
 func pollJob(env paths.Env) tea.Cmd {
-	return func() tea.Msg {
+	return tea.Tick(jobPollInterval(), func(time.Time) tea.Msg {
 		st, err := fetchJob(env)
 		return jobMsg{state: st, err: err}
-	}
+	})
 }
 
 func startLibraryJob(env paths.Env, method string, params map[string]any) tea.Cmd {
@@ -322,4 +295,14 @@ func startLibraryJob(env paths.Env, method string, params map[string]any) tea.Cm
 		st, err := runLibraryJob(env, method, params)
 		return jobMsg{state: st, err: err}
 	}
+}
+
+// renderDownloadLanding is kept for tests; production uses buildDownloadInnerLines.
+func (m model) renderDownloadLanding(width, height int) string {
+	lines := m.buildDownloadInnerLines(width, height)
+	return strings.Join(lines, "\n")
+}
+
+func styleDanger() lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(colLiked).Bold(true)
 }

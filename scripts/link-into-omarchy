@@ -47,6 +47,21 @@ build_go() {
   fi
   link_path "${EVOPLAYER_LIB}/evoplayer" "${BUILD_DIR}/evoplayer"
   link_path "${LOCAL_BIN}/evoplayer" "${EVOPLAYER_LIB}/evoplayer"
+
+  # go install puts a copy on PATH via mise before ~/.local/bin; shadow it with the dev build.
+  if command -v go >/dev/null 2>&1; then
+    go_bin="$(go env GOBIN 2>/dev/null || true)"
+    if [[ -z "$go_bin" ]]; then
+      go_bin="$(go env GOPATH 2>/dev/null)/bin"
+    fi
+    if [[ -n "$go_bin" && "$go_bin" != "$LOCAL_BIN" ]]; then
+      stale="${go_bin}/evoplayer"
+      if [[ -e "$stale" || -L "$stale" ]]; then
+        link_path "$stale" "${BUILD_DIR}/evoplayer"
+        echo "shadowed stale go install: ${stale} -> ${BUILD_DIR}/evoplayer" >&2
+      fi
+    fi
+  fi
 )
 
 bash "${EVOPLAYER_ROOT}/scripts/migrate-evoshell-data.sh"

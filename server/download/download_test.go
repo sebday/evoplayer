@@ -2,20 +2,25 @@ package download
 
 import "testing"
 
-func TestDetectSource(t *testing.T) {
+func TestClassifyURL(t *testing.T) {
 	cases := []struct {
-		url    string
-		source string
+		url  string
+		kind string
 	}{
-		{"https://www.youtube.com/watch?v=sBamYpy-wIU", "youtube"},
-		{"https://youtu.be/sBamYpy-wIU", "youtube"},
-		{"https://soundcloud.com/artist/track", "soundcloud"},
+		{"https://www.youtube.com/watch?v=m7EwpN1jWTg", KindYouTube},
+		{"https://youtu.be/m7EwpN1jWTg", KindYouTube},
+		{"https://soundcloud.com/you/likes", KindSCLikes},
+		{"https://soundcloud.com/seb-day/likes", KindSCPlaylist},
+		{"https://soundcloud.com/seb-day/sets/chill", KindSCPlaylist},
+		{"https://soundcloud.com/storm-queen-official", KindSCArtist},
+		{"https://soundcloud.com/storm-queen-official/tracks", KindSCArtist},
+		{"https://soundcloud.com/t-shirtssweats/anything", KindSCTrack},
 		{"https://example.com/foo", ""},
 	}
 	for _, c := range cases {
-		got := DetectSource(c.url)
-		if got != c.source {
-			t.Fatalf("DetectSource(%q) = %q, want %q", c.url, got, c.source)
+		got := ClassifyURL(c.url)
+		if got != c.kind {
+			t.Fatalf("ClassifyURL(%q) = %q, want %q", c.url, got, c.kind)
 		}
 	}
 }

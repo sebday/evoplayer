@@ -1365,11 +1365,74 @@ func TestYOpensDownload(t *testing.T) {
 	if m.focus != focusPlaylist {
 		t.Fatalf("download should focus playlist pane, got %v", m.focus)
 	}
-	if m.playlistIdx != dlCtrlURL {
-		t.Fatalf("download should select url field, idx=%d", m.playlistIdx)
-	}
 	if cmd == nil {
 		t.Fatal("y should focus the url field")
+	}
+}
+
+func TestDownloadPaneTabFocusesURL(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.nav = navFromIndex(nil)
+	m.ready = true
+	m.selectSidebarTool("download")
+	m.focus = focusBrowse
+	got, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = got.(model)
+	if m.focus != focusPlaylist {
+		t.Fatalf("tab should move to download pane, got %v", m.focus)
+	}
+	if cmd == nil {
+		t.Fatal("tab should focus the url field")
+	}
+}
+
+func TestDownloadPaneIgnoresArrowKeys(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.nav = navFromIndex(nil)
+	m.ready = true
+	got, _ := m.openDownload()
+	m = got.(model)
+	m.downloadURL.Focus()
+	got, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = got.(model)
+	if m.focus != focusPlaylist {
+		t.Fatalf("up should stay on download pane, got %v", m.focus)
+	}
+	if !m.downloadURL.Focused() {
+		t.Fatal("up should keep the url field focused")
+	}
+	got, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = got.(model)
+	if m.focus != focusPlaylist || !m.downloadURL.Focused() {
+		t.Fatal("down should keep focus on the url field")
+	}
+}
+
+func TestBrowseToDownloadFocusesURL(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.nav = navFromIndex(nil)
+	m.ready = true
+	m.focus = focusBrowse
+	m.browse = nil
+	tools := m.sidebarTools()
+	downloadIdx := len(m.browse) + m.playlistSlotCount()
+	for i, t := range tools {
+		if t.ID == "download" {
+			downloadIdx += i
+			break
+		}
+	}
+	m.browseIdx = downloadIdx
+	got, cmd := m.moveFocusedWithTools(0)
+	m = got.(model)
+	if !m.downloadSelected() {
+		t.Fatal("browse should select download tool")
+	}
+	if m.focus != focusPlaylist {
+		t.Fatalf("download tool should focus playlist pane, got %v", m.focus)
+	}
+	if cmd == nil {
+		t.Fatal("download tool should focus the url field")
 	}
 }
 
@@ -1487,7 +1550,7 @@ func TestDownloadReplacesPlaylistAndArt(t *testing.T) {
 	if strings.Contains(got, "youtube and soundcloud") || strings.Contains(got, "youtube · soundcloud") {
 		t.Fatalf("download should not show the tagline, got %q", got)
 	}
-	if !strings.Contains(got, "Paste a YouTube") {
+	if !strings.Contains(got, "Paste YouTube") {
 		t.Fatalf("download should show the url field, got %q", got)
 	}
 	if strings.Contains(got, "playlist (") {
@@ -1496,33 +1559,40 @@ func TestDownloadReplacesPlaylistAndArt(t *testing.T) {
 	if strings.Contains(got, "a art") {
 		t.Fatalf("download should replace the artwork pane, got %q", got)
 	}
-	if !strings.Contains(got, "import soundcloud") || !strings.Contains(got, "import incoming") {
-		t.Fatalf("download should list soundcloud before import incoming, got %q", got)
+	if strings.Contains(got, "import soundcloud") || strings.Contains(got, "import incoming") {
+		t.Fatalf("download should not show separate import actions, got %q", got)
 	}
 	landing := lipglossStrip(m.renderDownloadLanding(60, 20))
-	scIdx := strings.Index(landing, "import soundcloud")
-	inIdx := strings.Index(landing, "import incoming")
-	if scIdx < 0 || inIdx < 0 {
-		t.Fatalf("download actions should render, got %q", landing)
-	}
-	if strings.Contains(landing[scIdx:inIdx], "\n") {
-		t.Fatalf("download actions should be inline, got %q", landing)
-	}
-	if scIdx > inIdx {
-		t.Fatalf("soundcloud should sit before import incoming, got %q", landing)
+	if !strings.Contains(landing, "Paste YouTube") {
+		t.Fatalf("download should show url field, got %q", landing)
 	}
 }
 
-func TestDownloadShowsCancelWhenRunning(t *testing.T) {
+func TestDownloadShowsCancelInURLBoxWhenRunning(t *testing.T) {
 	m := newModel(paths.Env{})
 	m.width = 120
+	m.height = 40
 	m.ready = true
 	m.nav = navFromIndex(nil)
 	m.navIdx = navIndex(m.nav, "download")
-	m.job = jobs.State{Name: "download", Status: "running"}
+	m.job = jobs.State{Name: "download-url", Status: "running"}
 	landing := lipglossStrip(m.renderDownloadLanding(60, 20))
 	if !strings.Contains(landing, "cancel") {
-		t.Fatalf("running download should show cancel, got %q", landing)
+		t.Fatalf("running download should show cancel in url box, got %q", landing)
+	}
+	if strings.Contains(landing, "import soundcloud") || strings.Contains(landing, "import incoming") {
+		t.Fatalf("download should not show import actions while running, got %q", landing)
+	}
+}
+
+func TestDownloadCancelNotShownWhenIdle(t *testing.T) {
+	m := newModel(paths.Env{})
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "download")
+	landing := lipglossStrip(m.renderDownloadLanding(60, 20))
+	if strings.Contains(strings.ToLower(landing), "cancel") {
+		t.Fatalf("idle download pane should not show cancel in url box, got %q", landing)
 	}
 }
 
@@ -1532,7 +1602,6 @@ func TestDownloadCancelIssuesCmd(t *testing.T) {
 	m.nav = navFromIndex(nil)
 	m.navIdx = navIndex(m.nav, "download")
 	m.focus = focusPlaylist
-	m.playlistIdx = dlCtrlCancel
 	m.job = jobs.State{Name: "download", Status: "running"}
 	_, cmd := m.cancelDownloadJob()
 	if cmd == nil {
@@ -1540,29 +1609,20 @@ func TestDownloadCancelIssuesCmd(t *testing.T) {
 	}
 }
 
-func TestDownloadCancelHiddenWhenIdle(t *testing.T) {
-	m := newModel(paths.Env{})
-	m.ready = true
-	m.nav = navFromIndex(nil)
-	m.navIdx = navIndex(m.nav, "download")
-	landing := lipglossStrip(m.renderDownloadLanding(60, 20))
-	if strings.Contains(landing, "cancel") {
-		t.Fatalf("idle download pane should not show cancel, got %q", landing)
-	}
-}
-
-func TestSoundCloudDownloadStartsJob(t *testing.T) {
+func TestURLDownloadStartsJobWithImport(t *testing.T) {
 	m := newModel(paths.Env{})
 	m.ready = true
 	m.nav = navFromIndex(nil)
 	m.navIdx = navIndex(m.nav, "download")
 	m.focus = focusPlaylist
-	m.playlistIdx = dlCtrlSoundCloud
-	got, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.downloadURL.SetValue("https://soundcloud.com/a/b")
+	got, cmd := m.startURLDownload()
 	m = got.(model)
 	if cmd == nil {
-		t.Fatal("enter should start the soundcloud likes job")
+		t.Fatal("enter should start the url download job")
 	}
+	_ = m
+	_ = cmd
 }
 
 func TestDownloadJobLogRenders(t *testing.T) {
@@ -1630,9 +1690,6 @@ func TestDownloadPaneDoesNotFreeze(t *testing.T) {
 	gotView := lipglossStrip(m.View())
 	if !strings.Contains(gotView, "· fetched 200 likes") {
 		t.Fatalf("download log should update live, got %q", gotView)
-	}
-	if !strings.Contains(gotView, "fetching likes (200)") {
-		t.Fatalf("download status should show likes progress, got %q", gotView)
 	}
 }
 

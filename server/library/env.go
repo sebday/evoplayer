@@ -4,6 +4,7 @@ import "github.com/sebday/evoplayer/server/paths"
 
 type Env struct {
 	MusicRoot      string
+	MusicConfig    string
 	StateDir       string
 	CacheDir       string
 	LikesFile      string
@@ -16,6 +17,7 @@ type Env struct {
 func EnvFrom(p paths.Env) Env {
 	return Env{
 		MusicRoot:      p.MusicRoot,
+		MusicConfig:    p.MusicConfig,
 		StateDir:       p.StateDir,
 		CacheDir:       p.CacheDir,
 		LikesFile:      p.LikesFile,

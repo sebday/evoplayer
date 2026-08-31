@@ -21,12 +21,8 @@ var (
 )
 
 func panelIdleColor(num int) lipgloss.Color {
-	switch num {
-	case 1, 2, 3, 4:
-		return lipgloss.Color("6")
-	default:
-		return colAccent
-	}
+	_ = num
+	return colAccent
 }
 
 func init() {
@@ -79,6 +75,40 @@ func fieldsetPad(legend, legendTopRight, inner string, width, height int, active
 	return fieldsetBox(legend, legendTopRight, lines, innerW, active, bottomLeft, bottomRight, num)
 }
 
+func fieldsetPadAlert(legend, inner string, width, height int, padY, padX int, num int) string {
+	width = max(8, width)
+	innerW := width - 2
+	innerH := max(1, height-2)
+	body := lipgloss.NewStyle().Padding(padY, padX).Width(innerW).Height(innerH).Render(inner)
+	lines := strings.Split(body, "\n")
+	if len(lines) > innerH {
+		lines = lines[:innerH]
+	}
+	for i := range lines {
+		lines[i] = padExact(lines[i], innerW)
+	}
+	border := borderChase{active: true, idle: colLiked}
+	return fieldsetBox(legend, "", lines, innerW, true, "", "", num, border)
+}
+
+// fieldsetBodyLines renders a fieldset from pre-split lines without word-wrapping them.
+func fieldsetBodyLines(legend, legendTopRight string, lines []string, width, height int, active bool, padY, padX int, bottomLeft, bottomRight string, num int) string {
+	width = max(8, width)
+	innerW := width - 2
+	innerH := max(1, height-2)
+	contentW := max(1, innerW-2*padX)
+	padded := make([]string, innerH)
+	for i := 0; i < innerH; i++ {
+		var text string
+		if i < len(lines) {
+			text = lines[i]
+		}
+		text = padExactTrunc(text, contentW)
+		padded[i] = strings.Repeat(" ", padX) + text + strings.Repeat(" ", max(0, innerW-2*padX-contentW))
+	}
+	return fieldsetBox(legend, legendTopRight, padded, innerW, active, bottomLeft, bottomRight, num)
+}
+
 func fieldsetArt(legend, inner string, width, height, padX, cols int, bottomRight string, num int) string {
 	width = max(8, width)
 	innerW := width - 2
@@ -100,8 +130,11 @@ func fieldsetArt(legend, inner string, width, height, padX, cols int, bottomRigh
 	return fieldsetBox(legend, "", lines, innerW, false, "", bottomRight, num)
 }
 
-func fieldsetBox(legend, legendTopRight string, lines []string, innerW int, active bool, bottomLeft, bottomRight string, num int) string {
+func fieldsetBox(legend, legendTopRight string, lines []string, innerW int, active bool, bottomLeft, bottomRight string, num int, borderOverride ...borderChase) string {
 	border := newBorderChase(active, num)
+	if len(borderOverride) > 0 {
+		border = borderOverride[0]
+	}
 	top := fieldsetTop(legend, legendTopRight, innerW, border, num)
 	var mid strings.Builder
 	for _, line := range lines {
@@ -274,9 +307,9 @@ func (c borderChase) paint(ch string) string {
 
 func (c borderChase) hex() string {
 	if c.active {
-		return string(colAccent)
+		return string(colLiked)
 	}
-	return string(c.idle)
+	return string(colAccent)
 }
 
 func panelBorderHex(num int, active bool) string {
@@ -285,6 +318,18 @@ func panelBorderHex(num int, active bool) string {
 
 func padExact(s string, width int) string {
 	return lipgloss.NewStyle().MaxWidth(width).Width(width).Render(s)
+}
+
+// padExactTrunc clips to width and pads without lipgloss word-wrap (avoids breaking action rows).
+func padExactTrunc(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	s = clipEllipsis(s, width)
+	if n := width - lipgloss.Width(s); n > 0 {
+		s += strings.Repeat(" ", n)
+	}
+	return s
 }
 
 func padToHeight(s string, height int) string {

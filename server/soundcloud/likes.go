@@ -1,17 +1,17 @@
 package soundcloud
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/sebday/evoplayer/server/secrets"
 )
 
-func (c *Client) LikesTracks() ([]Track, error) {
-	return c.LikesTracksProgress(nil)
-}
-
-func (c *Client) LikesTracksProgress(onPage func(n int)) ([]Track, error) {
+func (c *Client) LikesTracksProgressCtx(ctx context.Context, onPage func(n int)) ([]Track, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if c.OAuthToken == "" {
 		return nil, fmt.Errorf("soundcloud: oauth_token required (brave cookie or pass show %s)", secrets.SoundcloudPassPath())
 	}
@@ -22,6 +22,9 @@ func (c *Client) LikesTracksProgress(onPage func(n int)) ([]Track, error) {
 	var tracks []Track
 	next := fmt.Sprintf("/users/%d/track_likes?limit=50&linked_partitioning=1", userID)
 	for next != "" {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		path := next
 		if strings.HasPrefix(path, apiBase) {
 			path = strings.TrimPrefix(path, apiBase)

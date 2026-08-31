@@ -55,7 +55,7 @@ func TestAppendLogCapsLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 60; i++ {
 		m.AppendLog(fmt.Sprintf("line %d", i))
 	}
 	got := m.Status()
@@ -63,10 +63,10 @@ func TestAppendLogCapsLines(t *testing.T) {
 		t.Fatal("missing status")
 	}
 	lines := strings.Split(strings.TrimSpace(got.Log), "\n")
-	if len(lines) != 24 {
-		t.Fatalf("log lines = %d, want 24: %q", len(lines), got.Log)
+	if len(lines) != 48 {
+		t.Fatalf("log lines = %d, want 48: %q", len(lines), got.Log)
 	}
-	if !strings.HasPrefix(lines[0], "line 6") {
+	if !strings.HasPrefix(lines[0], "line 12") {
 		t.Fatalf("log should keep the newest lines, got %q", got.Log)
 	}
 	if st.Status != "running" {

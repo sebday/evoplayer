@@ -231,15 +231,6 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 }
 
-func writeJSON(conn net.Conn, v interface{}) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return
-	}
-	b = append(b, '\n')
-	_, _ = conn.Write(b)
-}
-
 func Call(path string, req Request) (Response, error) {
 	conn, err := net.Dial("unix", path)
 	if err != nil {

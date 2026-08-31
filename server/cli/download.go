@@ -16,10 +16,10 @@ func CmdDownload(env paths.Env, args []string) error {
 }
 
 func cmdDownloadURL(env paths.Env, args []string) error {
-	doImport := hasFlag(args, "--import")
+	noImport := hasFlag(args, "--no-import")
 	url := ""
 	for _, arg := range args {
-		if arg == "--import" {
+		if arg == "--no-import" {
 			continue
 		}
 		if url == "" {
@@ -27,7 +27,11 @@ func cmdDownloadURL(env paths.Env, args []string) error {
 		}
 	}
 	if url == "" {
-		return fmt.Errorf("usage: evoplayer download url <youtube-or-soundcloud-url> [--import]")
+		return fmt.Errorf("usage: evoplayer download url <youtube-or-soundcloud-url> [--no-import]")
 	}
-	return runLibraryJob(env, "library.download", map[string]any{"url": url, "import": doImport})
+	params := map[string]any{"url": url}
+	if noImport {
+		params["import"] = false
+	}
+	return runLibraryJob(env, "library.download", params)
 }

@@ -13,8 +13,8 @@ func CmdJob(env paths.Env, args []string) error {
 	jsonOut := hasFlag(args, "--json")
 	switch args[0] {
 	case "status":
-		if err := EnsureDaemon(env, findExe(env)); err != nil {
-			return err
+		if !DaemonUp(env) {
+			return printJSON(map[string]any{"status": "idle"})
 		}
 		resp, err := IPC(env, "job.status", nil)
 		if err != nil {

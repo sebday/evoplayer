@@ -17,7 +17,7 @@ import (
 
 var sanitizeRe = regexp.MustCompile(`[/\\:*?"<>|]+`)
 var spaceRe = regexp.MustCompile(`\s+`)
-var slugNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
+var slugNonAlnum = regexp.MustCompile(`[^a-z0-9$]+`)
 var slugUnders = regexp.MustCompile(`_+`)
 var yearInTag = regexp.MustCompile(`(\d{4})`)
 
@@ -46,12 +46,22 @@ func ReadTags(path string) (TagInfo, error) {
 // Probe reads tags and duration in one pass. MP3 uses native ID3 (optional
 // duration-only ffprobe); other formats use a single ffprobe -show_format.
 func Probe(path string) (ProbeResult, error) {
+	return probe(path, true)
+}
+
+// ProbeImport reads tags for bulk .incoming import. MP3 duration comes from
+// ID3 TLEN only (no per-file ffprobe); mix routing still uses path heuristics.
+func ProbeImport(path string) (ProbeResult, error) {
+	return probe(path, false)
+}
+
+func probe(path string, ffprobeMP3Duration bool) (ProbeResult, error) {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".mp3", ".mp2":
 		info, dur := readID3(path)
 		fillFilenameFallback(&info, path)
-		if dur <= 0 {
+		if ffprobeMP3Duration && dur <= 0 {
 			dur = ffprobeDuration(path)
 		}
 		return ProbeResult{Tag: info, Duration: dur}, nil
@@ -144,6 +154,11 @@ func readFFProbe(path string) (TagInfo, float64) {
 		dur, _ = strconv.ParseFloat(payload.Format.Duration, 64)
 	}
 	return info, dur
+}
+
+// MediaDuration returns audio length in seconds (ffprobe), or 0 when unknown.
+func MediaDuration(path string) float64 {
+	return ffprobeDuration(path)
 }
 
 func ffprobeDuration(path string) float64 {
