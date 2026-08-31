@@ -369,8 +369,8 @@ func styleLiked() lipgloss.Style {
 	return logoColor().NewStyle().Foreground(colLiked)
 }
 
-func styleNowPlayingRow() lipgloss.Style {
-	return logoColor().NewStyle().Background(colGood).Foreground(colBG)
+func stylePlaylistSelected() lipgloss.Style {
+	return logoColor().NewStyle().Background(colGood).Foreground(colBG).Bold(true)
 }
 
 func styleWarn() lipgloss.Style {

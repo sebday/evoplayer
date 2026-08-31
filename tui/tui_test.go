@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -338,14 +340,11 @@ func TestQueuePlayingRowHighlight(t *testing.T) {
 	m.status.Path = "/tmp/x.mp3"
 	got := m.renderPlaylistTrackList(m.queueFiltered, 0, 0, 80, 5, true)
 	if !strings.Contains(got, "42m") {
-		t.Fatalf("playing queue row should use green background, got %q", got)
-	}
-	if !strings.Contains(got, "30") {
-		t.Fatalf("playing queue row should invert text to terminal bg colour, got %q", got)
+		t.Fatalf("selected playing row should use green background, got %q", got)
 	}
 	lines := strings.Split(got, "\n")
 	if len(lines) < 2 || strings.Contains(lines[1], "42m") {
-		t.Fatalf("only the playing row should be highlighted, got %q", got)
+		t.Fatalf("only the selected playing row should use green background, got %q", got)
 	}
 	if lipgloss.Width(lines[0]) != 80 {
 		t.Fatalf("playing row should fit one line at width 80, got %d: %q", lipgloss.Width(lines[0]), lipglossStrip(lines[0]))
@@ -537,11 +536,11 @@ func TestQueueSelectedLikedHeartMatchesCaret(t *testing.T) {
 		{Path: "/tmp/y.mp3", Title: "Other", Artist: "Artist", Duration: 100, Year: "2005", Liked: true},
 	}
 	got := m.renderPlaylistTrackList(m.queueFiltered, 0, 0, 80, 5, true)
-	if !strings.Contains(got, "34m") {
-		t.Fatalf("selected liked heart should use accent colour, got %q", got)
+	if !strings.Contains(got, "42m") {
+		t.Fatalf("selected row should use green background, got %q", got)
 	}
-	if strings.Contains(got, "32m♥") {
-		t.Fatalf("selected liked heart should not stay green, got %q", got)
+	if strings.Contains(got, "34m♥") {
+		t.Fatalf("selected liked heart should not use accent colour, got %q", got)
 	}
 }
 
@@ -1078,8 +1077,12 @@ func TestKittyArtPlacesAtCursor(t *testing.T) {
 		t.Fatalf("art cells should be blank under the overlay, got %q", layout)
 	}
 	lines := strings.Split(strings.TrimSuffix(layout, "\n"), "\n")
-	if len(lines) == 0 || len(lines) > 3 {
-		t.Fatalf("layout rows = %d, want 1..3", len(lines))
+	if len(lines) != 3 {
+		t.Fatalf("layout rows = %d, want 3 to fill the pane", len(lines))
+	}
+	c, r, ok := kittyPlacementCells(seq)
+	if !ok || c != 4 || r != 3 {
+		t.Fatalf("placement c,r = %d,%d ok=%v, want 4x3", c, r, ok)
 	}
 }
 
@@ -1102,6 +1105,48 @@ func TestKittyPlaceSeq(t *testing.T) {
 	c, r, ok := kittyPlacementCells(got)
 	if !ok || c != 4 || r != 3 {
 		t.Fatalf("place c,r = %d,%d ok=%v", c, r, ok)
+	}
+}
+
+func TestForceKittyPlacementCellsFillsPane(t *testing.T) {
+	seq := "\x1b_Ga=T,I=1,s=200,v=200,c=20,r=10,q=2;data\x1b\\"
+	got := forceKittyPlacementCells(seq, 20, 11)
+	c, r, ok := kittyPlacementCells(got)
+	if !ok || c != 20 || r != 11 {
+		t.Fatalf("forced c,r = %d,%d ok=%v, want 20x11", c, r, ok)
+	}
+}
+
+func TestKittyArtFillsTallPane(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 32, 32))
+	layout, seq, err := renderKittyArt(img, 8, 6)
+	if err != nil {
+		t.Fatalf("render kitty art: %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(layout, "\n"), "\n")
+	if len(lines) != 6 {
+		t.Fatalf("layout rows = %d, want 6 to fill a tall pane", len(lines))
+	}
+	c, r, ok := kittyPlacementCells(seq)
+	if !ok || c != 8 || r != 6 {
+		t.Fatalf("placement c,r = %d,%d ok=%v, want 8x6", c, r, ok)
+	}
+}
+
+func TestSquareArtworkFitStaysPixelSquare(t *testing.T) {
+	cols, rows := squareArtworkFit(40, 100, 8, 16)
+	if cols != 40 || rows != 20 {
+		t.Fatalf("got %dx%d, want 40x20", cols, rows)
+	}
+	if rows*16 > cols*8 {
+		t.Fatalf("pane taller than square: %d px high vs %d wide", rows*16, cols*8)
+	}
+	cols, rows = squareArtworkFit(40, 10, 8, 16)
+	if rows > 10 {
+		t.Fatalf("rows=%d exceed max 10", rows)
+	}
+	if rows*16 > cols*8 {
+		t.Fatalf("height-capped pane taller than square: %d vs %d", rows*16, cols*8)
 	}
 }
 
@@ -1155,6 +1200,15 @@ func TestSquareArtColsFollowsRows(t *testing.T) {
 	}
 }
 
+func TestCellPixelsCeil(t *testing.T) {
+	if got := cellPixelsCeil(469, 22); got != 22 {
+		t.Fatalf("ceil(469/22) = %d, want 22", got)
+	}
+	if got := cellPixelsCeil(440, 22); got != 20 {
+		t.Fatalf("ceil(440/22) = %d, want 20", got)
+	}
+}
+
 func TestBoundImageCapsAt600(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 1200, 800))
 	got := boundImage(src, 600)
@@ -1179,8 +1233,11 @@ func TestPlayingTrackRowIsGreen(t *testing.T) {
 	if !strings.Contains(plain, "▶") {
 		t.Fatalf("playing row should keep the play marker, got %q", plain)
 	}
-	if !strings.Contains(got, "42m") {
-		t.Fatalf("playing row should use green background, got %q", got)
+	if !strings.Contains(got, "32m") {
+		t.Fatalf("playing row should use green text, got %q", got)
+	}
+	if strings.Contains(got, "42m") {
+		t.Fatalf("playing row should not use green background, got %q", got)
 	}
 }
 
@@ -1479,6 +1536,7 @@ func TestTabToPlaylistSelectsPlayingTrack(t *testing.T) {
 		{Path: "/tmp/c.mp3"},
 	}
 	m.playlistIdx = 0
+	_ = m.View()
 	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = got.(model)
 	if m.focus != focusPlaylist {
@@ -1486,6 +1544,10 @@ func TestTabToPlaylistSelectsPlayingTrack(t *testing.T) {
 	}
 	if m.playlistIdx != 1 {
 		t.Fatalf("playlist caret should land on the playing track, idx=%d", m.playlistIdx)
+	}
+	view := m.View()
+	if !strings.Contains(view, "42m") {
+		t.Fatalf("tab to playing track should use green background, got %q", lipglossStrip(view))
 	}
 }
 
@@ -2411,6 +2473,40 @@ func TestFolderOpenTargetPlaylistTrack(t *testing.T) {
 	got := m.folderOpenTarget()
 	if got != "/music/dnb" {
 		t.Fatalf("folder = %q", got)
+	}
+}
+
+func TestMovePickerFreezesOnStatusPoll(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"garage", "grime"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := newModel(paths.Env{MusicRoot: root})
+	m.width = 120
+	m.height = 40
+	m.ready = true
+	m.nav = navFromIndex(nil)
+	m.navIdx = navIndex(m.nav, "filetree")
+	m.focus = focusPlaylist
+	m.queueFiltered = []library.Track{{Path: filepath.Join(root, "garage", "a.mp3")}}
+	m.playlistIdx = 0
+	m.View()
+	got, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m = got.(model)
+	if !m.movePicker {
+		t.Fatal("expected move picker")
+	}
+	m.View()
+	before := m.frames.view
+	got, _ = m.Update(liveMsg{status: m.status})
+	m = got.(model)
+	if !m.frames.freeze {
+		t.Fatal("move picker should freeze on status poll")
+	}
+	if m.View() != before {
+		t.Fatal("frozen move picker should reuse cached frame")
 	}
 }
 

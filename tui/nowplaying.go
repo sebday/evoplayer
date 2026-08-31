@@ -38,18 +38,12 @@ func (m model) playerGeom() playerGeom {
 	estNowPlayingH := vizPaintRows + 2
 	bodyH := max(5, m.contentHeight()-estNowPlayingH-footerH)
 
-	innerH := max(6, bodyH-2)
-	artworkRows := max(4, innerH)
 	cw, ch := artCellSize()
 	if cw < 1 {
 		cw = 8
 	}
 	if ch < 1 {
 		ch = 16
-	}
-	artworkCols := (artworkRows*ch + cw/2) / cw
-	if artworkCols < 8 {
-		artworkCols = 8
 	}
 	const (
 		minBrowse     = 22
@@ -65,10 +59,9 @@ func (m model) playerGeom() playerGeom {
 	if maxArtworkCols < 8 {
 		maxArtworkCols = 8
 	}
-	if artworkCols > maxArtworkCols {
-		artworkCols = maxArtworkCols
-		artworkRows = squareArtworkRows(artworkCols, cw, ch)
-	}
+
+	maxRows := max(4, bodyH-2)
+	artworkCols, artworkRows := squareArtworkFit(maxArtworkCols, maxRows, cw, ch)
 	artworkW := artworkCols + chromeW
 	browseW := browseColW
 	playlistW := total - browseW - artworkW
@@ -76,16 +69,14 @@ func (m model) playerGeom() playerGeom {
 		shrink := minPlaylist - playlistW
 		artworkW = max(chromeW+8, artworkW-shrink)
 		artworkCols = max(8, artworkW-chromeW)
-		artworkRows = squareArtworkRows(artworkCols, cw, ch)
+		artworkCols, artworkRows = squareArtworkFit(artworkCols, maxRows, cw, ch)
+		artworkW = artworkCols + chromeW
 		playlistW = total - browseW - artworkW
 		if playlistW < minPlaylist {
 			browseW = max(minBrowse, browseW-(minPlaylist-playlistW))
 			playlistW = total - browseW - artworkW
 		}
 	}
-	artworkW = max(chromeW+8, artworkW)
-	artworkCols = max(8, artworkW-chromeW)
-	artworkRows = squareArtworkRows(artworkCols, cw, ch)
 	browseW = max(minBrowse, browseW)
 	playlistW = max(8, playlistW)
 
@@ -107,15 +98,14 @@ func (m model) playerGeom() playerGeom {
 		nowPlayingH = max(nowPlayingH, vizPaintRows+2)
 	}
 	bodyH = max(5, m.contentHeight()-nowPlayingH-footerH)
-	if maxRows := max(4, bodyH-2); artworkRows > maxRows {
-		artworkRows = maxRows
-		artworkCols = squareArtworkCols(artworkRows, cw, ch)
+	maxRows = max(4, bodyH-2)
+	if artworkRows > maxRows || artworkW > maxArtworkW {
+		colsCap := maxArtworkCols
+		if artworkW > maxArtworkW {
+			colsCap = min(colsCap, max(8, maxArtworkW-chromeW))
+		}
+		artworkCols, artworkRows = squareArtworkFit(colsCap, maxRows, cw, ch)
 		artworkW = artworkCols + chromeW
-	}
-	if artworkW > maxArtworkW {
-		artworkW = max(chromeW+8, maxArtworkW)
-		artworkCols = max(8, artworkW-chromeW)
-		artworkRows = squareArtworkRows(artworkCols, cw, ch)
 		playlistW = max(8, total-browseW-artworkW)
 	}
 
@@ -132,6 +122,22 @@ func (m model) playerGeom() playerGeom {
 	}
 }
 
+func squareArtworkFit(maxCols, maxRows, cw, ch int) (cols, rows int) {
+	maxCols = max(8, maxCols)
+	maxRows = max(4, maxRows)
+	cols = maxCols
+	rows = squareArtworkRows(cols, cw, ch)
+	if rows > maxRows {
+		rows = maxRows
+		cols = min(maxCols, squareArtworkCols(rows, cw, ch))
+		rows = squareArtworkRows(cols, cw, ch)
+		if rows > maxRows {
+			rows = maxRows
+		}
+	}
+	return max(8, cols), max(4, rows)
+}
+
 func squareArtworkRows(cols, cw, ch int) int {
 	if cw < 1 {
 		cw = 8
@@ -139,8 +145,9 @@ func squareArtworkRows(cols, cw, ch int) int {
 	if ch < 1 {
 		ch = 16
 	}
-	rows := (cols*cw + ch/2) / ch
-	return max(4, rows)
+	// Floor so the pane is never taller than a pixel-square. Rounding up left a
+	// black band under kitty/sixel art when the image used the shorter side.
+	return max(4, cols*cw/ch)
 }
 
 func squareArtworkCols(rows, cw, ch int) int {
@@ -281,9 +288,11 @@ func (m model) renderArtworkPane(g playerGeom) (string, artworkPlacement) {
 		place.seq = seq
 		place.atCursor = !strings.Contains(layout, kittyPlaceholder)
 	}
+	// Pane height tracks the square art grid exactly; don't stretch to bodyH or
+	// blank inner rows show as a black band above the bottom border.
 	artH := artPaneHeight(g.artworkRows)
 	var pane string
-	if overlay && !place.atCursor {
+	if overlay {
 		pane = fieldsetArt(m.artworkLegend(), layout, g.artworkW, artH, panePadX, g.artworkCols, hint("a", "art", 4, false), 4)
 	} else {
 		pane = fieldsetPad(m.artworkLegend(), "", layout, g.artworkW, artH, false, 0, panePadX, "", hint("a", "art", 4, false), 4)
@@ -433,7 +442,7 @@ func (m model) renderPlaylistRow(item navItem, i, width int, focused bool) strin
 	}
 	const lead = 1
 	cursor, label := m.listCursorLead(selected, false, label, lead)
-	return renderTrackColumns(trackColWidthsBrowse(width, lead), cursor, "", label, count, "", "", selected, false)
+	return renderTrackColumns(trackColWidthsBrowse(width, lead), cursor, "", label, count, "", "", selected, false, 0)
 }
 
 func (m model) renderPlaylistInner(width, innerH int) string {
@@ -703,6 +712,14 @@ func (m *model) patchBrowse() {
 	row, col, w, h := m.frames.browseRow, m.frames.browseCol, m.frames.browseW, m.frames.browseH
 	m.frames.mu.Unlock()
 	m.patchPane(row, col, w, h, m.renderBrowseInner(w, h), &m.frames.lastBrowse)
+}
+
+func (m *model) freezeAndPatchPlaylist() {
+	if m.frames == nil || m.frames.view == "" {
+		return
+	}
+	m.freezeFrame()
+	m.patchPlaylist()
 }
 
 func (m *model) patchPlaylist() {

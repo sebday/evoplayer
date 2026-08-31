@@ -377,7 +377,7 @@ func (m model) patchFocusedList() (tea.Model, tea.Cmd) {
 }
 
 func (m model) canFreeze() bool {
-	return !m.artPicker && !m.movePicker && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
+	return !m.artPicker && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -625,6 +625,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.movePickBusy = false
 		if msg.err != nil {
 			m.err = msg.err.Error()
+			if m.movePicker {
+				m.freezeAndPatchPlaylist()
+			}
 			return m, nil
 		}
 		m.err = ""
@@ -843,9 +846,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.applyMovePick()
 		case "up":
 			m.moveQueue(-1)
+			m.freezeAndPatchPlaylist()
 			return m, nil
 		case "down":
 			m.moveQueue(1)
+			m.freezeAndPatchPlaylist()
 			return m, nil
 		case "ctrl+c", "q":
 			return m, m.quitCmd()
@@ -2008,6 +2013,10 @@ func (m model) openMovePicker() (tea.Model, tea.Cmd) {
 	m.playlistOffset = 0
 	m.search.Blur()
 	m.settingsPath.Blur()
+	if m.frames != nil && m.frames.view != "" {
+		m.freezeFrame()
+		m.patchPlaylist()
+	}
 	return m, nil
 }
 
@@ -2040,6 +2049,7 @@ func (m model) applyMovePick() (tea.Model, tea.Cmd) {
 	}
 	m.movePickBusy = true
 	env := m.env
+	m.freezeAndPatchPlaylist()
 	return m, func() tea.Msg {
 		res, err := moveTrack(env, path, folder)
 		return moveMsg{from: path, to: res.To, folder: folder, err: err}

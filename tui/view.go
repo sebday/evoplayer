@@ -107,18 +107,13 @@ func (m model) renderPlaylistTrackList(tracks []library.Track, idx, offset, widt
 		t := tracks[i]
 		playing := t.Path != "" && t.Path == m.status.Path
 		selected := focused && i == idx
-		if playing {
-			cursor := "▶"
-			heart := "  "
-			if t.Liked {
-				heart = "♥ "
-			}
-			fmt.Fprintf(&b, "%s\n", renderPlaylistPlayingRow(cols, cursor, heart, trackLabel(t), trackTime(t), strings.TrimSpace(t.Year), width))
-			continue
-		}
 		cursor, label := m.listCursorLead(selected, playing, trackLabel(t), 1)
 		heart := playlistRowHeart(t.Liked, selected)
-		fmt.Fprintf(&b, "%s\n", renderTrackColumns(cols, cursor, heart, label, trackTime(t), strings.TrimSpace(t.Year), strings.TrimSpace(t.Genre), selected, playing))
+		fullWidth := 0
+		if playing {
+			fullWidth = width
+		}
+		fmt.Fprintf(&b, "%s\n", renderTrackColumns(cols, cursor, heart, label, trackTime(t), strings.TrimSpace(t.Year), "", selected, playing, fullWidth))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -126,15 +121,15 @@ func (m model) renderPlaylistTrackList(tracks []library.Track, idx, offset, widt
 func (m model) listCursorLead(selected, playing bool, label string, width int) (cursor, out string) {
 	if playing {
 		if width <= 1 {
-			return styleGood().Render("▶"), styleGood().Render(label)
+			return "▶", label
 		}
-		return styleGood().Render("▶ "), styleGood().Render(label)
+		return "▶ ", label
 	}
 	if selected {
 		if width <= 1 {
-			return styleSelected().Render(">"), styleSelected().Render(label)
+			return ">", label
 		}
-		return styleSelected().Render("> "), styleSelected().Render(label)
+		return "> ", label
 	}
 	if width <= 1 {
 		return " ", label
@@ -161,11 +156,10 @@ func trackColWidthsBrowse(total, lead int) trackCols {
 
 func playlistRowHeart(liked, selected bool) string {
 	if liked {
-		st := styleGood()
 		if selected {
-			st = styleSelected()
+			return "♥ "
 		}
-		return st.Render("♥") + " "
+		return styleGood().Render("♥") + " "
 	}
 	return "  "
 }
@@ -189,53 +183,50 @@ func playlistHeartAndTime(heart, timeStr string, timeW int) string {
 	return heart + padLeft(clipTruncate(timeStr, timeW), timeW)
 }
 
-func renderPlaylistPlayingRow(cols trackCols, cursor, heart, name, timeStr, year string, lineWidth int) string {
+func renderTrackColumns(cols trackCols, cursor, heart, name, timeStr, year, genre string, selected, playing bool, fullWidth int) string {
 	nameCell := padRight(clipEllipsis(name, cols.name), cols.name)
-	row := cursor + nameCell + " " +
-		playlistHeartAndTime(heart, timeStr, cols.time) + " " +
-		padLeft(clipEllipsis(year, cols.year), cols.year)
-	if lineWidth > 0 {
-		row = padExact(row, lineWidth)
-	}
-	return styleNowPlayingRow().Render(row)
-}
-
-func renderTrackColumns(cols trackCols, cursor, heart, name, timeStr, year, genre string, selected, playing bool) string {
-	nameCell := padRight(clipEllipsis(name, cols.name), cols.name)
-	if playing {
-		if !strings.Contains(name, "\x1b") {
-			nameCell = styleGood().Render(nameCell)
-		}
-	} else if !selected && !strings.Contains(name, "\x1b") {
+	if playing && !selected && !strings.Contains(name, "\x1b") {
+		nameCell = styleGood().Render(nameCell)
+	} else if !selected && !playing && !strings.Contains(name, "\x1b") {
 		nameCell = styleText().Render(nameCell)
 	}
 	meta := styleMuted()
-	if playing {
+	if playing && !selected {
 		meta = styleGood()
 		if !strings.Contains(heart, "\x1b") {
 			heart = meta.Render(heart)
 		}
 	}
+	var row string
 	if cols.time == 0 && cols.year == 0 && cols.genre == 0 {
-		return cursor + heart + nameCell
-	}
-	if cols.year == 0 && cols.genre == 0 {
-		return cursor + heart + nameCell + "  " +
+		row = cursor + heart + nameCell
+	} else if cols.year == 0 && cols.genre == 0 {
+		row = cursor + heart + nameCell + "  " +
 			meta.Render(padLeft(clipTruncate(timeStr, cols.time), cols.time))
-	}
-	if cols.genre == 0 {
+	} else if cols.genre == 0 {
 		timeCell := heart + meta.Render(padLeft(clipTruncate(timeStr, cols.time), cols.time))
-		return cursor + nameCell + " " +
+		row = cursor + nameCell + " " +
 			timeCell +
 			" " +
 			meta.Render(padLeft(clipEllipsis(year, cols.year), cols.year))
+	} else {
+		row = cursor + heart + nameCell + "  " +
+			meta.Render(padLeft(clipTruncate(timeStr, cols.time), cols.time)) +
+			"  " +
+			meta.Render(padLeft(clipEllipsis(year, cols.year), cols.year)) +
+			"  " +
+			meta.Render(padRight(clipEllipsis(genre, cols.genre), cols.genre))
 	}
-	return cursor + heart + nameCell + "  " +
-		meta.Render(padLeft(clipTruncate(timeStr, cols.time), cols.time)) +
-		"  " +
-		meta.Render(padLeft(clipEllipsis(year, cols.year), cols.year)) +
-		"  " +
-		meta.Render(padRight(clipEllipsis(genre, cols.genre), cols.genre))
+	if fullWidth > 0 {
+		row = padExact(row, fullWidth)
+	}
+	if selected {
+		return stylePlaylistSelected().Render(row)
+	}
+	if playing {
+		return styleGood().Render(row)
+	}
+	return row
 }
 
 func trackTime(t library.Track) string {

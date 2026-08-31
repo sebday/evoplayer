@@ -17,7 +17,6 @@ import (
 	"github.com/blacktop/go-termimg"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
-	"github.com/mattn/go-sixel"
 	"github.com/sebday/evoplayer/server/art"
 	"golang.org/x/sys/unix"
 )
@@ -178,7 +177,7 @@ func tuneArtFeatures(emu string) {
 	}
 	feat := termimg.QueryTerminalFeatures()
 	iw, ih := artCellPixels()
-	cw, ch := pickArtCellSize(artQueryW, artQueryH, iw, ih)
+	cw, ch := pickArtCellSize(feat.FontWidth, feat.FontHeight, iw, ih)
 	feat.FontWidth = cw
 	feat.FontHeight = ch
 	artQueryW, artQueryH = cw, ch
@@ -216,7 +215,63 @@ func artCellSize() (cw, ch int) {
 }
 
 func artCellPixels() (cw, ch int) {
-	ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
+	fd := int(os.Stdout.Fd())
+	if f, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0); err == nil {
+		fd = int(f.Fd())
+		cw, ch = winsizeCellPixels(fd)
+		_ = f.Close()
+		if cw >= 4 && ch >= 8 {
+			if fcw, fch, ok := footCellPixels(fd); ok {
+				return fcw, fch
+			}
+			return cw, ch
+		}
+	}
+	cw, ch = winsizeCellPixels(fd)
+	if cw >= 4 && ch >= 8 {
+		if fcw, fch, ok := footCellPixels(fd); ok {
+			return fcw, fch
+		}
+	}
+	return cw, ch
+}
+
+func cellPixelsCeil(px, cells int) int {
+	if cells <= 0 || px <= 0 {
+		return 0
+	}
+	return (px + cells - 1) / cells
+}
+
+func footCellPixels(fd int) (cw, ch int, ok bool) {
+	if detectEmulator() != "foot" {
+		return 0, 0, false
+	}
+	ws, err := unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
+	if err != nil || ws.Col == 0 || ws.Row == 0 || ws.Xpixel == 0 || ws.Ypixel == 0 {
+		return 0, 0, false
+	}
+	cw = cellPixelsCeil(int(ws.Xpixel), int(ws.Col))
+	ch = cellPixelsCeil(int(ws.Ypixel), int(ws.Row))
+	if cw < 4 || ch < 8 {
+		return 0, 0, false
+	}
+	return cw, ch, true
+}
+
+func terminalWinsize() (*unix.Winsize, error) {
+	if f, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0); err == nil {
+		ws, err := unix.IoctlGetWinsize(int(f.Fd()), unix.TIOCGWINSZ)
+		_ = f.Close()
+		if err == nil {
+			return ws, nil
+		}
+	}
+	return unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
+}
+
+func winsizeCellPixels(fd int) (cw, ch int) {
+	ws, err := unix.IoctlGetWinsize(fd, unix.TIOCGWINSZ)
 	if err != nil || ws.Col == 0 || ws.Row == 0 || ws.Xpixel == 0 || ws.Ypixel == 0 {
 		return 0, 0
 	}
@@ -226,6 +281,19 @@ func artCellPixels() (cw, ch int) {
 		return 0, 0
 	}
 	return cw, ch
+}
+
+func winsizeGridPixels(cols, rows int) (pxW, pxH int, ok bool) {
+	ws, err := terminalWinsize()
+	if err != nil || ws.Col == 0 || ws.Row == 0 || ws.Xpixel == 0 || ws.Ypixel == 0 {
+		return 0, 0, false
+	}
+	pxW = (int(ws.Xpixel)*cols + int(ws.Col) - 1) / int(ws.Col)
+	pxH = (int(ws.Ypixel)*rows + int(ws.Row) - 1) / int(ws.Row)
+	if pxW < 4 || pxH < 8 {
+		return 0, 0, false
+	}
+	return pxW, pxH, true
 }
 
 func artBlank(cols, rows int) string {
@@ -262,29 +330,24 @@ func encodeArt(img image.Image, cols, rows int) (layout, seq string, overlay boo
 	return artBlank(cols, rows), out, true
 }
 
+func artGridPixels(cols, rows int) (pxW, pxH int) {
+	if w, h, ok := winsizeGridPixels(cols, rows); ok {
+		return w, h
+	}
+	cw, ch := artCellSize()
+	return max(1, cols*cw), max(1, rows*ch)
+}
+
 func renderKittyArt(img image.Image, cols, rows int) (layout, seq string, err error) {
 	cols = max(2, cols)
 	rows = max(1, rows)
 	if img == nil {
 		return "", "", fmt.Errorf("empty art image")
 	}
-	cw, ch := artCellSize()
-	pxSide := cols * cw
-	if h := rows * ch; h < pxSide {
-		pxSide = h
-	}
-	if pxSide < 1 {
-		pxSide = 1
-	}
-	artCols := (pxSide + cw - 1) / cw
-	if artCols < 1 {
-		artCols = 1
-	}
-	artRows := (pxSide + ch - 1) / ch
-	if artRows < 1 {
-		artRows = 1
-	}
-	ti := termimg.New(img).Protocol(termimg.Kitty).SizePixels(pxSide, pxSide).Compression(true).ZIndex(1).ImageNum(kittyArtID)
+	ti := termimg.New(img).Protocol(termimg.Kitty).
+		Width(cols).Height(rows).
+		Scale(termimg.ScaleFill).
+		Compression(true).ZIndex(1).ImageNum(kittyArtID)
 	seq, err = ti.Render()
 	if err != nil || seq == "" {
 		return "", "", err
@@ -293,10 +356,8 @@ func renderKittyArt(img image.Image, cols, rows int) (layout, seq string, err er
 	if seq == "" {
 		return "", "", fmt.Errorf("empty kitty transmit")
 	}
-	if c, r, ok := kittyPlacementCells(seq); ok && c > 0 && r > 0 {
-		artCols, artRows = c, r
-	}
-	return artBlank(artCols, artRows), seq, nil
+	seq = forceKittyPlacementCells(seq, cols, rows)
+	return artBlank(cols, rows), seq, nil
 }
 
 func stripKittyPlaceholders(seq string) string {
@@ -307,64 +368,67 @@ func stripKittyPlaceholders(seq string) string {
 }
 
 func kittyPlacementCells(seq string) (cols, rows int, ok bool) {
-	cIdx := strings.Index(seq, ",c=")
-	rIdx := strings.Index(seq, ",r=")
-	if cIdx < 0 || rIdx < 0 {
-		return 0, 0, false
-	}
-	cIdx += 3
-	cEnd := cIdx
-	for cEnd < len(seq) && seq[cEnd] >= '0' && seq[cEnd] <= '9' {
-		cEnd++
-	}
-	rIdx += 3
-	rEnd := rIdx
-	for rEnd < len(seq) && seq[rEnd] >= '0' && seq[rEnd] <= '9' {
-		rEnd++
-	}
-	if cEnd == cIdx || rEnd == rIdx {
-		return 0, 0, false
-	}
-	c, err1 := strconv.Atoi(seq[cIdx:cEnd])
-	r, err2 := strconv.Atoi(seq[rIdx:rEnd])
-	if err1 != nil || err2 != nil {
+	c, cOK := kittyDim(seq, ",c=")
+	r, rOK := kittyDim(seq, ",r=")
+	if !cOK || !rOK {
 		return 0, 0, false
 	}
 	return c, r, true
 }
 
+func kittyDim(seq, key string) (int, bool) {
+	i := strings.Index(seq, key)
+	if i < 0 {
+		return 0, false
+	}
+	start := i + len(key)
+	end := start
+	for end < len(seq) && seq[end] >= '0' && seq[end] <= '9' {
+		end++
+	}
+	if end == start {
+		return 0, false
+	}
+	n, err := strconv.Atoi(seq[start:end])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+func forceKittyPlacementCells(seq string, cols, rows int) string {
+	seq = replaceKittyDim(seq, ",c=", max(1, cols))
+	seq = replaceKittyDim(seq, ",r=", max(1, rows))
+	return seq
+}
+
+func replaceKittyDim(seq, key string, n int) string {
+	i := strings.Index(seq, key)
+	if i < 0 {
+		return seq
+	}
+	start := i + len(key)
+	end := start
+	for end < len(seq) && seq[end] >= '0' && seq[end] <= '9' {
+		end++
+	}
+	if end == start {
+		return seq
+	}
+	return seq[:start] + strconv.Itoa(n) + seq[end:]
+}
+
 func renderGraphicsArt(img image.Image, cols, rows int, p termimg.Protocol) (string, error) {
-	cw, ch := artCellSize()
-	pxW := cols * cw
-	pxH := rows * ch
-	if pxW > 0 && pxH > 0 && pxW != pxH {
-		side := pxW
-		if pxH < side {
-			side = pxH
-		}
-		pxW, pxH = side, side
+	if p == termimg.Sixel && detectEmulator() == "foot" {
+		pxW, pxH := artGridPixels(cols, rows)
+		ti := termimg.New(img).Protocol(p).WidthPixels(pxW).HeightPixels(pxH).Scale(termimg.ScaleFill)
+		return ti.Render()
 	}
-	if p == termimg.Sixel {
-		return renderSixel(img, pxW, pxH)
-	}
-	ti := termimg.New(img).Protocol(p).SizePixels(pxW, pxH)
+	ti := termimg.New(img).Protocol(p).Width(cols).Height(rows).Scale(termimg.ScaleFill)
 	if p == termimg.Kitty {
 		ti = ti.Compression(true)
 	}
 	return ti.Render()
-}
-
-func renderSixel(img image.Image, pxW, pxH int) (string, error) {
-	pxW = max(6, pxW)
-	pxH = max(6, pxH)
-	src := scaleImage(img, pxW, pxH)
-	var buf bytes.Buffer
-	enc := sixel.NewEncoder(&buf)
-	enc.Colors = 256
-	if err := enc.Encode(src); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
 }
 
 func overlayArt(view, seq string, row, col int) string {
