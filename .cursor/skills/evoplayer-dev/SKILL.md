@@ -47,17 +47,12 @@ SoundCloud likes sync reads `oauth_token` from a logged-in Brave (then Chromium)
 
 ### IPC tracing (playback stops)
 
-Set `EVOPLAYER_TRACE_IPC=1` before the daemon starts. Logs playback, queue, viz, and MPRIS actions to stderr (`evoplayer: ipc …`, `evoplayer: mpris …`).
+Set `EVOPLAYER_TRACE_IPC=1` before starting the daemon. Logs playback, queue, viz, and MPRIS actions to stderr (`evoplayer: ipc …`, `evoplayer: mpris …`). Use `EVOPLAYER_TRACE_IPC=all` to also log `state.get`, `subscribe`, and library IPC.
 
 ```bash
-# restart daemon with tracing (stderr -> /tmp/evoplayer-serve.log)
-bash scripts/trace-player-ipc.sh
-
-# follow ipc lines in another terminal
-bash scripts/trace-player-ipc.sh watch
+EVOPLAYER_TRACE_IPC=1 evoplayer restart
+# or: EVOPLAYER_TRACE_IPC=1 evoplayer serve 2>/tmp/evoplayer-serve.log
 ```
-
-Use `EVOPLAYER_TRACE_IPC=all` to also log `state.get`, `subscribe`, and library IPC.
 
 ## Architecture (downloads and import)
 

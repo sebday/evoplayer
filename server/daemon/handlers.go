@@ -217,6 +217,24 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		}
 		status.InvalidateMeta(p.Path)
 		return row, nil
+	case "library.track.move":
+		var p struct {
+			Path   string `json:"path"`
+			Folder string `json:"folder"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		libEnv := library.EnvFrom(d.Env)
+		res, err := library.MoveTrackToFolder(libEnv, p.Path, p.Folder)
+		if err := wrapJobErr(err); err != nil {
+			return nil, err
+		}
+		_ = playlist.OnTrackMoved(playlist.EnvFrom(d.Env), res.From, res.To)
+		_ = d.Actor.RelocatePath(res.From, res.To)
+		status.InvalidateMeta(res.From)
+		status.InvalidateMeta(res.To)
+		return res, nil
 	case "library.current.load":
 		return playlist.LoadCurrent(playlist.EnvFrom(d.Env))
 	case "library.current.save":

@@ -261,8 +261,10 @@ func (m model) browseHintLegend() string {
 func (m model) renderPlaylistPane(g playerGeom) string {
 	innerW := paneInnerWidth(g.playlistW)
 	innerH := paneInnerHeight(g.bodyH)
-	bottomLeft := hint("l", "like", 3, m.focus == focusPlaylist)
-	if m.artPicker {
+	bottomLeft := hint("l", "like", 3, m.focus == focusPlaylist) + "  " + hint("m", "move", 3, m.focus == focusPlaylist)
+	if m.movePicker {
+		bottomLeft = hint("⏎", "move", 3, m.focus == focusPlaylist)
+	} else if m.artPicker {
 		bottomLeft = hint("⏎", "set", 3, m.focus == focusPlaylist) + "  " + hint("s", "track", 3, m.focus == focusPlaylist)
 	} else if m.settingsSelected() {
 		bottomLeft = hint("⏎", "save", 3, m.focus == focusPlaylist)
@@ -436,6 +438,8 @@ func (m model) renderPlaylistRow(item navItem, i, width int, focused bool) strin
 
 func (m model) renderPlaylistInner(width, innerH int) string {
 	switch {
+	case m.movePicker:
+		return clipLines(m.renderMovePicker(width), innerH)
 	case m.artPicker:
 		return clipLines(m.renderArtPicker(width), innerH)
 	case m.helpSelected():
@@ -448,6 +452,37 @@ func (m model) renderPlaylistInner(width, innerH int) string {
 		return clipLines(styleMuted().Render("no tracks"), innerH)
 	}
 	return clipLines(m.renderPlaylistTrackList(m.queueFiltered, m.playlistIdx, m.playlistOffset, width, max(1, innerH), m.focus == focusPlaylist), innerH)
+}
+
+func (m model) renderMovePicker(width int) string {
+	if m.movePickBusy {
+		return styleMuted().Render("moving…")
+	}
+	var b strings.Builder
+	if m.err != "" {
+		b.WriteString(styleWarn().Render(clipWidth(m.err, width)))
+		b.WriteByte('\n')
+	}
+	if len(m.moveFolders) == 0 {
+		b.WriteString(styleMuted().Render("no folders"))
+		return strings.TrimRight(b.String(), "\n")
+	}
+	vis := max(1, 16)
+	start := m.playlistOffset
+	end := min(len(m.moveFolders), start+vis)
+	for i := start; i < end; i++ {
+		label := m.moveFolders[i]
+		selected := m.focus == focusPlaylist && i == m.playlistIdx
+		cursor, name := m.listCursorLead(selected, false, clipWidth(label, max(4, width-2)), 1)
+		if selected {
+			name = styleSelected().Render(name)
+		} else {
+			name = styleText().Render(name)
+		}
+		b.WriteString(cursor + name)
+		b.WriteByte('\n')
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 func (m model) renderArtPicker(width int) string {
@@ -493,6 +528,9 @@ func (m model) browseLegend(maxW int) string {
 }
 
 func (m model) playlistLegend(maxW int) string {
+	if m.movePicker {
+		return clipWidth("move", maxW)
+	}
 	if m.artPicker {
 		return clipWidth("cover", maxW)
 	}

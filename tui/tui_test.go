@@ -1636,6 +1636,9 @@ func TestPanelHintLegends(t *testing.T) {
 	if !strings.Contains(queue, "like") {
 		t.Fatalf("playlist should show like, got %q", queue)
 	}
+	if !strings.Contains(queue, "m move") {
+		t.Fatalf("playlist should show m move, got %q", queue)
+	}
 	art, _ := m.renderArtworkPane(g)
 	artPlain := lipglossStrip(art)
 	if strings.Contains(artPlain, "like") {
@@ -2415,5 +2418,24 @@ func TestOpenInFileManagerUsesOverride(t *testing.T) {
 	t.Setenv("EVOPLAYER_FILE_MANAGER", "true")
 	if err := openInFileManager(t.TempDir()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestMoveKeyOpensPicker(t *testing.T) {
+	m := newModel(paths.Env{MusicRoot: "/music"})
+	m.ready = true
+	m.focus = focusPlaylist
+	m.queueFiltered = []library.Track{{Path: "/music/grime/a.mp3", Title: "A"}}
+	m.playlistIdx = 0
+	got, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}})
+	m = got.(model)
+	if !m.movePicker {
+		t.Fatal("m should open move picker from playlist")
+	}
+	if m.movePickPath != "/music/grime/a.mp3" {
+		t.Fatalf("move path=%q", m.movePickPath)
+	}
+	if cmd != nil {
+		t.Fatal("m should not run move until enter")
 	}
 }

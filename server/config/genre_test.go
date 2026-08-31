@@ -9,46 +9,43 @@ import (
 	"github.com/sebday/evoplayer/server/config"
 )
 
-func TestGenreAliasesFromToml(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "music.toml")
-	if err := os.WriteFile(path, []byte(`
-[genre_aliases]
-Jungle = "drumandbass"
-customtag = "electronic"
-`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	got, err := config.GenreAliases(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got["jungle"] != config.GenreDrumAndBass {
-		t.Fatalf("jungle alias = %q", got["jungle"])
-	}
-	if got["customtag"] != config.GenreElectronic {
-		t.Fatalf("customtag alias = %q", got["customtag"])
-	}
-	if got["dnb"] != config.GenreDrumAndBass {
-		t.Fatalf("default dnb alias should remain")
-	}
-}
-
-func TestGenreFoldersFromToml(t *testing.T) {
+func TestGenreConfigFromToml(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "music.toml")
 	if err := os.WriteFile(path, []byte(`
 [genres]
 drumandbass = "drum&bass"
+garage = "garage"
+
+[genre_aliases]
+Jungle = "drumandbass"
+
+[playlist_folders]
+trap = "electronic"
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := config.GenreFolders(path)
+
+	aliases, err := config.GenreAliases(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got[config.GenreDrumAndBass] != "drum&bass" {
-		t.Fatalf("folder map = %#v", got)
+	if aliases["jungle"] != config.GenreDrumAndBass {
+		t.Fatalf("jungle alias = %q", aliases["jungle"])
+	}
+	if aliases["dnb"] != config.GenreDrumAndBass {
+		t.Fatalf("default dnb alias should remain")
+	}
+
+	folders, err := config.GenreFolders(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if folders[config.GenreDrumAndBass] != "drum&bass" {
+		t.Fatalf("folder map = %#v", folders)
+	}
+	if config.PlaylistFolder(path, "trap") != "electronic" {
+		t.Fatalf("playlist folder map missing trap")
 	}
 }
 

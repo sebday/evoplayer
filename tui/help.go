@@ -28,6 +28,7 @@ func helpKeys() []helpRow {
 		{"d", "add dir"},
 		{"f", "folder"},
 		{"l", "like"},
+		{"m", "move"},
 		{"L", "like playing"},
 		{"a", "art"},
 		{"s", "art (track)"},

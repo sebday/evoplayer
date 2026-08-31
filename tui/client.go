@@ -227,6 +227,16 @@ func toggleLike(env paths.Env, path string) (playlist.FavoriteResult, error) {
 	return out, err
 }
 
+func moveTrack(env paths.Env, path, folder string) (library.MoveTrackResult, error) {
+	var out library.MoveTrackResult
+	resp, err := cli.IPC(env, "library.track.move", map[string]string{"path": path, "folder": folder})
+	if err != nil {
+		return out, err
+	}
+	err = decodeData(resp, &out)
+	return out, err
+}
+
 func fetchJob(env paths.Env) (jobs.State, error) {
 	var st jobs.State
 	resp, err := cli.IPC(env, "job.status", nil)

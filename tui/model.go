@@ -64,6 +64,14 @@ type model struct {
 	artPickPreviewGen  int
 	artPreviewImg      image.Image
 	artPreviewCache    map[string]image.Image
+	movePicker         bool
+	moveFolders        []string
+	movePickPath       string
+	movePickBusy       bool
+	movePickSavedIdx   int
+	movePickSavedOffset int
+	movePickSavedFocus focus
+	movePickSaved      bool
 	frames             *frameCache
 	wavePeaks          []int
 	wavePath           string
@@ -132,6 +140,13 @@ type likeMsg struct {
 	path  string
 	liked bool
 	err   error
+}
+
+type moveMsg struct {
+	from   string
+	to     string
+	folder string
+	err    error
 }
 
 type artSearchMsg struct {
@@ -344,7 +359,7 @@ func (m *model) unfreezeFrame() {
 }
 
 func (m model) canPatchLists() bool {
-	return !m.artPicker && !m.helpSelected() &&
+	return !m.artPicker && !m.movePicker && !m.helpSelected() &&
 		m.frames != nil && m.frames.view != "" && m.frames.browseRow > 0
 }
 
@@ -362,7 +377,7 @@ func (m model) patchFocusedList() (tea.Model, tea.Cmd) {
 }
 
 func (m model) canFreeze() bool {
-	return !m.artPicker && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
+	return !m.artPicker && !m.movePicker && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -606,6 +621,53 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, m.applyFilter()
+	case moveMsg:
+		m.movePickBusy = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		m.restoreMovePickerCursor()
+		repath := func(path string) string {
+			if path == msg.from {
+				return msg.to
+			}
+			return path
+		}
+		for i := range m.browseAll {
+			m.browseAll[i].Path = repath(m.browseAll[i].Path)
+		}
+		for i := range m.browse {
+			m.browse[i].Path = repath(m.browse[i].Path)
+			if m.browse[i].Type == "track" {
+				m.browse[i].Track.Path = repath(m.browse[i].Track.Path)
+				if m.browse[i].Track.Path == msg.to {
+					m.browse[i].Track.Genre = msg.folder
+				}
+			}
+		}
+		for i := range m.queue {
+			m.queue[i].Path = repath(m.queue[i].Path)
+			if m.queue[i].Path == msg.to {
+				m.queue[i].Genre = msg.folder
+			}
+		}
+		if m.status.Path == msg.from {
+			m.status.Path = msg.to
+			m.status.Genre = msg.folder
+			m.patchNowPlaying()
+		}
+		if m.artPath == msg.from {
+			m.artPath = msg.to
+		}
+		if m.wavePath == msg.from {
+			m.wavePath = msg.to
+		}
+		if m.canPatchLists() {
+			m.patchPlaylist()
+		}
+		return m, tea.Batch(m.applyFilter(), loadBrowse(m.env, m.browsePath))
 	case artSearchMsg:
 		if !m.artPicker || msg.path != m.artPickPath {
 			return m, nil
@@ -770,6 +832,26 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.movePicker {
+		switch msg.String() {
+		case "esc":
+			return m.closeMovePicker()
+		case "enter":
+			if m.movePickBusy {
+				return m, nil
+			}
+			return m.applyMovePick()
+		case "up":
+			m.moveQueue(-1)
+			return m, nil
+		case "down":
+			m.moveQueue(1)
+			return m, nil
+		case "ctrl+c", "q":
+			return m, m.quitCmd()
+		}
+	}
+
 	if m.artPicker {
 		switch msg.String() {
 		case "esc":
@@ -801,6 +883,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c", "q":
 		return m, m.quitCmd()
 	case "esc":
+		if m.movePicker {
+			return m.closeMovePicker()
+		}
 		if m.artPicker {
 			return m.closeArtPicker()
 		}
@@ -865,6 +950,14 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.likePathCmd(t.Path)
+	case "m":
+		if m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker {
+			return m, nil
+		}
+		if m.focus != focusPlaylist {
+			return m, nil
+		}
+		return m.openMovePicker()
 	case "L":
 		t, ok := m.playingLikeTarget()
 		if !ok || t.Path == "" {
@@ -967,7 +1060,7 @@ func (m *model) cycleFocusDir(dir int) tea.Cmd {
 }
 
 func (m *model) focusPlaylistOnPlayingOrCaret() {
-	if m.helpSelected() || m.settingsSelected() || m.artPicker {
+	if m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker {
 		return
 	}
 	path := strings.TrimSpace(m.status.Path)
@@ -1022,7 +1115,7 @@ func (m model) playingTrackIndex() int {
 }
 
 func (m *model) scrollPlaylistForPlayingTrack() bool {
-	if m.focus != focusPlaylist || m.helpSelected() || m.settingsSelected() || m.artPicker {
+	if m.focus != focusPlaylist || m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker {
 		return false
 	}
 	idx := m.playingTrackIndex()
@@ -1537,6 +1630,9 @@ func (m model) playlistLen() int {
 	if m.artPicker {
 		return len(m.artHits)
 	}
+	if m.movePicker {
+		return len(m.moveFolders)
+	}
 	if m.helpSelected() || m.settingsSelected() {
 		return 0
 	}
@@ -1621,6 +1717,7 @@ func (m model) closeOverlay() (tea.Model, tea.Cmd) {
 	m.artPicker = false
 	m.artHits = nil
 	m.artPickBusy = false
+	m.restoreMovePickerCursor()
 	if i := navIndex(m.nav, "filetree"); i >= 0 {
 		m.navIdx = i
 	}
@@ -1881,4 +1978,70 @@ func (m model) focusedVisible() int {
 		return m.playlistListVisible()
 	}
 	return m.browseListVisible()
+}
+
+func (m model) moveTarget() (library.Track, bool) {
+	if m.focus != focusPlaylist {
+		return library.Track{}, false
+	}
+	return m.selectedTrack()
+}
+
+func (m model) openMovePicker() (tea.Model, tea.Cmd) {
+	t, ok := m.moveTarget()
+	if !ok || t.Path == "" {
+		return m, nil
+	}
+	if !m.movePicker {
+		m.movePickSavedIdx = m.playlistIdx
+		m.movePickSavedOffset = m.playlistOffset
+		m.movePickSavedFocus = m.focus
+		m.movePickSaved = true
+	}
+	m.movePicker = true
+	m.movePickPath = t.Path
+	m.movePickBusy = false
+	m.moveFolders = library.GenreChoices(library.EnvFrom(m.env))
+	m.err = ""
+	m.focus = focusPlaylist
+	m.playlistIdx = 0
+	m.playlistOffset = 0
+	m.search.Blur()
+	m.settingsPath.Blur()
+	return m, nil
+}
+
+func (m *model) restoreMovePickerCursor() {
+	m.movePicker = false
+	m.moveFolders = nil
+	m.movePickBusy = false
+	if m.movePickSaved {
+		m.playlistIdx = m.movePickSavedIdx
+		m.playlistOffset = m.movePickSavedOffset
+		m.focus = m.movePickSavedFocus
+		m.movePickSaved = false
+	}
+}
+
+func (m model) closeMovePicker() (tea.Model, tea.Cmd) {
+	m.err = ""
+	m.restoreMovePickerCursor()
+	return m, nil
+}
+
+func (m model) applyMovePick() (tea.Model, tea.Cmd) {
+	if m.playlistIdx < 0 || m.playlistIdx >= len(m.moveFolders) {
+		return m, nil
+	}
+	folder := m.moveFolders[m.playlistIdx]
+	path := m.movePickPath
+	if folder == "" || path == "" {
+		return m, nil
+	}
+	m.movePickBusy = true
+	env := m.env
+	return m, func() tea.Msg {
+		res, err := moveTrack(env, path, folder)
+		return moveMsg{from: path, to: res.To, folder: folder, err: err}
+	}
 }

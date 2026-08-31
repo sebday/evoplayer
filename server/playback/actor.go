@@ -359,6 +359,40 @@ func (a *Actor) QueuePaths() []string {
 	return out
 }
 
+func (a *Actor) RelocatePath(from, to string) error {
+	if from == "" || to == "" || from == to {
+		return nil
+	}
+	return a.dispatchErr(func() error {
+		a.mu.Lock()
+		changed := false
+		playing := false
+		for i, p := range a.queue {
+			if p == from {
+				a.queue[i] = to
+				changed = true
+			}
+		}
+		if a.path == from {
+			a.path = to
+			playing = true
+		}
+		if changed {
+			a.bumpQueueRevLocked()
+		}
+		pos := a.positionSec
+		paused := a.paused
+		a.mu.Unlock()
+		if playing && !paused {
+			return a.loadCurrentAt(pos, false)
+		}
+		if changed || playing {
+			a.emit()
+		}
+		return nil
+	})
+}
+
 func (a *Actor) QueueRevision() uint64 {
 	a.mu.RLock()
 	defer a.mu.RUnlock()

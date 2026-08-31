@@ -59,36 +59,7 @@ func TestRunImportCtxLogsEmptyIncoming(t *testing.T) {
 	}
 }
 
-func TestRunImportCtxSkipsWhenNoGenreEvenWithDefaultConfig(t *testing.T) {
-	root := t.TempDir()
-	cfg := filepath.Join(t.TempDir(), "music.toml")
-	if err := os.WriteFile(cfg, []byte("[import]\ndefault_genre = \"grime\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "grime", "soundcloud"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	track := filepath.Join(root, ".incoming", "Artist - Title.mp3")
-	writeTinyMP3(t, track, map[string]string{
-		"title":  "Title",
-		"artist": "Artist",
-	})
-	env := testCacheEnv(t, root)
-	env.MusicConfig = cfg
-	rep := &importTestReporter{}
-	if err := library.RunImportCtx(context.Background(), env, rep); err != nil {
-		t.Fatal(err)
-	}
-	joined := strings.Join(rep.lines, "\n")
-	if !strings.Contains(joined, "↷") || !strings.Contains(joined, "(no genre)") {
-		t.Fatalf("missing skip log: %q", joined)
-	}
-	if _, err := os.Stat(track); err != nil {
-		t.Fatal("untagged file should remain in .incoming")
-	}
-}
-
-func TestRunImportCtxSkipsUntaggedWithProgress(t *testing.T) {
+func TestRunImportCtxSkipsUntagged(t *testing.T) {
 	root := t.TempDir()
 	track := filepath.Join(root, ".incoming", "Artist - Title.mp3")
 	writeTinyMP3(t, track, map[string]string{
@@ -106,5 +77,8 @@ func TestRunImportCtxSkipsUntaggedWithProgress(t *testing.T) {
 	}
 	if !strings.Contains(joined, "· skipped 1") {
 		t.Fatalf("missing skipped summary: %q", joined)
+	}
+	if _, err := os.Stat(track); err != nil {
+		t.Fatal("untagged file should remain in .incoming")
 	}
 }
