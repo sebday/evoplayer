@@ -133,7 +133,7 @@ func CmdTracks(env paths.Env, args []string) error {
 
 func CmdLibrary(env paths.Env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: evoplayer library <browse|meta|import|cache|download>")
+		return fmt.Errorf("usage: evoplayer library <browse|meta|import|incoming|cache|download>")
 	}
 	switch args[0] {
 	case "browse":
@@ -145,6 +145,8 @@ func CmdLibrary(env paths.Env, args []string) error {
 		return CmdMeta(env, args[1:])
 	case "import":
 		return runLibraryJob(env, "library.import", nil)
+	case "incoming":
+		return CmdIncoming(env, args[1:])
 	case "cache":
 		params := map[string]any{"force": hasFlag(args, "--force")}
 		for _, a := range args[1:] {

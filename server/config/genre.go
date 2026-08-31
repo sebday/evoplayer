@@ -124,6 +124,51 @@ func GenreFolders(path string) (map[string]string, error) {
 	return out, nil
 }
 
+// PlaylistFolders loads [playlist_folders] from music.toml (soundcloud playlist title -> disk folder).
+func PlaylistFolders(path string) (map[string]string, error) {
+	out := map[string]string{}
+	if path == "" {
+		return out, nil
+	}
+	data, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+	sec := data["playlist_folders"]
+	if sec == nil {
+		return out, nil
+	}
+	for name, val := range sec {
+		folder := strings.TrimSpace(fmt.Sprint(val))
+		if folder == "" {
+			continue
+		}
+		title := strings.TrimSpace(name)
+		if title == "" {
+			continue
+		}
+		out[strings.ToLower(title)] = folder
+		out[normalizeGenreConfigKey(title)] = folder
+	}
+	return out, nil
+}
+
+// PlaylistFolder returns the on-disk folder for a soundcloud playlist title.
+func PlaylistFolder(path, playlistTitle string) string {
+	folders, err := PlaylistFolders(path)
+	if err != nil || len(folders) == 0 {
+		return ""
+	}
+	title := strings.TrimSpace(playlistTitle)
+	if title == "" {
+		return ""
+	}
+	if folder, ok := folders[strings.ToLower(title)]; ok {
+		return folder
+	}
+	return folders[normalizeGenreConfigKey(title)]
+}
+
 // SeedGenreConfig writes default [genres] and [genre_aliases] when missing.
 func SeedGenreConfig(path string) error {
 	data, err := Load(path)

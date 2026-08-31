@@ -218,7 +218,7 @@ func write(path string, data map[string]map[string]any) error {
 	}
 	// stable section order: paths first, then soundcloud, genres, genre_aliases, then rest sorted
 	sortSections := func(a, b string) bool {
-		order := map[string]int{"paths": 0, "soundcloud": 1, "genres": 2, "genre_aliases": 3}
+		order := map[string]int{"paths": 0, "soundcloud": 1, "genres": 2, "genre_aliases": 3, "playlist_folders": 4}
 		oa, ob := order[a], order[b]
 		if oa != ob {
 			if oa == 0 {

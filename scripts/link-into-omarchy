@@ -64,8 +64,6 @@ build_go() {
   fi
 )
 
-bash "${EVOPLAYER_ROOT}/scripts/migrate-evoshell-data.sh"
-
 link_path "$DESKTOP_DST" "${EVOPLAYER_ROOT}/share/evoplayer.desktop"
 
 if [[ -L "$PLUGIN_DST" || -d "$PLUGIN_DST" ]]; then

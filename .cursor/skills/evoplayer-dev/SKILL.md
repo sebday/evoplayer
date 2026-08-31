@@ -63,13 +63,14 @@ Use `EVOPLAYER_TRACE_IPC=all` to also log `state.get`, `subscribe`, and library 
 
 - Downloads land in `{music_root}/.incoming/` first.
 - Import moves matched tracks into `{genre}/soundcloud/` or `{genre}/mixes/{year}/` based on embedded tags matched against library genre folders via canonical genre keys and an alias table (`library.MatchLibraryGenre`). There is no default genre fallback — unmatched files stay in `.incoming`.
+- Tag untagged `.incoming` files from SoundCloud playlists: `evoplayer library incoming review` (writes `.incoming/import-review.txt`), then `evoplayer library incoming apply` (optional `--dry-run`), then `evoplayer library import`. Playlist → folder map: `[playlist_folders]` in `music.toml`.
 - `sync-archive.txt` records handled SoundCloud IDs (successes, DRM skips, etc.). Archive presence does not mean the file is in the library.
 - Heavy work runs in supervised child processes (`_job soundcloud-download`, `_job download-url`, `_job import-incoming`, `_job cache`); poll with `evoplayer job status --json` (uses `DaemonUp` only — does not restart the daemon). A pasted SoundCloud likes URL uses the same likes-sync worker as `evoplayer download`.
 
 ## State, cache, and secrets
 
 - Music library: `[paths] root` in `~/.config/evoplayer/music.toml` (`evoplayer config set paths.root /path`). If unset or the folder is missing, `~/music` when that folder exists, else `~/Music`, else `~/music`.
-- Genre import aliases: `[genre_aliases]` and folder bindings `[genres]` in the same `music.toml` (canonical keys like `drumandbass` → folder `drum&bass`).
+- Genre import aliases: `[genre_aliases]` and folder bindings `[genres]` in the same `music.toml` (canonical keys like `drumandbass` → folder `drum&bass`). SoundCloud playlist folders: `[playlist_folders]`.
 - State: `$XDG_STATE_HOME/evoplayer` (override: `EVO_PLAYER_MUSIC_STATE`)
 - Cache: `$XDG_CACHE_HOME/evoplayer`
 - Library index: `$XDG_CACHE_HOME/evoplayer/library.sqlite3`
