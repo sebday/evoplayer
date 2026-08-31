@@ -1460,7 +1460,7 @@ Item {
                 else if (method === "library.soundcloud.download")
                     args = ["download"]
                 else if (method === "library.download") {
-                    args = ["download", "url"]
+                    args = ["download"]
                     var u = String((params && params.url) || "").trim()
                     if (u)
                         args.push(u)

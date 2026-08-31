@@ -174,7 +174,7 @@ func trackColWidthsPlaylist(total int) trackCols {
 	const (
 		lead   = 1 // compact cursor
 		heartW = 2 // ♥ before time
-		timeW  = 5
+		timeW  = 6
 		yearW  = 4
 		gaps   = 2 // name-time and time-year gutters
 	)
@@ -186,7 +186,7 @@ func trackColWidthsPlaylist(total int) trackCols {
 }
 
 func playlistHeartAndTime(heart, timeStr string, timeW int) string {
-	return heart + padLeft(clipEllipsis(timeStr, timeW), timeW)
+	return heart + padLeft(clipTruncate(timeStr, timeW), timeW)
 }
 
 func renderPlaylistPlayingRow(cols trackCols, cursor, heart, name, timeStr, year string, lineWidth int) string {
@@ -221,17 +221,17 @@ func renderTrackColumns(cols trackCols, cursor, heart, name, timeStr, year, genr
 	}
 	if cols.year == 0 && cols.genre == 0 {
 		return cursor + heart + nameCell + "  " +
-			meta.Render(padLeft(clipEllipsis(timeStr, cols.time), cols.time))
+			meta.Render(padLeft(clipTruncate(timeStr, cols.time), cols.time))
 	}
 	if cols.genre == 0 {
-		timeCell := heart + meta.Render(padLeft(clipEllipsis(timeStr, cols.time), cols.time))
+		timeCell := heart + meta.Render(padLeft(clipTruncate(timeStr, cols.time), cols.time))
 		return cursor + nameCell + " " +
 			timeCell +
 			" " +
 			meta.Render(padLeft(clipEllipsis(year, cols.year), cols.year))
 	}
 	return cursor + heart + nameCell + "  " +
-		meta.Render(padLeft(clipEllipsis(timeStr, cols.time), cols.time)) +
+		meta.Render(padLeft(clipTruncate(timeStr, cols.time), cols.time)) +
 		"  " +
 		meta.Render(padLeft(clipEllipsis(year, cols.year), cols.year)) +
 		"  " +
@@ -245,6 +245,16 @@ func trackTime(t library.Track) string {
 	return dur(t.Duration)
 }
 
+func clipTruncate(s string, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	if lipgloss.Width(s) <= width {
+		return s
+	}
+	return ansi.Truncate(s, width, "")
+}
+
 func clipEllipsis(s string, width int) string {
 	if width <= 0 {
 		return ""
@@ -252,10 +262,10 @@ func clipEllipsis(s string, width int) string {
 	if lipgloss.Width(s) <= width {
 		return s
 	}
-	if width <= 3 {
+	if width <= 1 {
 		return ansi.Truncate(s, width, "")
 	}
-	return ansi.Truncate(s, width, "...")
+	return ansi.Truncate(s, width, ".")
 }
 
 func padLeft(s string, width int) string {

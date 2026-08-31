@@ -4,9 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/sebday/evoplayer/server/audio"
 	"github.com/sebday/evoplayer/server/tags"
@@ -17,22 +15,7 @@ import (
 const MixMinDurationSec = 25 * 60
 
 func IsMix(path string, dur float64) bool {
-	if dur >= float64(MixMinDurationSec) {
-		return true
-	}
-	for _, part := range strings.Split(filepath.ToSlash(path), "/") {
-		if strings.EqualFold(part, "mixes") {
-			return true
-		}
-	}
-	stem := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
-	markers := []string{"mixed", "essential", "euphoria", "session", "boiler", "radio_show", "radio-show", "-mix", "_mix", "live_mixed"}
-	for _, m := range markers {
-		if strings.Contains(stem, m) {
-			return true
-		}
-	}
-	return false
+	return dur >= float64(MixMinDurationSec)
 }
 
 func LikedMixPaths(db *sql.DB, env Env) ([]string, error) {

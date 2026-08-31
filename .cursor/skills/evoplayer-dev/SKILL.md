@@ -20,7 +20,7 @@ Native Go commands (daemon IPC or direct library access):
 - `load`, `status`, `open`, `queue append|play|extend|up-next` (`up-next` reads the daemon playback queue)
 - `playback …`, `library …`, `browse`, `meta`, `genres`, `tracks`, `cache`, `find`, `scrobble`
 - `history`, `config`, `tags`, `vinyl`, `placement`, `lastfm`, `jsonlog`
-- `warm`, `download` (soundcloud likes sync; `download url <url>` for youtube via yt-dlp, or soundcloud), `stats`, `job`
+- `warm`, `download` (soundcloud likes sync, or `download <url>` for youtube/soundcloud), `stats`, `job`
 - `art` (search, set, apply, clear, notify-cache), `sort`, `playlist`, `favorite`, `current`
 - `viz` (`stream`, `get`)
 
@@ -62,13 +62,14 @@ Use `EVOPLAYER_TRACE_IPC=all` to also log `state.get`, `subscribe`, and library 
 ## Architecture (downloads and import)
 
 - Downloads land in `{music_root}/.incoming/` first.
-- Import moves matched tracks into `{genre}/soundcloud/` or `{genre}/mixes/{year}/` based on embedded SoundCloud genre/tags matched against existing library genre folders (`library.MatchLibraryGenre`). There is no default genre fallback — unmatched files stay in `.incoming`.
+- Import moves matched tracks into `{genre}/soundcloud/` or `{genre}/mixes/{year}/` based on embedded tags matched against library genre folders via canonical genre keys and an alias table (`library.MatchLibraryGenre`). There is no default genre fallback — unmatched files stay in `.incoming`.
 - `sync-archive.txt` records handled SoundCloud IDs (successes, DRM skips, etc.). Archive presence does not mean the file is in the library.
 - Heavy work runs in supervised child processes (`_job soundcloud-download`, `_job download-url`, `_job import-incoming`, `_job cache`); poll with `evoplayer job status --json` (uses `DaemonUp` only — does not restart the daemon). A pasted SoundCloud likes URL uses the same likes-sync worker as `evoplayer download`.
 
 ## State, cache, and secrets
 
-- Music library: `[paths] root` in `$XDG_STATE_HOME/evoplayer/music.toml` (`evoplayer config set paths.root /path`). If unset or the folder is missing, `~/music` when that folder exists, else `~/Music`, else `~/music`.
+- Music library: `[paths] root` in `~/.config/evoplayer/music.toml` (`evoplayer config set paths.root /path`). If unset or the folder is missing, `~/music` when that folder exists, else `~/Music`, else `~/music`.
+- Genre import aliases: `[genre_aliases]` and folder bindings `[genres]` in the same `music.toml` (canonical keys like `drumandbass` → folder `drum&bass`).
 - State: `$XDG_STATE_HOME/evoplayer` (override: `EVO_PLAYER_MUSIC_STATE`)
 - Cache: `$XDG_CACHE_HOME/evoplayer`
 - Library index: `$XDG_CACHE_HOME/evoplayer/library.sqlite3`

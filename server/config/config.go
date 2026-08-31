@@ -216,9 +216,9 @@ func write(path string, data map[string]map[string]any) error {
 	for section := range data {
 		sections = append(sections, section)
 	}
-	// stable section order: paths first, then soundcloud, then rest sorted
+	// stable section order: paths first, then soundcloud, genres, genre_aliases, then rest sorted
 	sortSections := func(a, b string) bool {
-		order := map[string]int{"paths": 0, "soundcloud": 1}
+		order := map[string]int{"paths": 0, "soundcloud": 1, "genres": 2, "genre_aliases": 3}
 		oa, ob := order[a], order[b]
 		if oa != ob {
 			if oa == 0 {
@@ -231,6 +231,18 @@ func write(path string, data map[string]map[string]any) error {
 				return true
 			}
 			if ob == 1 {
+				return false
+			}
+			if oa == 2 {
+				return true
+			}
+			if ob == 2 {
+				return false
+			}
+			if oa == 3 {
+				return true
+			}
+			if ob == 3 {
 				return false
 			}
 		}
@@ -323,8 +335,8 @@ func DefaultMusicRoot() string {
 	return music
 }
 
-func ResolveRoot(path string) string {
-	if root := ReadRoot(path); root != "" && dirExists(root) {
+func ResolveRoot(paths ...string) string {
+	if root := ReadRoot(paths...); root != "" && dirExists(root) {
 		return root
 	}
 	return DefaultMusicRoot()

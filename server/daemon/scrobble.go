@@ -40,8 +40,122 @@ func (d *Daemon) handleScrobble(req ipc.Request) (interface{}, error) {
 	}
 }
 
+// autoScrobble mirrors the Quickshell panel: now playing on track change, submit
+// after min(half duration, 4 minutes) of continuous playback.
+func (d *Daemon) autoScrobble(st playback.Status) {
+	configured := secrets.LastfmConfigured()
+
+	var (
+		nowPlaying *playback.Status
+		submit     *playback.Status
+		submitAt   int64
+	)
+
+	d.scrobbleMu.Lock()
+	prev := d.scrobblePrev
+
+	if st.Path == "" {
+		d.resetScrobbleSessionLocked()
+		d.scrobblePrev = st
+		d.scrobbleMu.Unlock()
+		return
+	}
+
+	if st.Path == prev.Path && st.State == "playing" && st.Position < prev.Position-5 {
+		d.beginScrobbleSessionLocked(st)
+	}
+
+	if prev.Path != "" && st.Path != prev.Path &&
+		d.scrobblePath == prev.Path && !d.scrobbleSubmitted && prev.State == "playing" {
+		if due, started := scrobbleSubmitDue(d.scrobblePath, d.scrobbleStartPos, d.scrobbleStartedAt, prev); due {
+			prevCopy := prev
+			submit = &prevCopy
+			submitAt = started
+			d.scrobbleSubmitted = true
+		}
+	}
+
+	if st.State == "playing" {
+		if st.Path != prev.Path {
+			stCopy := st
+			nowPlaying = &stCopy
+			d.beginScrobbleSessionLocked(st)
+		}
+		if due, started := scrobbleSubmitDue(d.scrobblePath, d.scrobbleStartPos, d.scrobbleStartedAt, st); due && !d.scrobbleSubmitted {
+			stCopy := st
+			submit = &stCopy
+			submitAt = started
+			d.scrobbleSubmitted = true
+		}
+	}
+
+	d.scrobblePrev = st
+	d.scrobbleMu.Unlock()
+
+	if !configured {
+		return
+	}
+	if nowPlaying != nil {
+		_ = d.scrobbleNowPlayingStatus(*nowPlaying)
+	}
+	if submit != nil {
+		_ = d.scrobbleSubmitStatus(*submit, submitAt)
+	}
+}
+
+func (d *Daemon) resetScrobbleSessionLocked() {
+	d.scrobblePath = ""
+	d.scrobbleStartPos = -1
+	d.scrobbleStartedAt = 0
+	d.scrobbleSubmitted = false
+}
+
+func (d *Daemon) beginScrobbleSessionLocked(st playback.Status) {
+	if st.Path == "" {
+		return
+	}
+	d.scrobblePath = st.Path
+	d.scrobbleStartPos = st.Position
+	if d.scrobbleStartPos < 0 {
+		d.scrobbleStartPos = 0
+	}
+	d.scrobbleStartedAt = time.Now().Unix() - int64(d.scrobbleStartPos)
+	d.scrobbleSubmitted = false
+}
+
+func scrobbleSubmitDue(scrobblePath string, startPos float64, startedAt int64, st playback.Status) (bool, int64) {
+	if scrobblePath == "" || st.Path != scrobblePath || st.State != "playing" {
+		return false, 0
+	}
+	if startPos < 0 {
+		return false, 0
+	}
+	dur := st.Duration
+	threshold := scrobbleListenThreshold(dur)
+	if threshold < 0 || dur <= 0 {
+		return false, 0
+	}
+	pos := st.Position
+	if pos < startPos {
+		startPos = pos
+	}
+	listened := pos - startPos
+	if listened < threshold {
+		return false, 0
+	}
+	started := startedAt
+	if started <= 0 {
+		started = time.Now().Unix() - int64(listened)
+	}
+	return true, started
+}
+
 func (d *Daemon) scrobbleNowPlaying() error {
-	st := enrichTrack(d.Env, d.Actor.Snapshot())
+	return d.scrobbleNowPlayingStatus(enrichTrack(d.Env, d.Actor.Snapshot()))
+}
+
+func (d *Daemon) scrobbleNowPlayingStatus(st playback.Status) error {
+	st = enrichTrack(d.Env, st)
 	if st.Path == "" || st.Artist == "" || st.Title == "" {
 		return nil
 	}
@@ -56,7 +170,11 @@ func (d *Daemon) scrobbleNowPlaying() error {
 }
 
 func (d *Daemon) scrobbleSubmit(started int64) error {
-	st := enrichTrack(d.Env, d.Actor.Snapshot())
+	return d.scrobbleSubmitStatus(enrichTrack(d.Env, d.Actor.Snapshot()), started)
+}
+
+func (d *Daemon) scrobbleSubmitStatus(st playback.Status, started int64) error {
+	st = enrichTrack(d.Env, st)
 	if st.Path == "" || st.Artist == "" || st.Title == "" {
 		return nil
 	}
@@ -64,10 +182,7 @@ func (d *Daemon) scrobbleSubmit(started int64) error {
 		return nil
 	}
 	if started <= 0 {
-		started = int64(st.Position)
-		if started < 0 {
-			started = 0
-		}
+		started = time.Now().Unix()
 	}
 	key := scrobbleDedupeKey("track.scrobble", st, started)
 	if d.scrobbleDuplicate(key) {

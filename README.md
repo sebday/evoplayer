@@ -80,8 +80,8 @@ evoplayer library browse|meta|import|cache|download …
 ### Downloads and jobs
 
 ```bash
-evoplayer download [--import]              # SoundCloud likes sync
-evoplayer download url <url> [--no-import]
+evoplayer download [--import]                    # SoundCloud likes sync
+evoplayer download <url> [--no-import]           # YouTube or SoundCloud URL
 evoplayer job status|stop|cancel [--json]
 ```
 
@@ -127,13 +127,13 @@ evoplayer viz apply|stream [--fps N]|get
 ### Examples
 
 ```bash
-evoplayer download url https://soundcloud.com/you/likes
+evoplayer download https://soundcloud.com/you/likes
 evoplayer cache --force drum&bass
 evoplayer viz stream --fps 30
 ```
 
 ## Library folders
 
-The music library is a tree of folders. Set the root with `evoplayer config set paths.root /path/to/music` (stored as `[paths] root` in `music.toml`). If unset or that folder is missing, evoplayer uses `~/music` or `~/Music`. Top-level dirs under the music root (`Drum & Bass`, `House`, …) are where tracks are filed.
+The music library is a tree of folders. Set the root with `evoplayer config set paths.root /path/to/music` (stored as `[paths] root` in `~/.config/evoplayer/music.toml`). Genre tag aliases for import live in the same file under `[genre_aliases]` (canonical keys like `drumandbass`) and `[genres]` (folder names like `drum&bass`). If unset or that folder is missing, evoplayer uses `~/music` or `~/Music`.
 
 A genre tag is only a hint for which of those folders to use. Untagged downloads stay in `.incoming` until you pick a folder; import then moves the file into that folder (`youtube/` or `mixes/` plus year for long mixes).

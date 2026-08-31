@@ -38,7 +38,7 @@ func TestIncomingDestSlugMixMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(root, "drum&bass", "mixes", "2018")
+	want := filepath.Join(root, "drum&bass", "soundcloud")
 	if filepath.Dir(dest) != want {
 		t.Fatalf("dir = %q, want %q", filepath.Dir(dest), want)
 	}
@@ -81,6 +81,41 @@ func TestIncomingDestLongTrackUsesTLEN(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := filepath.Join(root, "drum&bass", "mixes", "2017")
+	if filepath.Dir(dest) != want {
+		t.Fatalf("dir = %q, want %q", filepath.Dir(dest), want)
+	}
+}
+
+func TestIncomingDestAliasedGenre(t *testing.T) {
+	root := t.TempDir()
+	env := Env{MusicRoot: root}
+	incoming := filepath.Join(root, ".incoming")
+	if err := os.MkdirAll(incoming, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "drum&bass"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(incoming, "4am Kru - Nobody Else.mp3")
+	if err := exec.Command("ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "0.05", "-codec:a", "libmp3lame", "-q:a", "9", path).Run(); err != nil {
+		t.Skip("ffmpeg required")
+	}
+	if err := tags.EmbedMP3(path, map[string]string{
+		"artist":  "4am Kru",
+		"title":   "Nobody Else",
+		"genre":   "Jungle",
+		"comment": "source:soundcloud",
+		"year":    "2022",
+	}, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	probed, _ := tags.ProbeImport(path)
+	dest, err := incomingDest(env, path, probed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(root, "drum&bass", "soundcloud")
 	if filepath.Dir(dest) != want {
 		t.Fatalf("dir = %q, want %q", filepath.Dir(dest), want)
 	}

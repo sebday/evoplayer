@@ -107,7 +107,7 @@ SectionPanel {
                         if (!url)
                             return
                         dashboard.runDaemonLibraryJob("library.download", { url: url },
-                            "download url", { key: "download-url", stayOnScreen: true })
+                            "download", { key: "download-url", stayOnScreen: true })
                     }
                 }
             }

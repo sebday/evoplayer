@@ -222,16 +222,7 @@ func genreFolderFromTags(env Env, tag tags.TagInfo) string {
 }
 
 func matchLibraryFolder(env Env, name string) string {
-	want := strings.ToLower(strings.TrimSpace(name))
-	if want == "" {
-		return ""
-	}
-	for _, folder := range GenreChoices(env) {
-		if strings.ToLower(folder) == want {
-			return folder
-		}
-	}
-	return ""
+	return MatchLibraryGenre(env, name)
 }
 
 func trackFilename(artist, title, path, ext string) string {

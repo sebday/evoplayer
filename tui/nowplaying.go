@@ -57,7 +57,11 @@ func (m model) playerGeom() playerGeom {
 		minNowPlaying = 24
 		chromeW       = 4
 	)
+	maxArtworkW := total / 2
 	maxArtworkCols := total - minBrowse - minPlaylist - chromeW
+	if cap := max(8, maxArtworkW-chromeW); maxArtworkCols > cap {
+		maxArtworkCols = cap
+	}
 	if maxArtworkCols < 8 {
 		maxArtworkCols = 8
 	}
@@ -107,6 +111,12 @@ func (m model) playerGeom() playerGeom {
 		artworkRows = maxRows
 		artworkCols = squareArtworkCols(artworkRows, cw, ch)
 		artworkW = artworkCols + chromeW
+	}
+	if artworkW > maxArtworkW {
+		artworkW = max(chromeW+8, maxArtworkW)
+		artworkCols = max(8, artworkW-chromeW)
+		artworkRows = squareArtworkRows(artworkCols, cw, ch)
+		playlistW = max(8, total-browseW-artworkW)
 	}
 
 	return playerGeom{
@@ -211,9 +221,6 @@ func (m model) renderBody(height int) (string, artworkPlacement) {
 	g := m.playerGeom()
 	g.bodyH = height
 	browse := m.renderBrowsePane(g)
-	if m.downloadSelected() {
-		return lipgloss.JoinHorizontal(lipgloss.Top, browse, m.renderDownloadPane(g)), artworkPlacement{}
-	}
 	playlist := m.renderPlaylistPane(g)
 	artwork, place := m.renderArtworkPane(g)
 	joined := lipgloss.JoinHorizontal(lipgloss.Top, browse, playlist, artwork)
@@ -435,8 +442,6 @@ func (m model) renderPlaylistInner(width, innerH int) string {
 		return clipLines(m.renderHelpBody(), innerH)
 	case m.settingsSelected():
 		return clipLines(m.renderSettings(width), innerH)
-	case m.downloadSelected():
-		return clipLines(m.renderDownloadLanding(width, innerH), innerH)
 	case m.err != "" && m.focus == focusPlaylist:
 		return clipLines(styleWarn().Render(m.err), innerH)
 	case len(m.queueFiltered) == 0:
@@ -490,9 +495,6 @@ func (m model) browseLegend(maxW int) string {
 func (m model) playlistLegend(maxW int) string {
 	if m.artPicker {
 		return clipWidth("cover", maxW)
-	}
-	if m.downloadSelected() {
-		return clipWidth("download", maxW)
 	}
 	if m.settingsSelected() {
 		return clipWidth("settings", maxW)

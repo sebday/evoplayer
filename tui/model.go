@@ -72,7 +72,6 @@ type model struct {
 	vizSub             bool
 	vizMode            vizMode
 	paint              *vizPainter
-	downloadURL        textinput.Model
 	settingsPath       textinput.Model
 	settings           config.JSONView
 	job                jobs.State
@@ -174,11 +173,6 @@ func newModel(env paths.Env) model {
 	ti.Prompt = ""
 	ti.CharLimit = 80
 	ti.Width = 40
-	dl := textinput.New()
-	dl.Placeholder = "Paste a YouTube or SoundCloud URL..."
-	dl.Prompt = "> "
-	dl.CharLimit = 512
-	dl.Width = 40
 	sp := textinput.New()
 	sp.Placeholder = "/path/to/music"
 	sp.Prompt = "> "
@@ -189,7 +183,6 @@ func newModel(env paths.Env) model {
 		env:          env,
 		focus:        focusBrowse,
 		search:       ti,
-		downloadURL:  dl,
 		settingsPath: sp,
 		width:        80,
 		height:       24,
@@ -351,7 +344,7 @@ func (m *model) unfreezeFrame() {
 }
 
 func (m model) canPatchLists() bool {
-	return !m.artPicker && !m.helpSelected() && !m.downloadSelected() &&
+	return !m.artPicker && !m.helpSelected() &&
 		m.frames != nil && m.frames.view != "" && m.frames.browseRow > 0
 }
 
@@ -369,7 +362,7 @@ func (m model) patchFocusedList() (tea.Model, tea.Cmd) {
 }
 
 func (m model) canFreeze() bool {
-	return !m.artPicker && !m.downloadSelected() && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
+	return !m.artPicker && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -384,7 +377,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 		m.search.Width = max(8, m.browseInnerWidth())
-		m.downloadURL.Width = max(8, paneInnerWidth(m.downloadPaneWidth())-4)
 		m.settingsPath.Width = max(8, paneInnerWidth(m.playerGeom().playlistW)-4)
 		if m.art != nil {
 			m.art.cols = 0
@@ -497,7 +489,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.patchPlaylist()
 			}
 		}
-		if same && !artChanged && m.canFreeze() && !m.downloadJobLive() {
+		if same && !artChanged && m.canFreeze() {
 			m.freezeFrame()
 			m.patchNowPlaying()
 		}
@@ -514,15 +506,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		prevRunning := m.job.Status == "running"
 		wasScanning := m.libraryScanning()
 		if msg.state.Status != "" || msg.state.Name != "" {
 			m.job = mergeJobState(m.job, msg.state)
 		}
 		if m.job.Status == "idle" || (m.job.Status == "" && m.job.Name == "") {
-			if prevRunning && m.downloadSelected() {
-				m.err = "download interrupted (daemon restarted?)"
-			}
 			m.job = jobs.State{}
 		}
 		if wasScanning && !m.libraryScanning() {
@@ -531,14 +519,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if wasScanning != m.libraryScanning() {
 			return m, nil
 		}
-		if m.downloadJobLive() {
-			m.unfreezeFrame()
-		}
 		cmd := tea.Cmd(nil)
 		if m.job.Status == "running" {
 			cmd = pollJob(m.env)
 		}
-		if m.canFreeze() && !m.downloadJobLive() {
+		if m.canFreeze() {
 			m.freezeFrame()
 		}
 		return m, cmd
@@ -578,13 +563,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tickMsg:
-		if m.downloadJobLive() {
-			m.unfreezeFrame()
-		} else if m.canFreeze() {
+		if m.canFreeze() {
 			m.freezeFrame()
 		}
 		cmds := []tea.Cmd{pollLive(m.env)}
-		if m.job.Status == "running" || m.downloadJobLive() {
+		if m.job.Status == "running" {
 			cmds = append(cmds, pollJob(m.env))
 		}
 		return m, tea.Batch(cmds...)
@@ -787,31 +770,6 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	if m.downloadURL.Focused() {
-		switch msg.String() {
-		case "esc":
-			return m.closeOverlay()
-		case "enter":
-			if m.downloadJobCancellable() {
-				return m.cancelDownloadJob()
-			}
-			return m.startURLDownload()
-		case "tab":
-			m.downloadURL.Blur()
-			m.cycleFocusDir(1)
-			return m, m.downloadFocusCmd()
-		case "shift+tab":
-			m.downloadURL.Blur()
-			m.cycleFocusDir(-1)
-			return m, m.downloadFocusCmd()
-		case "ctrl+c":
-			return m, m.quitCmd()
-		}
-		var cmd tea.Cmd
-		m.downloadURL, cmd = m.downloadURL.Update(msg)
-		return m, cmd
-	}
-
 	if m.artPicker {
 		switch msg.String() {
 		case "esc":
@@ -846,16 +804,22 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.artPicker {
 			return m.closeArtPicker()
 		}
-		if m.helpSelected() || m.downloadSelected() || m.settingsSelected() {
+		if m.helpSelected() || m.settingsSelected() {
 			return m.closeOverlay()
 		}
 		return m, nil
 	case "tab":
-		m.cycleFocusDir(1)
-		return m, tea.Batch(m.downloadFocusCmd(), m.settingsFocusCmd())
+		cmd := m.cycleFocusDir(1)
+		if cmd != nil {
+			return m, cmd
+		}
+		return m, m.settingsFocusCmd()
 	case "shift+tab":
-		m.cycleFocusDir(-1)
-		return m, tea.Batch(m.downloadFocusCmd(), m.settingsFocusCmd())
+		cmd := m.cycleFocusDir(-1)
+		if cmd != nil {
+			return m, cmd
+		}
+		return m, m.settingsFocusCmd()
 	case "/":
 		m.focus = focusSearch
 		return m, m.search.Focus()
@@ -864,20 +828,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.closeOverlay()
 		}
 		return m.openHelp()
-	case "y":
-		if m.downloadSelected() {
-			return m.closeOverlay()
-		}
-		return m.openDownload()
 	case "d":
 		if m.helpSelected() && m.focus == focusPlaylist {
 			return m, nil
 		}
 		return m.addDir()
-	case "x":
-		if m.downloadSelected() && m.downloadJobCancellable() {
-			return m.cancelDownloadJob()
-		}
 	case "f":
 		path := m.folderOpenTarget()
 		if path == "" {
@@ -926,25 +881,24 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "left":
+		if m.focus == focusPlaylist && m.settingsSelected() {
+			m.settingsPath.Blur()
+			m.cycleFocusDir(-1)
+			return m, nil
+		}
 		if m.canLeaveBrowseFolder() {
 			return m.leaveFolder()
 		}
 		return m, nil
 	case "right":
 		if m.focus == focusBrowse && !m.searching() {
+			if _, ok := m.currentTool(); ok {
+				return m, m.cycleFocusDir(1)
+			}
 			return m.enterFolder()
 		}
 		return m, nil
 	case "enter":
-		if m.downloadSelected() && m.focus == focusPlaylist {
-			if m.downloadJobCancellable() {
-				return m.cancelDownloadJob()
-			}
-			if !m.downloadURL.Focused() {
-				return m, m.downloadURL.Focus()
-			}
-			return m.startURLDownload()
-		}
 		if m.helpSelected() && m.focus == focusPlaylist {
 			return m, nil
 		}
@@ -959,14 +913,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.helpSelected() && m.focus == focusPlaylist {
 			return m, nil
 		}
-		if m.settingsSelected() || m.downloadSelected() {
+		if m.settingsSelected() {
 			return m, nil
 		}
 		return m.openArtPicker()
 	case "up", "down", "pgup", "pgdown":
-		if m.downloadSelected() && m.focus == focusPlaylist {
-			return m, m.downloadFocusCmd()
-		}
 		if msg.String() == "up" {
 			if m.focus == focusBrowse && (m.browseLen() == 0 || m.browseIdx <= 0) {
 				return m, nil
@@ -987,9 +938,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *model) cycleFocusDir(dir int) {
+func (m *model) cycleFocusDir(dir int) tea.Cmd {
 	m.search.Blur()
-	m.downloadURL.Blur()
 	m.settingsPath.Blur()
 	order := []focus{focusBrowse, focusPlaylist}
 	i := 0
@@ -1005,14 +955,15 @@ func (m *model) cycleFocusDir(dir int) {
 	n := len(order)
 	i = (i + dir%n + n) % n
 	m.focus = order[i]
-	if m.focus == focusPlaylist && m.downloadSelected() {
+	if m.focus == focusPlaylist && m.settingsSelected() {
 		m.playlistIdx = 0
-	} else if m.focus == focusPlaylist && m.settingsSelected() {
-		m.playlistIdx = 0
-	} else if m.focus == focusPlaylist {
+		return m.settingsPath.Focus()
+	}
+	if m.focus == focusPlaylist {
 		m.focusPlaylistOnPlayingOrCaret()
 	}
 	m.refreshArt()
+	return nil
 }
 
 func (m *model) focusPlaylistOnPlayingOrCaret() {
@@ -1071,7 +1022,7 @@ func (m model) playingTrackIndex() int {
 }
 
 func (m *model) scrollPlaylistForPlayingTrack() bool {
-	if m.focus != focusPlaylist || m.helpSelected() || m.settingsSelected() || m.downloadSelected() || m.artPicker {
+	if m.focus != focusPlaylist || m.helpSelected() || m.settingsSelected() || m.artPicker {
 		return false
 	}
 	idx := m.playingTrackIndex()
@@ -1108,13 +1059,9 @@ func (m *model) moveFocusedList(delta int) {
 }
 
 func (m model) moveFocusedWithTools(delta int) (tea.Model, tea.Cmd) {
-	prevDownload := m.downloadSelected()
 	prevSettings := m.settingsSelected()
 	m.moveFocusedList(delta)
 	cmd := m.syncBrowseTool()
-	if m.focus == focusBrowse && (prevDownload || m.downloadSelected()) {
-		return m, cmd
-	}
 	if m.focus == focusBrowse && (prevSettings || m.settingsSelected()) && m.canPatchLists() {
 		m.freezeFrame()
 		m.patchBrowse()
@@ -1134,18 +1081,12 @@ func (m *model) syncBrowseTool() tea.Cmd {
 		if i := navIndex(m.nav, tool.ID); i >= 0 {
 			m.navIdx = i
 		}
-		if tool.ID == "download" {
-			m.playlistIdx = 0
-			m.focus = focusPlaylist
-			return m.downloadFocusCmd()
-		}
 		if tool.ID == "settings" && was != "settings" {
 			return loadSettings(m.env)
 		}
 		return nil
 	}
-	if was == "download" || was == "settings" {
-		m.downloadURL.Blur()
+	if was == "settings" {
 		m.settingsPath.Blur()
 		if i := navIndex(m.nav, "filetree"); i >= 0 {
 			m.navIdx = i
@@ -1483,7 +1424,7 @@ func (m *model) clampTreeCursor() {
 	if m.browseOffset > m.browseIdx {
 		m.browseOffset = m.browseIdx
 	}
-	if n := m.playlistLen(); !m.downloadSelected() && m.playlistIdx >= n {
+	if n := m.playlistLen(); m.playlistIdx >= n {
 		m.playlistIdx = max(0, n-1)
 	}
 	if m.playlistOffset > m.playlistIdx {
@@ -1596,9 +1537,6 @@ func (m model) playlistLen() int {
 	if m.artPicker {
 		return len(m.artHits)
 	}
-	if m.downloadSelected() {
-		return 1
-	}
 	if m.helpSelected() || m.settingsSelected() {
 		return 0
 	}
@@ -1617,31 +1555,8 @@ func (m model) settingsSelected() bool {
 	return m.currentNavID() == "settings"
 }
 
-func (m model) downloadSelected() bool {
-	return m.currentNavID() == "download"
-}
-
-func (m model) downloadJobLive() bool {
-	if !m.downloadSelected() || m.job.Status != "running" {
-		return false
-	}
-	switch m.job.Name {
-	case "download", "download-url", "import":
-		return true
-	default:
-		return false
-	}
-}
-
 func (m model) staticSelected() bool {
 	return navIsStatic(m.currentNavID())
-}
-
-func (m model) downloadFocusCmd() tea.Cmd {
-	if m.downloadSelected() && m.focus == focusPlaylist && !m.jobBusy() {
-		return m.downloadURL.Focus()
-	}
-	return nil
 }
 
 func (m model) openHelp() (tea.Model, tea.Cmd) {
@@ -1650,7 +1565,6 @@ func (m model) openHelp() (tea.Model, tea.Cmd) {
 			m.navIdx = i
 			m.focus = focusPlaylist
 			m.search.Blur()
-			m.downloadURL.Blur()
 			m.settingsPath.Blur()
 			return m, nil
 		}
@@ -1660,8 +1574,6 @@ func (m model) openHelp() (tea.Model, tea.Cmd) {
 
 func (m model) openTool(id string) (tea.Model, tea.Cmd) {
 	switch id {
-	case "download":
-		return m.openDownload()
 	case "settings":
 		return m.openSettings()
 	default:
@@ -1690,7 +1602,6 @@ func (m model) openSettings() (tea.Model, tea.Cmd) {
 	m.selectSidebarTool("settings")
 	m.focus = focusPlaylist
 	m.search.Blur()
-	m.downloadURL.Blur()
 	root := strings.TrimSpace(m.settings.Paths.Root)
 	if root == "" {
 		root = strings.TrimSpace(m.env.MusicRoot)
@@ -1704,17 +1615,7 @@ func (m model) openSettings() (tea.Model, tea.Cmd) {
 	return m, tea.Batch(loadSettings(m.env), m.settingsFocusCmd())
 }
 
-func (m model) openDownload() (tea.Model, tea.Cmd) {
-	m.selectSidebarTool("download")
-	m.focus = focusPlaylist
-	m.playlistIdx = 0
-	m.search.Blur()
-	m.settingsPath.Blur()
-	return m, m.downloadFocusCmd()
-}
-
 func (m model) closeOverlay() (tea.Model, tea.Cmd) {
-	m.downloadURL.Blur()
 	m.settingsPath.Blur()
 	m.clearArtPickPreview()
 	m.artPicker = false
@@ -1753,7 +1654,6 @@ func (m model) openArtPicker() (tea.Model, tea.Cmd) {
 	m.playlistIdx = 0
 	m.playlistOffset = 0
 	m.search.Blur()
-	m.downloadURL.Blur()
 	m.settingsPath.Blur()
 	env := m.env
 	return m, func() tea.Msg {

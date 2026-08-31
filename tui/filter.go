@@ -18,7 +18,6 @@ func navFromIndex(items []playlist.IndexItem) []navItem {
 	out := []navItem{
 		{ID: "filetree", Label: "browse", Kind: "filetree"},
 		{ID: "settings", Label: "settings", Kind: "settings"},
-		{ID: "download", Label: "download", Kind: "download"},
 		{ID: "help", Label: "Help", Kind: "help"},
 	}
 	for _, it := range items {
@@ -47,7 +46,7 @@ func playlistTabLabel(name string) string {
 
 func navIsIcon(item navItem) bool {
 	switch item.Kind {
-	case "filetree", "settings", "download", "help":
+	case "filetree", "settings", "help":
 		return true
 	default:
 		return false
@@ -56,7 +55,7 @@ func navIsIcon(item navItem) bool {
 
 func navIsStatic(id string) bool {
 	switch id {
-	case "settings", "download", "help":
+	case "settings", "help":
 		return true
 	default:
 		return false
@@ -66,7 +65,6 @@ func navIsStatic(id string) bool {
 func toolNavItems() []navItem {
 	return []navItem{
 		{ID: "settings", Label: "settings", Kind: "settings"},
-		{ID: "download", Label: "download", Kind: "download"},
 	}
 }
 

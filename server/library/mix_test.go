@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestIsMixDurationCutoff(t *testing.T) {
+func TestIsMixDurationOnly(t *testing.T) {
 	short := filepath.Join("house", "soundcloud", "artist-track.mp3")
 	if IsMix(short, float64(MixMinDurationSec-1)) {
 		t.Fatal("24:59 track should not be a mix")
@@ -14,17 +14,11 @@ func TestIsMixDurationCutoff(t *testing.T) {
 	if !IsMix(short, float64(MixMinDurationSec)) {
 		t.Fatal("25:00 track should be a mix")
 	}
-}
-
-func TestIsMixPathAndStem(t *testing.T) {
-	if !IsMix(filepath.Join("drum&bass", "mixes", "2026", "set.mp3"), 120) {
-		t.Fatal("file under mixes/ should be a mix")
-	}
-	if !IsMix(filepath.Join("house", "dj_hype-fabriclive_mix.mp3"), 60) {
-		t.Fatal("filename -mix marker should be a mix")
+	if IsMix(filepath.Join("house", "dj_hype-fabriclive_mix.mp3"), 60) {
+		t.Fatal("short track with -mix in name should not be a mix")
 	}
 	if IsMix(filepath.Join("house", "soundcloud", "short-tune.mp3"), 180) {
-		t.Fatal("short untitled track should not be a mix")
+		t.Fatal("short track should not be a mix")
 	}
 }
 

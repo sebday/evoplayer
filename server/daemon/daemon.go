@@ -39,6 +39,11 @@ type Daemon struct {
 	scrobbleMu        sync.Mutex
 	scrobbleDedupeKey string
 	scrobbleDedupeAt  time.Time
+	scrobblePrev      playback.Status
+	scrobblePath      string
+	scrobbleStartPos  float64
+	scrobbleStartedAt int64
+	scrobbleSubmitted bool
 	artMaintainMu     sync.Mutex
 	syncMu            sync.Mutex
 	syncing           bool
@@ -94,6 +99,7 @@ func New(env paths.Env) *Daemon {
 			d.lastWarmPath = st.Path
 			d.warm.Enqueue(st.Path, warm.PriorityHigh, true)
 		}
+		d.autoScrobble(st)
 		d.broadcastState()
 		d.persistPlayerState(st)
 	})

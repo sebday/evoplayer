@@ -31,7 +31,6 @@ func helpKeys() []helpRow {
 		{"L", "like playing"},
 		{"a", "art"},
 		{"s", "art (track)"},
-		{"y", "download"},
 		{"v", "visualizer on / off"},
 		{"V", "visualizer prev"},
 		{"esc", "back"},

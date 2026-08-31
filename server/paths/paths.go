@@ -38,7 +38,10 @@ func Load(repoRoot string) Env {
 			cache = filepath.Join(xdgCache(), "evoplayer")
 		}
 	}
-	root := config.ResolveRoot(filepath.Join(state, "music.toml"))
+	configPath := config.MusicConfigPath()
+	legacyPath := config.LegacyMusicConfigPath(state)
+	_ = config.MigrateMusicConfig(state)
+	root := config.ResolveRoot(configPath, legacyPath)
 	runtime := os.Getenv("XDG_RUNTIME_DIR")
 	if runtime == "" {
 		runtime = "/tmp"
@@ -58,7 +61,7 @@ func Load(repoRoot string) Env {
 		MusicRoot:      root,
 		StateDir:       state,
 		CacheDir:       cache,
-		MusicConfig:    filepath.Join(state, "music.toml"),
+		MusicConfig:    configPath,
 		PlayerState:    filepath.Join(state, "player.json"),
 		PlaylistDir:    filepath.Join(state, "playlists"),
 		SocketPath:     socket,
