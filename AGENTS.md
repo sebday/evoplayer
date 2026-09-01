@@ -10,19 +10,9 @@
 
 ## Log papercuts
 
-When small, non-blocking repository friction occurs — a retried tool call, confusing setup step, flaky command, misleading error, or non-obvious gotcha — use the `papercuts` skill and append it to [.cursor/PAPERCUTS.md](.cursor/PAPERCUTS.md) in the moment. Continue the current task. Real bugs and tracked work are not papercuts, and sensitive data must never be logged.
+When small, non-blocking repository friction occurs — a retried tool call, confusing setup step, flaky command, misleading error, or non-obvious gotcha — append it to [.cursor/PAPERCUTS.md](.cursor/PAPERCUTS.md) in the moment. Continue the current task. Real bugs and tracked work are not papercuts, and sensitive data must never be logged.
 
 Do not mine an entire session for papercuts or start a broad cleanup unless the user explicitly asks.
-
-## Skills
-
-Project skills live in `.cursor/skills/`.
-
-| Skill | When to load |
-|-------|--------------|
-| `evoplayer-dev` | CLI, daemon, IPC, install, paths, tests, downloads/import (default repo context) |
-| `papercuts` | Logging or reviewing repository friction |
-| `create-repo-skill` | Adding or updating a skill |
 
 ## Commits
 
