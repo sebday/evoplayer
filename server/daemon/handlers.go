@@ -12,6 +12,7 @@ import (
 	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/library/find"
 	"github.com/sebday/evoplayer/server/mpris"
+	"github.com/sebday/evoplayer/server/notify"
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
 	"github.com/sebday/evoplayer/server/status"
@@ -216,6 +217,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		status.InvalidateMeta(p.Path)
+		notify.Favorite(d.Env, row.Liked, p.Path)
 		return row, nil
 	case "library.track.move":
 		var p struct {

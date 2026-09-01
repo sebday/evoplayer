@@ -55,6 +55,9 @@ type Daemon struct {
 	persistState      string
 	persistVolume     int
 	lastWarmPath      string
+	notifyMu          sync.Mutex
+	notifyPrev        playback.Status
+	notifyReady       bool
 }
 
 type mprisCloser interface {
@@ -100,6 +103,7 @@ func New(env paths.Env) *Daemon {
 			d.warm.Enqueue(st.Path, warm.PriorityHigh, true)
 		}
 		d.autoScrobble(st)
+		d.onPlaybackNotify(st)
 		d.broadcastState()
 		d.persistPlayerState(st)
 	})

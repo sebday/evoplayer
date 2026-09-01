@@ -4,6 +4,8 @@ Inspired by Bjarne's terminal music player, I made a local player with just the 
 
 I used Soundcloud for years and ignored my mp3 collection. This TUI (and probably Quickshell) music player is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library.
 
+![Evoplayer TUI](preview.png)
+
 ## Layout
 
 ```
