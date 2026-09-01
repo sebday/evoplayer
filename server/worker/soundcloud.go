@@ -4,7 +4,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/sebday/evoplayer/server/library"
+	"github.com/sebday/evoplayer/server/download"
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/soundcloud"
 )
@@ -19,7 +19,7 @@ func RunSoundCloudDownload(ctx context.Context, env paths.Env, importAfter bool)
 		return 1
 	}
 	if importAfter {
-		if err := library.RunImportCtx(ctx, library.EnvFrom(env), rep); err != nil {
+		if err := download.ImportLibraryIncoming(ctx, env, rep); err != nil {
 			_ = rep.Error(err.Error())
 			return 1
 		}

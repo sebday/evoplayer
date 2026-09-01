@@ -22,13 +22,3 @@ func storeCachedDB(path string, db *sql.DB) {
 	dbCache[path] = db
 	dbMu.Unlock()
 }
-
-// CloseCachedDB closes a cached pool (tests only).
-func CloseCachedDB(path string) {
-	dbMu.Lock()
-	defer dbMu.Unlock()
-	if db, ok := dbCache[path]; ok {
-		_ = db.Close()
-		delete(dbCache, path)
-	}
-}

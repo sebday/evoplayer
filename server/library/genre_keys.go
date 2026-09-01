@@ -49,17 +49,6 @@ func folderCanonicalKey(folderName string, aliases map[string]string) string {
 	return canonicalGenreKey(folderName, aliases)
 }
 
-// ResolveCanonicalGenre returns the first canonical key resolved from candidates.
-func ResolveCanonicalGenre(env Env, names ...string) string {
-	cfg := genreConfigFor(env)
-	for _, name := range names {
-		if canon := canonicalGenreKey(name, cfg.aliases); canon != "" {
-			return canon
-		}
-	}
-	return ""
-}
-
 // MatchLibraryGenre returns the first library folder matching any candidate genre
 // or tag via direct folder name or canonical genre alias resolution.
 func MatchLibraryGenre(env Env, names ...string) string {

@@ -13,38 +13,9 @@ func MusicConfigPath() string {
 	return filepath.Join(xdgConfigHome(), "evoplayer", "music.toml")
 }
 
-// LegacyMusicConfigPath returns the pre-migration state-dir music.toml path.
-func LegacyMusicConfigPath(stateDir string) string {
-	if stateDir == "" {
-		return ""
-	}
-	return filepath.Join(stateDir, "music.toml")
-}
-
-// MigrateMusicConfig copies legacy state-dir music.toml into the config path when needed.
-func MigrateMusicConfig(stateDir string) error {
-	configPath := MusicConfigPath()
-	legacyPath := LegacyMusicConfigPath(stateDir)
-	if legacyPath == "" {
-		return ensureMusicConfig(configPath)
-	}
-	if _, err := os.Stat(configPath); err == nil {
-		return SeedGenreConfig(configPath)
-	}
-	if _, err := os.Stat(legacyPath); err != nil {
-		return ensureMusicConfig(configPath)
-	}
-	raw, err := os.ReadFile(legacyPath)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(configPath, raw, 0o644); err != nil {
-		return err
-	}
-	return SeedGenreConfig(configPath)
+// EnsureMusicConfig creates music.toml when missing and seeds genre config.
+func EnsureMusicConfig() error {
+	return ensureMusicConfig(MusicConfigPath())
 }
 
 func ensureMusicConfig(configPath string) error {

@@ -31,14 +31,6 @@ type DownloadOptions struct {
 	ArchivePath string
 }
 
-func LikesURL(user string) string {
-	user = strings.TrimSpace(user)
-	if user == "" {
-		user = defaultUser
-	}
-	return fmt.Sprintf("https://soundcloud.com/%s/likes", user)
-}
-
 func LoadOptions(env paths.Env) (DownloadOptions, error) {
 	user, err := config.Get(env.MusicConfig, "soundcloud", "user", defaultUser)
 	if err != nil {

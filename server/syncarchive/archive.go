@@ -37,38 +37,13 @@ func Load(path string) (*Archive, error) {
 }
 
 func (a *Archive) ingestLine(line string) {
+	line = strings.TrimSpace(line)
 	if line == "" {
 		return
 	}
 	if strings.HasPrefix(line, "sc:") || strings.HasPrefix(line, "yt:") {
 		a.seen[line] = true
-		return
 	}
-	if strings.Contains(line, " ") {
-		for _, part := range strings.Fields(line) {
-			if isNumericID(part) {
-				a.seen[SCKeyString(part)] = true
-				a.seen[part] = true
-			}
-		}
-		return
-	}
-	if isNumericID(line) {
-		a.seen[SCKeyString(line)] = true
-		a.seen[line] = true
-	}
-}
-
-func isNumericID(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func SCKey(id int64) string {
@@ -101,12 +76,7 @@ func (a *Archive) HasSC(id int64) bool {
 	if id == 0 {
 		return false
 	}
-	key := SCKey(id)
-	if a.seen[key] {
-		return true
-	}
-	legacy := fmt.Sprintf("%d", id)
-	return a.seen[legacy]
+	return a.seen[SCKey(id)]
 }
 
 func (a *Archive) HasYT(id string) bool {

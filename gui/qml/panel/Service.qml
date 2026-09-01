@@ -3,7 +3,6 @@ import Quickshell
 import Quickshell.Io
 import "compat"
 import "compat/PluginIds.js" as PluginIds
-import "compat/CliampBackend.js" as CliampBackend
 
 Item {
     id: root
@@ -29,7 +28,6 @@ Item {
 
     readonly property string home: Quickshell.env("HOME") || ""
     readonly property string socketPath: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/evoplayer.sock"
-    readonly property bool useCliampBackend: CliampBackend.enabled(Quickshell.env("EVOPLAYER_BACKEND"))
 
     function playerCmd(args) {
         return Util.evoplayerCommand(home, args || [])
@@ -43,18 +41,12 @@ Item {
 
     readonly property int ipcTimeoutMs: 15000
 
-    CliampBridge {
-        id: cliampBridge
-        service: root
-        active: root.useCliampBackend
-    }
-
     property bool scanNoticeShown: false
     readonly property int scanNotifyId: 42421
 
     signal daemonJobUpdated(var data)
 
-    readonly property bool ipcReady: useCliampBackend ? cliampBridge.ipcReady : playerSocket.connected
+    readonly property bool ipcReady: playerSocket.connected
     property bool ipcSynced: false
     property string enrichPath: ""
     property string enrichQueuedPath: ""
@@ -107,10 +99,6 @@ Item {
     }
 
     function ipcCall(method, params, onDone) {
-        if (useCliampBackend) {
-            cliampBridge.ipcCall(method, params, onDone)
-            return
-        }
         if (!playerSocket.connected) {
             ensurePlayer()
             ipcWaitQueue.push({ method: method, params: params, onDone: onDone || null })
@@ -468,10 +456,6 @@ Item {
     }
 
     function runTransport(action) {
-        if (useCliampBackend) {
-            cliampBridge.runTransport(action)
-            return
-        }
         if (action === "toggle")
             ipcCallVoid("playback.toggle")
         else if (action === "next")
@@ -646,10 +630,6 @@ Item {
     }
 
     function ensurePlayer() {
-        if (useCliampBackend) {
-            cliampBridge.ensurePlayer()
-            return
-        }
         if (playerSocket.connected)
             return
         if (!startPlayerProc.running)
@@ -683,21 +663,16 @@ Item {
         onConnectedChanged: {
             if (connected) {
                 connectRetryTimer.stop()
-                if (!root.useCliampBackend) {
-                    root.ipcSubscribed = false
-                    root.ipcSynced = false
-                    Qt.callLater(root.subscribePlayer)
-                }
+                root.ipcSubscribed = false
+                root.ipcSynced = false
+                Qt.callLater(root.subscribePlayer)
                 Qt.callLater(root.flushIpcWaitQueue)
             } else {
                 root.ipcSubscribed = false
-                if (!root.useCliampBackend) {
-                    root.ipcSynced = false
-                    root.player = { state: "stopped", volume: 100 }
-                }
+                root.ipcSynced = false
+                root.player = { state: "stopped", volume: 100 }
                 root.failPendingIPC()
-                if (!root.useCliampBackend)
-                    Qt.callLater(root.ensurePlayer)
+                Qt.callLater(root.ensurePlayer)
             }
         }
     }
@@ -753,12 +728,7 @@ Item {
         id: scrobbleProc
     }
 
-    Component.onCompleted: {
-        if (useCliampBackend)
-            cliampBridge.ensurePlayer()
-        else
-            ensurePlayer()
-    }
+    Component.onCompleted: ensurePlayer()
 
     IpcHandler {
         target: "evoplayer"

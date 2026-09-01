@@ -253,36 +253,6 @@ func fetchJob(env paths.Env) (jobs.State, error) {
 	return st, err
 }
 
-func cancelJob(env paths.Env) error {
-	resp, err := cli.IPC(env, "job.cancel", nil)
-	if err != nil {
-		return err
-	}
-	if !resp.OK {
-		if resp.Error != "" {
-			return fmt.Errorf("%s", resp.Error)
-		}
-		return fmt.Errorf("cancel failed")
-	}
-	return nil
-}
-
-func runLibraryJob(env paths.Env, method string, params map[string]any) (jobs.State, error) {
-	var st jobs.State
-	resp, err := cli.IPC(env, method, params)
-	if err != nil {
-		return st, err
-	}
-	if !resp.OK {
-		if resp.Error != "" {
-			return st, fmt.Errorf("%s", resp.Error)
-		}
-		return st, fmt.Errorf("ipc failed")
-	}
-	err = decodeData(resp, &st)
-	return st, err
-}
-
 func warmWaveform(env paths.Env, path string) (string, error) {
 	resp, err := cli.IPC(env, "library.warm.waveform", map[string]string{"path": path})
 	if err != nil {

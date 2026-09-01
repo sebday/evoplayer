@@ -10,6 +10,7 @@ import (
 
 	"github.com/sebday/evoplayer/server/audio"
 	"github.com/sebday/evoplayer/server/paths"
+	"github.com/sebday/evoplayer/server/secrets"
 )
 
 const (
@@ -39,7 +40,7 @@ func SearchTrack(env paths.Env, trackPath string) (SearchResponse, error) {
 	if !audio.IsAudio(trackPath) {
 		return SearchResponse{}, fmt.Errorf("evoplayer: not an audio file: %s", trackPath)
 	}
-	loadSecrets()
+	secrets.Load()
 	meta, err := readTrackMeta(trackPath)
 	if err != nil {
 		return SearchResponse{}, err
@@ -65,7 +66,7 @@ func SearchTrack(env paths.Env, trackPath string) (SearchResponse, error) {
 }
 
 func SearchQuery(query string) SearchResponse {
-	loadSecrets()
+	secrets.Load()
 	q := strings.TrimSpace(query)
 	return SearchResponse{Query: q, Results: dedupe(searchDiscogsQuery(q))}
 }

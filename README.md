@@ -1,6 +1,6 @@
 # Evoplayer
 
-Inspired by Bjarne's cliamp, I made a local music player with just the features I want and use. Styled like btop, because btop looks awesome.
+Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. Styled like btop, because btop looks awesome.
 
 I used Soundcloud for years and ignored my mp3 collection. This TUI (and probably Quickshell) music player is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library.
 
@@ -11,7 +11,6 @@ cmd/evoplayer/     thin main (serve, tui, CLI)
 server/            daemon, playback, library, ipc, cli
 tui/               terminal player
 gui/               quickshell dashboard (optional, not default)
-tests/
 scripts/           install (binary + desktop entry)
 ```
 

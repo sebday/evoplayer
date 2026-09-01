@@ -100,23 +100,6 @@ func (a *Actor) Snapshot() Status {
 	return a.buildStatusLocked()
 }
 
-func (a *Actor) presentedPositionLocked() float64 {
-	if a.path == "" || a.paused {
-		return a.positionSec
-	}
-	if pos, ok := a.output.PresentedSeconds(a.sourceSampleRate); ok {
-		if a.durationSec > 0 && pos > a.durationSec {
-			return a.durationSec
-		}
-		return pos
-	}
-	pos := a.playbackAnchorSec + time.Since(a.playbackAnchorTime).Seconds()
-	if a.durationSec > 0 && pos > a.durationSec {
-		pos = a.durationSec
-	}
-	return pos
-}
-
 func (a *Actor) emit() {
 	a.mu.RLock()
 	st := a.buildStatusLocked()

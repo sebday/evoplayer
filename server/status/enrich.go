@@ -9,10 +9,6 @@ import (
 	"github.com/sebday/evoplayer/server/playback"
 )
 
-func Enrich(env paths.Env, st playback.Status) playback.Status {
-	return EnrichFull(env, st)
-}
-
 func enrichOnce(env paths.Env, st playback.Status) playback.Status {
 	if st.Path == "" {
 		return mergeSavedPlaylist(env, st)
@@ -66,7 +62,7 @@ func Saved(env paths.Env) playback.Status {
 	if saved.Volume != nil {
 		st.Volume = clampVolume(*saved.Volume)
 	}
-	return Enrich(env, st.WithLabels())
+	return EnrichFull(env, st.WithLabels())
 }
 
 func mergeSavedPlaylist(env paths.Env, st playback.Status) playback.Status {

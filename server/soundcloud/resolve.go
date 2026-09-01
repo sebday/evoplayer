@@ -79,14 +79,6 @@ func (c *Client) streamInfoURL(transcodingURL string) (string, error) {
 	return out.URL, nil
 }
 
-func pickTranscoding(track *Track) (Transcoding, error) {
-	order := orderedTranscodings(track)
-	if len(order) == 0 {
-		return Transcoding{}, fmt.Errorf("soundcloud: no transcodings for track %d", track.ID)
-	}
-	return order[0], nil
-}
-
 func orderedTranscodings(track *Track) []Transcoding {
 	var progressiveHQ, progressive, hls, encrypted []Transcoding
 	for _, t := range track.Media.Transcodings {

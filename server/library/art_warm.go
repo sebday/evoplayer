@@ -14,7 +14,7 @@ func artPathFolder(env Env, path string) string {
 	return filepath.Join(env.ArtDir, artFolderKey(env.MusicRoot, path)+".jpg")
 }
 
-func artPathLegacy(env Env, path string) string {
+func artPathTrack(env Env, path string) string {
 	return filepath.Join(env.ArtDir, cacheKey(env.MusicRoot, path)+".jpg")
 }
 
@@ -88,7 +88,7 @@ func EnsureArt(env Env, path string) (string, bool, error) {
 	if err := os.MkdirAll(env.ArtDir, 0o755); err != nil {
 		return "", false, err
 	}
-	trackArt := artPathLegacy(env, path)
+	trackArt := artPathTrack(env, path)
 	if isDecodableArtFile(trackArt) {
 		return trackArt, false, nil
 	}

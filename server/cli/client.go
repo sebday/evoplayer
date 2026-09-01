@@ -48,7 +48,7 @@ func EnsureDaemon(env paths.Env, exe string) error {
 		cmd.Stdout = devNull
 		cmd.Stderr = devNull
 	}
-	cmd.Env = append(os.Environ(), "EVOPLAYER_ROOT="+env.LegacyRoot)
+	cmd.Env = append(os.Environ(), "EVOPLAYER_ROOT="+env.RepoRoot)
 	var stderr bytes.Buffer
 	if cmd.Stderr == nil {
 		cmd.Stderr = &stderr
@@ -189,5 +189,5 @@ func PlaybackStatus(env paths.Env) (playback.Status, error) {
 	if err != nil {
 		return playback.Status{}, err
 	}
-	return status.Enrich(env, st), nil
+	return status.EnrichFull(env, st), nil
 }

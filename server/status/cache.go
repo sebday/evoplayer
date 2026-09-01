@@ -5,7 +5,6 @@ import (
 
 	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
-	"github.com/sebday/evoplayer/server/perf"
 	"github.com/sebday/evoplayer/server/playback"
 )
 
@@ -73,7 +72,6 @@ func EnrichLight(env paths.Env, st playback.Status) playback.Status {
 	m, ok := metaByPath[st.Path]
 	metaMu.RUnlock()
 	if ok {
-		perf.RecordCacheHit()
 		st = applyCached(st, m)
 		if st.Art == "" {
 			if art := library.ResolveArtPath(library.EnvFrom(env), st.Path); art != "" {
@@ -88,7 +86,6 @@ func EnrichLight(env paths.Env, st playback.Status) playback.Status {
 		}
 		return mergeSavedPlaylist(env, st)
 	}
-	perf.RecordCacheMiss()
 	return EnrichFull(env, st)
 }
 

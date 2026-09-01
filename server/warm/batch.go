@@ -73,8 +73,3 @@ func BatchTracks(env paths.Env, trackPaths []string, workers int, onProgress Bat
 	wg.Wait()
 	return results, nil
 }
-
-// BatchThumbs ensures list-row thumbs for paths that already have art cached.
-func BatchThumbs(env paths.Env, trackPaths []string, workers int) ([]Result, error) {
-	return BatchTracks(env, trackPaths, workers, nil)
-}

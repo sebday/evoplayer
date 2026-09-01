@@ -9,8 +9,6 @@ import (
 	"os"
 	"sync"
 	"time"
-
-	"github.com/sebday/evoplayer/server/perf"
 )
 
 type Request struct {
@@ -207,11 +205,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		}
 		if isSlowMethod(req.Method) {
 			go func(r Request) {
-				perf.IncIPCQueue()
-				defer perf.DecIPCQueue()
-				start := time.Now()
 				data, err := s.handler(r)
-				perf.RecordRequest(time.Since(start))
 				if err != nil {
 					_ = cc.writeJSON(responseFromError(r.ID, err))
 				} else {
@@ -220,9 +214,7 @@ func (s *Server) handleConn(conn net.Conn) {
 			}(req)
 			continue
 		}
-		start := time.Now()
 		data, err := s.handler(req)
-		perf.RecordRequest(time.Since(start))
 		if err != nil {
 			_ = cc.writeJSON(responseFromError(req.ID, err))
 		} else {

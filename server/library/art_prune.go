@@ -17,12 +17,12 @@ func PruneArt(env Env) (int, error) {
 		if !playback.IsSupportedPath(path) {
 			return nil
 		}
-		legacy := artPathLegacy(env, path)
+		trackArt := artPathTrack(env, path)
 		folder := artPathFolder(env, path)
-		if legacy == folder {
+		if trackArt == folder {
 			return nil
 		}
-		if !isDecodableArtFile(legacy) || !isDecodableArtFile(folder) {
+		if !isDecodableArtFile(trackArt) || !isDecodableArtFile(folder) {
 			return nil
 		}
 		if err := os.Remove(folder); err == nil {

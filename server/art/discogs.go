@@ -5,12 +5,17 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 )
 
 const PreviewSize = 600
+
+func discogsToken() string {
+	return strings.TrimSpace(os.Getenv("DISCOGS_TOKEN"))
+}
 
 var (
 	discogsFitInRe      = regexp.MustCompile(`/fit-in/[0-9]+x[0-9]+/`)

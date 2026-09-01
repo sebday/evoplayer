@@ -155,14 +155,6 @@ func (s *Scheduler) WaitIdleCtx(ctx context.Context) error {
 	}
 }
 
-func (s *Scheduler) WaitIdle() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for len(s.pending) > 0 || len(s.inflight) > 0 {
-		s.idle.Wait()
-	}
-}
-
 func (s *Scheduler) loop(ctx context.Context) {
 	sem := make(chan struct{}, s.workers)
 	for {

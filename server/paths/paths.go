@@ -16,7 +16,7 @@ type Env struct {
 	PlaylistDir    string
 	SocketPath     string
 	DaemonLock     string
-	LegacyRoot     string
+	RepoRoot       string
 	DisplayArtDir  string
 	LikesFile      string
 	TracksCacheDir string
@@ -33,29 +33,22 @@ func Load(repoRoot string) Env {
 	}
 	cache := os.Getenv("EVO_PLAYER_MUSIC_CACHE")
 	if cache == "" {
-		cache = os.Getenv("EVO_PLAYER_CACHE")
-		if cache == "" {
-			cache = filepath.Join(xdgCache(), "evoplayer")
-		}
+		cache = filepath.Join(xdgCache(), "evoplayer")
 	}
 	configPath := config.MusicConfigPath()
-	legacyPath := config.LegacyMusicConfigPath(state)
-	_ = config.MigrateMusicConfig(state)
-	root := config.ResolveRoot(configPath, legacyPath)
+	_ = config.EnsureMusicConfig()
+	root := config.ResolveRoot(configPath)
 	runtime := os.Getenv("XDG_RUNTIME_DIR")
 	if runtime == "" {
 		runtime = "/tmp"
 	}
 	socket := os.Getenv("EVOPLAYER_SOCKET")
 	if socket == "" {
-		socket = os.Getenv("EVOPLAYER_TEST_SOCK")
-	}
-	if socket == "" {
 		socket = filepath.Join(runtime, "evoplayer.sock")
 	}
-	legacyRoot := repoRoot
-	if legacyRoot == "" {
-		legacyRoot = "."
+	repo := repoRoot
+	if repo == "" {
+		repo = "."
 	}
 	return Env{
 		MusicRoot:      root,
@@ -66,7 +59,7 @@ func Load(repoRoot string) Env {
 		PlaylistDir:    filepath.Join(state, "playlists"),
 		SocketPath:     socket,
 		DaemonLock:     filepath.Join(state, "daemon.lock"),
-		LegacyRoot:     legacyRoot,
+		RepoRoot:       repo,
 		DisplayArtDir:  filepath.Join(xdgCache(), "omarchy", "display-art"),
 		LikesFile:      filepath.Join(state, "likes.json"),
 		TracksCacheDir: filepath.Join(cache, "tracks"),

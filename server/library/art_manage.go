@@ -53,7 +53,7 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 	}
 	destArt := artPathFolder(env, trackPath)
 	if scope == "track" {
-		destArt = artPathLegacy(env, trackPath)
+		destArt = artPathTrack(env, trackPath)
 	}
 	tmp := filepath.Join(env.ArtDir, fmt.Sprintf(".install.%d.jpg", time.Now().UnixNano()))
 	if err := normalizeJPG(imagePath, tmp); err != nil {
@@ -78,7 +78,7 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 	markArtDirty(env, trackPath, scope)
 	return InstallResult{
 		Art:     destArt,
-		Track:   artPathLegacy(env, trackPath),
+		Track:   artPathTrack(env, trackPath),
 		Folder:  artPathFolder(env, trackPath),
 		Content: content,
 		Scope:   scope,
@@ -134,10 +134,10 @@ func validateImageBytes(body []byte) error {
 }
 
 func ClearArt(env Env, trackPath string) error {
-	legacy := artPathLegacy(env, trackPath)
+	trackArt := artPathTrack(env, trackPath)
 	folder := artPathFolder(env, trackPath)
-	if legacy != folder && isDecodableArtFile(legacy) {
-		_ = os.Remove(legacy)
+	if trackArt != folder && isDecodableArtFile(trackArt) {
+		_ = os.Remove(trackArt)
 	} else if isDecodableArtFile(folder) {
 		_ = os.Remove(folder)
 	}

@@ -59,7 +59,7 @@ func CmdScrobble(env paths.Env, args []string) error {
 }
 
 func scrobbleAuth() error {
-	loadSecrets()
+	secrets.Load()
 	apiKey := os.Getenv("LASTFM_API_KEY")
 	secret := os.Getenv("LASTFM_API_SECRET")
 	if apiKey == "" || secret == "" {
@@ -78,7 +78,7 @@ func scrobbleAuth() error {
 }
 
 func scrobbleToken(token string) error {
-	loadSecrets()
+	secrets.Load()
 	apiKey := os.Getenv("LASTFM_API_KEY")
 	secret := os.Getenv("LASTFM_API_SECRET")
 	if token == "" || apiKey == "" || secret == "" {
@@ -93,7 +93,7 @@ func scrobbleToken(token string) error {
 }
 
 func scrobbleNowPlaying(env paths.Env) error {
-	loadSecrets()
+	secrets.Load()
 	if DaemonUp(env) {
 		_, err := IPC(env, "scrobble.nowplaying", nil)
 		return err
@@ -106,7 +106,7 @@ func scrobbleNowPlaying(env paths.Env) error {
 }
 
 func scrobbleSubmit(env paths.Env, started int64) error {
-	loadSecrets()
+	secrets.Load()
 	if DaemonUp(env) {
 		_, err := IPC(env, "scrobble.submit", map[string]int64{"started": started})
 		return err
@@ -180,8 +180,4 @@ func currentTrack(env paths.Env) (library.Track, error) {
 		path = saved.Path
 	}
 	return library.Meta(library.EnvFrom(env), path, "")
-}
-
-func loadSecrets() {
-	secrets.Load()
 }

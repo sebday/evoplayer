@@ -135,7 +135,7 @@ Successful mutations may return `{ "queue_revision": N }` in `data`.
 | `spectrum.get` | One-shot `{ "ok": true, "levels": [...], "sequence": N }` |
 | `viz.config` / `viz.config.set` / `viz.config.apply` | CAVA-style analyzer settings |
 
-CLI stream (NDJSON frames, cliamp-style):
+CLI stream (NDJSON frames):
 
 ```bash
 evoplayer viz stream --fps 30

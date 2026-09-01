@@ -179,10 +179,6 @@ func trackColWidthsPlaylist(total int) trackCols {
 	return trackCols{name: nameW, time: timeW, year: yearW}
 }
 
-func playlistHeartAndTime(heart, timeStr string, timeW int) string {
-	return heart + padLeft(clipTruncate(timeStr, timeW), timeW)
-}
-
 func renderTrackColumns(cols trackCols, cursor, heart, name, timeStr, year, genre string, selected, playing bool, fullWidth int) string {
 	nameCell := padRight(clipEllipsis(name, cols.name), cols.name)
 	if playing && !selected && !strings.Contains(name, "\x1b") {

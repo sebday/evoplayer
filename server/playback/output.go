@@ -125,41 +125,13 @@ func (o *PlayerOutput) Clear() {
 	}
 }
 
-// SubmittedSamples returns stereo frames handed to the audio backend.
-func (o *PlayerOutput) SubmittedSamples() int64 {
-	return o.submittedSamples.Load()
-}
-
-// ReanchorPresentation resets the sample counter so PresentedSeconds matches a seek target.
+// ReanchorPresentation resets the sample counter so seek targets stay consistent with submitted audio.
 func (o *PlayerOutput) ReanchorPresentation(seconds float64, sampleRate SampleRate) {
 	if sampleRate <= 0 {
 		sampleRate = outputSampleRate
 	}
 	delay := int64(o.PresentationDelaySamples())
 	o.submittedSamples.Store(int64(seconds*float64(sampleRate)) + delay)
-}
-
-// PresentedSeconds estimates audible playback time from submitted samples minus device delay.
-func (o *PlayerOutput) PresentedSeconds(sampleRate SampleRate) (float64, bool) {
-	o.mu.Lock()
-	player := o.player
-	o.mu.Unlock()
-	if player == nil {
-		return 0, false
-	}
-	submitted := o.submittedSamples.Load()
-	if submitted <= 0 {
-		return 0, false
-	}
-	delay := int64(o.PresentationDelaySamples())
-	presented := submitted - delay
-	if presented < 0 {
-		presented = 0
-	}
-	if sampleRate <= 0 {
-		sampleRate = outputSampleRate
-	}
-	return float64(presented) / float64(sampleRate), true
 }
 
 func (o *PlayerOutput) Close() {

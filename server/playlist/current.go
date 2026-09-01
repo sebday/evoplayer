@@ -80,21 +80,7 @@ func ClearCurrent(env Env) error {
 }
 
 func ReadCurrentPaths(env Env) ([]string, error) {
-	paths, err := readM3UPaths(env.currentM3U())
-	if err != nil {
-		return nil, err
-	}
-	if len(paths) > 0 {
-		return paths, nil
-	}
-	legacy := filepath.Join(env.StateDir, "current.m3u")
-	legacyPaths, err := readM3UPaths(legacy)
-	if err != nil || len(legacyPaths) == 0 {
-		return paths, nil
-	}
-	_ = SaveCurrent(env, legacyPaths)
-	_ = os.Remove(legacy)
-	return legacyPaths, nil
+	return readM3UPaths(env.currentM3U())
 }
 
 func ExtendCurrent(env Env, currentPath string) (ExtendResult, []string, []string, bool, error) {

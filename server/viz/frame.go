@@ -84,11 +84,6 @@ func WriteFrame(path string, levels []float32) error {
 	return w.Write(levels)
 }
 
-func ReadFrame(path string) ([]float64, error) {
-	var r FrameReader
-	return r.Read(path)
-}
-
 // FrameWriter keeps a reusable buffer and an open file so the analyzer can
 // publish frames without a temp-file rename on every tick.
 type FrameWriter struct {
