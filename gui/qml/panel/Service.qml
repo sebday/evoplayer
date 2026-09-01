@@ -13,12 +13,6 @@ Item {
     property int vizRevision: 0
     property int vizSequence: 0
     property int vizGeneration: 0
-    property string lastNotifiedPath: ""
-    property bool lastNotifiedHadArt: false
-    property string lastNotifiedArt: ""
-    property string lastNotifiedGenre: ""
-    property string lastNotifiedYear: ""
-    property bool lastNotifiedLiked: false
     property string scrobblePath: ""
     property bool scrobbleSubmitted: false
     property real scrobbleStartPos: -1
@@ -43,6 +37,25 @@ Item {
 
     property bool scanNoticeShown: false
     readonly property int scanNotifyId: 42421
+
+    function omarchyNotify(opts) {
+        var o = opts || {}
+        var args = ["omarchy", "notification", "send", "--app-name", PluginIds.pluginId]
+        if (o.urgency)
+            args.push("-u", String(o.urgency))
+        if (o.timeoutMs !== undefined)
+            args.push("-t", String(o.timeoutMs))
+        if (o.replaceId !== undefined)
+            args.push("-r", String(o.replaceId))
+        var image = String(o.image || "").trim()
+        if (image)
+            args.push("--image", image)
+        args.push(String(o.summary || "Evoplayer"))
+        var body = String(o.body || "")
+        if (body)
+            args.push(body)
+        Quickshell.execDetached(args)
+    }
 
     signal daemonJobUpdated(var data)
 
@@ -234,13 +247,8 @@ Item {
         player = next
         var state = String(player.state || "")
         var pathChanged = newPath !== prevPath
-        var artChanged = String(next.art || "") !== prevArt
-        var metaChanged = newPath !== "" && newPath === prevPath
-            && (String(next.genre || "").trim() !== prevGenre
-                || String(next.year || "").trim() !== prevYear
-                || !!next.liked !== prevLiked)
         if (newPath && state === "playing") {
-            if (pathChanged || state !== prevState || artChanged || metaChanged)
+            if (pathChanged || state !== prevState)
                 notifyNowPlaying()
             maybeSubmitScrobble()
         }
@@ -304,17 +312,14 @@ Item {
     }
 
     function showScanNotice(body, timeoutMs) {
-        var summary = "Evoplayer"
-        var text = String(body || "")
-        var args = ["notify-send", "-a", PluginIds.pluginId, "-r", String(scanNotifyId)]
-        if (timeoutMs === 0) {
-            args.push("-u", "critical")
-            args.push("-t", "0")
-        } else {
-            args.push("-t", String(Math.max(1, timeoutMs || 3000)))
-        }
-        args.push(summary, text)
-        Quickshell.execDetached(args)
+        var urgent = timeoutMs === 0
+        omarchyNotify({
+            summary: "Evoplayer",
+            body: String(body || ""),
+            replaceId: scanNotifyId,
+            urgency: urgent ? "critical" : "normal",
+            timeoutMs: urgent ? 0 : Math.max(1, timeoutMs || 3000)
+        })
     }
 
     function applyWarmPayload(data) {
@@ -429,22 +434,11 @@ Item {
     }
 
     function showBrief(title, body, durationMs) {
-        var summary = String(title || "Evoplayer")
-        var text = String(body || "")
-        var timeout = Math.max(1, Math.round((durationMs || 3000) / 1000))
-        Quickshell.execDetached(["notify-send", "-t", String(timeout), summary, text])
-    }
-
-    function showMedia(opts) {
-        var o = opts || {}
-        var title = String(o.title || "Unknown")
-        var artist = String(o.artist || "")
-        var body = artist ? (title + " — " + artist) : title
-        var args = ["notify-send", "-a", PluginIds.pluginId, title, body]
-        var art = String(o.art || "").trim()
-        if (art)
-            args = ["notify-send", "-a", PluginIds.pluginId, "-i", art, title, body]
-        Quickshell.execDetached(args)
+        omarchyNotify({
+            summary: String(title || "Evoplayer"),
+            body: String(body || ""),
+            timeoutMs: durationMs || 3000
+        })
     }
 
     function notifyDisplayArtReady(trackPath, artPath) {
@@ -470,37 +464,14 @@ Item {
         }
     }
 
-    function pushMediaNotification(artPath) {
-        var path = String(player.path || "")
-        if (!path)
-            return
-        var art = String(artPath || "")
-        var genre = String(player.genre || "").trim()
-        var year = String(player.year || "").trim()
-        var liked = !!player.liked
-        if (path === lastNotifiedPath && art === lastNotifiedArt
-                && genre === lastNotifiedGenre && year === lastNotifiedYear
-                && liked === lastNotifiedLiked)
-            return
-        var needsArtUpdate = path === lastNotifiedPath && art !== "" && !lastNotifiedHadArt
-        showMedia({
-            app: PluginIds.pluginId,
-            title: String(player.title || "Unknown"),
-            artist: String(player.artist || ""),
-            art: art,
-            path: path,
-            genre: genre,
-            year: year,
-            liked: liked
-        })
-        if (needsArtUpdate)
-            runScrobble(["touch"])
-        lastNotifiedPath = path
-        lastNotifiedHadArt = art !== ""
-        lastNotifiedArt = art
-        lastNotifiedGenre = genre
-        lastNotifiedYear = year
-        lastNotifiedLiked = liked
+    function cacheDisplayArt(path) {
+        if (!notifyArtProc.running) {
+            notifyArtProc.requestedPath = path
+            notifyArtProc.command = playerCmd(["art", "notify-cache", path])
+            notifyArtProc.running = true
+        } else {
+            notifyArtProc.pendingPath = path
+        }
     }
 
     function notifyNowPlaying() {
@@ -509,17 +480,7 @@ Item {
         var path = String(player.path || "")
         if (!path)
             return
-        var hasArt = String(player.art || "") !== ""
-        var genre = String(player.genre || "").trim()
-        var year = String(player.year || "").trim()
-        var liked = !!player.liked
-        var scrobbleTrackChanged = path !== scrobblePath
-        var pathChanged = path !== lastNotifiedPath
-        var needsArtUpdate = path === lastNotifiedPath && hasArt && !lastNotifiedHadArt
-        var needsMetaUpdate = path === lastNotifiedPath
-            && (genre !== lastNotifiedGenre || year !== lastNotifiedYear || liked !== lastNotifiedLiked)
-
-        if (scrobbleTrackChanged) {
+        if (path !== scrobblePath) {
             var now = Date.now()
             if (path !== lastNowPlayingScrobblePath || now - lastNowPlayingScrobbleAt >= 2000) {
                 runScrobble(["nowplaying"])
@@ -528,38 +489,9 @@ Item {
             }
             beginScrobbleSession()
             maybeWarmTrack()
+            if (String(player.art || "") !== "")
+                cacheDisplayArt(path)
         }
-
-        if (!pathChanged && !needsArtUpdate && !needsMetaUpdate)
-            return
-
-        if (pathChanged) {
-            lastNotifiedPath = path
-            lastNotifiedHadArt = false
-            lastNotifiedArt = ""
-            lastNotifiedGenre = ""
-            lastNotifiedYear = ""
-            lastNotifiedLiked = false
-        }
-
-        if (hasArt) {
-            if (pathChanged || needsArtUpdate) {
-                if (!notifyArtProc.running) {
-                    notifyArtProc.requestedPath = path
-                    notifyArtProc.command = playerCmd(["art", "notify-cache", path])
-                    notifyArtProc.running = true
-                } else {
-                    notifyArtProc.pendingPath = path
-                }
-                return
-            }
-            if (needsMetaUpdate) {
-                pushMediaNotification(String(player.art || ""))
-                return
-            }
-            return
-        }
-        pushMediaNotification("")
     }
 
     // Last.fm: track > 30s; listen min(half duration, 4 minutes).
@@ -708,9 +640,6 @@ Item {
                 var requested = String(notifyArtProc.requestedPath || "")
                 notifyArtProc.requestedPath = ""
                 var cached = String(text || "").trim()
-                var currentPath = String(root.player.path || "")
-                if (requested && currentPath === requested)
-                    root.pushMediaNotification(cached)
                 if (cached && requested)
                     root.notifyDisplayArtReady(requested, cached)
                 var pending = String(notifyArtProc.pendingPath || "")

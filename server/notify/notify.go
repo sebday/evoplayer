@@ -17,32 +17,14 @@ func Enabled() bool {
 	if os.Getenv("EVOPLAYER_NOTIFY") == "0" {
 		return false
 	}
-	return backend() != ""
-}
-
-func backend() string {
-	if _, err := exec.LookPath("omarchy"); err == nil {
-		return "omarchy"
-	}
-	if _, err := exec.LookPath("notify-send"); err == nil {
-		return "notify-send"
-	}
-	return ""
+	_, err := exec.LookPath("omarchy")
+	return err == nil
 }
 
 func send(icon, summary, body string) {
 	if !Enabled() {
 		return
 	}
-	switch backend() {
-	case "omarchy":
-		sendOmarchy(icon, summary, body)
-	default:
-		sendNotifySend(icon, summary, body)
-	}
-}
-
-func sendOmarchy(icon, summary, body string) {
 	args := []string{
 		"notification", "send",
 		"--app-name", AppID,
@@ -59,21 +41,6 @@ func sendOmarchy(icon, summary, body string) {
 		args = append(args, body)
 	}
 	cmd := exec.Command("omarchy", args...)
-	_ = cmd.Start()
-}
-
-func sendNotifySend(icon, summary, body string) {
-	args := []string{"-a", AppID, "-t", "3000"}
-	if icon != "" {
-		if st, err := os.Stat(icon); err == nil && !st.IsDir() {
-			args = append(args, "-i", icon)
-		}
-	}
-	args = append(args, summary)
-	if body != "" {
-		args = append(args, body)
-	}
-	cmd := exec.Command("notify-send", args...)
 	_ = cmd.Start()
 }
 
