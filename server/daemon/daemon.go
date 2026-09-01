@@ -331,6 +331,26 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		return map[string]any{"queue_revision": d.Actor.QueueRevision()}, nil
+	case "queue.move":
+		var p struct {
+			Index      int     `json:"index"`
+			Delta      int     `json:"delta"`
+			IfRevision *uint64 `json:"if_revision"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, ipc.ErrInvalidParams("%v", err)
+		}
+		if err := checkQueueRevision(d.Actor.QueueRevision(), p.IfRevision); err != nil {
+			return nil, err
+		}
+		if err := d.Actor.MoveQueueIndex(p.Index, p.Delta); err != nil {
+			return nil, err
+		}
+		if err := d.saveCurrentQueue(); err != nil {
+			return nil, err
+		}
+		d.broadcastStateFull()
+		return map[string]any{"queue_revision": d.Actor.QueueRevision()}, nil
 	case "queue.append_folder":
 		var p struct {
 			Path       string  `json:"path"`

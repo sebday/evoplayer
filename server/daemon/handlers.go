@@ -237,6 +237,46 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		status.InvalidateMeta(res.From)
 		status.InvalidateMeta(res.To)
 		return res, nil
+	case "library.track.tags.get":
+		var p struct {
+			Path string `json:"path"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		tags, err := library.ReadTrackTags(p.Path)
+		if err := wrapJobErr(err); err != nil {
+			return nil, err
+		}
+		return tags, nil
+	case "library.track.tags.set":
+		var p struct {
+			Path   string `json:"path"`
+			Title  string `json:"title"`
+			Artist string `json:"artist"`
+			Year   string `json:"year"`
+			Genre  string `json:"genre"`
+			Label  string `json:"label"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		libEnv := library.EnvFrom(d.Env)
+		row, err := library.UpdateTrackTags(libEnv, p.Path, library.TrackTagsPatch{
+			Title:  p.Title,
+			Artist: p.Artist,
+			Year:   p.Year,
+			Genre:  p.Genre,
+			Label:  p.Label,
+		})
+		if err := wrapJobErr(err); err != nil {
+			return nil, err
+		}
+		status.InvalidateMeta(p.Path)
+		if snap := d.Actor.Snapshot(); snap.Path == p.Path {
+			d.broadcastStateFull()
+		}
+		return row, nil
 	case "library.current.load":
 		return playlist.LoadCurrent(playlist.EnvFrom(d.Env))
 	case "library.current.save":

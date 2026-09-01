@@ -400,6 +400,36 @@ func (a *Actor) Append(paths []string) {
 	})
 }
 
+func (a *Actor) MoveQueueIndex(index, delta int) error {
+	if delta != -1 && delta != 1 {
+		return fmt.Errorf("invalid queue move delta: %d", delta)
+	}
+	return a.dispatchErr(func() error {
+		a.mu.Lock()
+		if a.shuffle {
+			a.mu.Unlock()
+			return fmt.Errorf("cannot reorder queue while shuffle is on")
+		}
+		n := len(a.queue)
+		j := index + delta
+		if index < 0 || index >= n || j < 0 || j >= n {
+			a.mu.Unlock()
+			return fmt.Errorf("cannot move track")
+		}
+		a.queue[index], a.queue[j] = a.queue[j], a.queue[index]
+		switch a.index {
+		case index:
+			a.index = j
+		case j:
+			a.index = index
+		}
+		a.bumpQueueRevLocked()
+		a.mu.Unlock()
+		a.emit()
+		return nil
+	})
+}
+
 func (a *Actor) Toggle() error {
 	return a.dispatchErr(func() error {
 		a.mu.Lock()

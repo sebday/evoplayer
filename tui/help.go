@@ -14,6 +14,7 @@ type helpRow struct {
 func helpKeys() []helpRow {
 	return []helpRow{
 		{"↑↓", "move selection"},
+		{"shift+↑↓", "reorder playlist"},
 		{"pgup dn", "page scroll"},
 		{"tab", "files / playlist"},
 		{"shift+tab", "playlist / files"},
@@ -29,6 +30,8 @@ func helpKeys() []helpRow {
 		{"f", "folder"},
 		{"l", "like"},
 		{"m", "move"},
+		{"e", "edit tags"},
+		{"tab", "next tag field (in editor)"},
 		{"L", "like playing"},
 		{"a", "art"},
 		{"s", "art (track)"},

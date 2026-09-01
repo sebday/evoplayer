@@ -197,6 +197,17 @@ func appendPaths(env paths.Env, pathsList []string) error {
 	return nil
 }
 
+func moveQueueIndex(env paths.Env, index, delta int) error {
+	resp, err := cli.IPC(env, "queue.move", map[string]int{"index": index, "delta": delta})
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return fmt.Errorf("%s", resp.Error)
+	}
+	return nil
+}
+
 func togglePlayback(env paths.Env) error {
 	_, err := cli.IPC(env, "playback.toggle", nil)
 	return err
@@ -230,6 +241,33 @@ func toggleLike(env paths.Env, path string) (playlist.FavoriteResult, error) {
 func moveTrack(env paths.Env, path, folder string) (library.MoveTrackResult, error) {
 	var out library.MoveTrackResult
 	resp, err := cli.IPC(env, "library.track.move", map[string]string{"path": path, "folder": folder})
+	if err != nil {
+		return out, err
+	}
+	err = decodeData(resp, &out)
+	return out, err
+}
+
+func fetchTrackTags(env paths.Env, path string) (library.TrackTags, error) {
+	var out library.TrackTags
+	resp, err := cli.IPC(env, "library.track.tags.get", map[string]string{"path": path})
+	if err != nil {
+		return out, err
+	}
+	err = decodeData(resp, &out)
+	return out, err
+}
+
+func setTrackTags(env paths.Env, path string, tags library.TrackTags) (library.Track, error) {
+	var out library.Track
+	resp, err := cli.IPC(env, "library.track.tags.set", map[string]string{
+		"path":   path,
+		"title":  tags.Title,
+		"artist": tags.Artist,
+		"year":   tags.Year,
+		"genre":  tags.Genre,
+		"label":  tags.Label,
+	})
 	if err != nil {
 		return out, err
 	}

@@ -268,8 +268,13 @@ func (m model) browseHintLegend() string {
 func (m model) renderPlaylistPane(g playerGeom) string {
 	innerW := paneInnerWidth(g.playlistW)
 	innerH := paneInnerHeight(g.bodyH)
-	bottomLeft := hint("l", "like", 3, m.focus == focusPlaylist) + "  " + hint("m", "move", 3, m.focus == focusPlaylist)
-	if m.movePicker {
+	bottomLeft := hint("l", "like", 3, m.focus == focusPlaylist) + "  " + hint("m", "move", 3, m.focus == focusPlaylist) + "  " + hint("e", "edit", 3, m.focus == focusPlaylist)
+	if !m.status.Shuffle && m.focus == focusPlaylist {
+		bottomLeft += "  " + hint("⇧↑↓", "reorder", 3, true)
+	}
+	if m.tagEditor {
+		bottomLeft = hint("tab", "next", 3, m.focus == focusPlaylist) + "  " + hint("⏎", "save", 3, m.focus == focusPlaylist)
+	} else if m.movePicker {
 		bottomLeft = hint("⏎", "move", 3, m.focus == focusPlaylist)
 	} else if m.artPicker {
 		bottomLeft = hint("⏎", "set", 3, m.focus == focusPlaylist) + "  " + hint("s", "track", 3, m.focus == focusPlaylist)
@@ -447,6 +452,8 @@ func (m model) renderPlaylistRow(item navItem, i, width int, focused bool) strin
 
 func (m model) renderPlaylistInner(width, innerH int) string {
 	switch {
+	case m.tagEditor:
+		return clipLines(m.renderTagEditor(width), innerH)
 	case m.movePicker:
 		return clipLines(m.renderMovePicker(width), innerH)
 	case m.artPicker:
@@ -537,6 +544,9 @@ func (m model) browseLegend(maxW int) string {
 }
 
 func (m model) playlistLegend(maxW int) string {
+	if m.tagEditor {
+		return clipWidth("edit tags", maxW)
+	}
 	if m.movePicker {
 		return clipWidth("move", maxW)
 	}

@@ -216,6 +216,20 @@ func yearFromText(raw string) string {
 	return ""
 }
 
+// Write updates ID3/MP4 tags on path. Keys: title, artist, album, year, genre, publisher, catalognumber.
+func Write(path string, targets map[string]string) error {
+	if !isAudio(path) {
+		return fmt.Errorf("not an audio file: %s", path)
+	}
+	if len(targets) == 0 {
+		return nil
+	}
+	if !writeTags(path, targets) {
+		return fmt.Errorf("failed to write tags: %s", path)
+	}
+	return nil
+}
+
 func writeTags(path string, targets map[string]string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {

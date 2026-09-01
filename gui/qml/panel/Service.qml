@@ -37,6 +37,8 @@ Item {
 
     property bool scanNoticeShown: false
     readonly property int scanNotifyId: 42421
+    readonly property int notifyNormalMs: 5000
+    readonly property int notifyLowMs: 3000
 
     function omarchyNotify(opts) {
         var o = opts || {}
@@ -307,7 +309,7 @@ Item {
                 var errText = String(data.error || "").toLowerCase()
                 msg = errText.indexOf("cancel") >= 0 ? "Scan stopped" : "Library scan failed"
             }
-            showScanNotice(msg, 3000)
+            showScanNotice(msg, notifyNormalMs)
         }
     }
 
@@ -318,7 +320,7 @@ Item {
             body: String(body || ""),
             replaceId: scanNotifyId,
             urgency: urgent ? "critical" : "normal",
-            timeoutMs: urgent ? 0 : Math.max(1, timeoutMs || 3000)
+            timeoutMs: urgent ? 0 : Math.max(1, timeoutMs || notifyNormalMs)
         })
     }
 
@@ -437,7 +439,7 @@ Item {
         omarchyNotify({
             summary: String(title || "Evoplayer"),
             body: String(body || ""),
-            timeoutMs: durationMs || 3000
+            timeoutMs: durationMs || notifyNormalMs
         })
     }
 

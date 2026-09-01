@@ -72,6 +72,19 @@ type model struct {
 	movePickSavedOffset int
 	movePickSavedFocus focus
 	movePickSaved      bool
+	tagEditor          bool
+	tagEditPath        string
+	tagEditBusy        bool
+	tagEditFocus       int
+	tagEditTitle       textinput.Model
+	tagEditArtist      textinput.Model
+	tagEditYear        textinput.Model
+	tagEditGenre       textinput.Model
+	tagEditLabel       textinput.Model
+	tagEditSavedIdx    int
+	tagEditSavedOffset int
+	tagEditSavedFocus  focus
+	tagEditSaved       bool
 	frames             *frameCache
 	wavePeaks          []int
 	wavePath           string
@@ -359,7 +372,7 @@ func (m *model) unfreezeFrame() {
 }
 
 func (m model) canPatchLists() bool {
-	return !m.artPicker && !m.movePicker && !m.helpSelected() &&
+	return !m.artPicker && !m.movePicker && !m.tagEditor && !m.helpSelected() &&
 		m.frames != nil && m.frames.view != "" && m.frames.browseRow > 0
 }
 
@@ -377,7 +390,7 @@ func (m model) patchFocusedList() (tea.Model, tea.Cmd) {
 }
 
 func (m model) canFreeze() bool {
-	return !m.artPicker && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
+	return !m.artPicker && !m.tagEditor && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -671,6 +684,59 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.patchPlaylist()
 		}
 		return m, tea.Batch(m.applyFilter(), loadBrowse(m.env, m.browsePath))
+	case tagEditOpenMsg:
+		if !m.tagEditor || msg.path != m.tagEditPath {
+			return m, nil
+		}
+		m.tagEditBusy = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		m.tagEditTitle.SetValue(msg.tags.Title)
+		m.tagEditArtist.SetValue(msg.tags.Artist)
+		m.tagEditYear.SetValue(msg.tags.Year)
+		m.tagEditGenre.SetValue(msg.tags.Genre)
+		m.tagEditLabel.SetValue(msg.tags.Label)
+		var cmd tea.Cmd
+		m, cmd = m.focusTagEditField()
+		return m, cmd
+	case tagEditMsg:
+		m.tagEditBusy = false
+		if msg.err != nil {
+			m.err = msg.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		m = m.restoreTagEditorCursor()
+		row := msg.track
+		for i := range m.queue {
+			if m.queue[i].Path == msg.path {
+				m.queue[i] = row
+			}
+		}
+		for i := range m.browse {
+			if m.browse[i].Type == "track" && m.browse[i].Track.Path == msg.path {
+				m.browse[i].Track = row
+			}
+		}
+		for i := range m.browseAll {
+			if m.browseAll[i].Type == "track" && m.browseAll[i].Track.Path == msg.path {
+				m.browseAll[i].Track = row
+			}
+		}
+		if m.status.Path == msg.path {
+			m.status.Title = row.Title
+			m.status.Artist = row.Artist
+			m.status.Year = row.Year
+			m.status.Label = row.Label
+			m.patchNowPlaying()
+		}
+		if m.canPatchLists() {
+			m.patchPlaylist()
+		}
+		return m, m.applyFilter()
 	case artSearchMsg:
 		if !m.artPicker || msg.path != m.artPickPath {
 			return m, nil
@@ -835,6 +901,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	if m.tagEditor {
+		return m.handleTagEditorKey(msg)
+	}
+
 	if m.movePicker {
 		switch msg.String() {
 		case "esc":
@@ -890,6 +960,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if m.movePicker {
 			return m.closeMovePicker()
+		}
+		if m.tagEditor {
+			return m.closeTagEditor()
 		}
 		if m.artPicker {
 			return m.closeArtPicker()
@@ -956,13 +1029,21 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.likePathCmd(t.Path)
 	case "m":
-		if m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker {
+		if m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker || m.tagEditor {
 			return m, nil
 		}
 		if m.focus != focusPlaylist {
 			return m, nil
 		}
 		return m.openMovePicker()
+	case "e":
+		if m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker || m.tagEditor {
+			return m, nil
+		}
+		if m.focus != focusPlaylist {
+			return m, nil
+		}
+		return m.openTagEditor()
 	case "L":
 		t, ok := m.playingLikeTarget()
 		if !ok || t.Path == "" {
@@ -1015,6 +1096,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.openArtPicker()
+	case "shift+up", "shift+down":
+		delta := 1
+		if msg.String() == "shift+up" {
+			delta = -1
+		}
+		return m.moveQueueEntry(delta)
 	case "up", "down", "pgup", "pgdown":
 		if msg.String() == "up" {
 			if m.focus == focusBrowse && (m.browseLen() == 0 || m.browseIdx <= 0) {
@@ -1065,7 +1152,7 @@ func (m *model) cycleFocusDir(dir int) tea.Cmd {
 }
 
 func (m *model) focusPlaylistOnPlayingOrCaret() {
-	if m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker {
+	if m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker || m.tagEditor {
 		return
 	}
 	path := strings.TrimSpace(m.status.Path)
@@ -1120,7 +1207,7 @@ func (m model) playingTrackIndex() int {
 }
 
 func (m *model) scrollPlaylistForPlayingTrack() bool {
-	if m.focus != focusPlaylist || m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker {
+	if m.focus != focusPlaylist || m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker || m.tagEditor {
 		return false
 	}
 	idx := m.playingTrackIndex()
@@ -1281,6 +1368,34 @@ func (m model) queueOp(fn func() error) (tea.Model, tea.Cmd) {
 		}
 		return tickMsg{}
 	}, m.refreshQueueUI())
+}
+
+func (m model) moveQueueEntry(delta int) (tea.Model, tea.Cmd) {
+	if m.focus != focusPlaylist || m.helpSelected() || m.settingsSelected() || m.artPicker || m.movePicker || m.tagEditor {
+		return m, nil
+	}
+	if m.status.Shuffle {
+		return m, nil
+	}
+	n := m.playlistLen()
+	if n < 2 {
+		return m, nil
+	}
+	idx := m.playlistIdx
+	j := idx + delta
+	if j < 0 || j >= n {
+		return m, nil
+	}
+	m.queue[idx], m.queue[j] = m.queue[j], m.queue[idx]
+	m.queueFiltered[idx], m.queueFiltered[j] = m.queueFiltered[j], m.queueFiltered[idx]
+	m.playlistIdx = j
+	m.ensurePlaylistVisible()
+	env := m.env
+	moveIdx := idx
+	moveDelta := delta
+	return m.queueOp(func() error {
+		return moveQueueIndex(env, moveIdx, moveDelta)
+	})
 }
 
 func (m model) queueSelectedFolder() (tea.Model, tea.Cmd) {
@@ -1637,6 +1752,9 @@ func (m model) playlistLen() int {
 	}
 	if m.movePicker {
 		return len(m.moveFolders)
+	}
+	if m.tagEditor {
+		return 0
 	}
 	if m.helpSelected() || m.settingsSelected() {
 		return 0

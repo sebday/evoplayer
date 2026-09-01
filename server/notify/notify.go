@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/sebday/evoplayer/server/library"
@@ -13,6 +14,9 @@ import (
 
 const AppID = "evo.evoplayer"
 
+// Match evo.monitors Service.qml low popup duration default.
+const LowTimeoutMs = 3000
+
 func Enabled() bool {
 	if os.Getenv("EVOPLAYER_NOTIFY") == "0" {
 		return false
@@ -21,15 +25,21 @@ func Enabled() bool {
 	return err == nil
 }
 
-func send(icon, summary, body string) {
+func send(icon, summary, body, urgency string, timeoutMs int) {
 	if !Enabled() {
 		return
+	}
+	if urgency == "" {
+		urgency = "low"
+	}
+	if timeoutMs <= 0 {
+		timeoutMs = LowTimeoutMs
 	}
 	args := []string{
 		"notification", "send",
 		"--app-name", AppID,
-		"-u", "normal",
-		"-t", "3000",
+		"-u", urgency,
+		"-t", strconv.Itoa(timeoutMs),
 	}
 	if icon != "" {
 		if st, err := os.Stat(icon); err == nil && !st.IsDir() {
@@ -86,7 +96,7 @@ func iconPath(st playback.Status) string {
 }
 
 func NowPlaying(st playback.Status) {
-	send(iconPath(st), trackSummary(st), trackDetail(st))
+	send(iconPath(st), trackSummary(st), trackDetail(st), "low", LowTimeoutMs)
 }
 
 func Transport(state string, st playback.Status) {
@@ -94,7 +104,7 @@ func Transport(state string, st playback.Status) {
 	if state == "paused" {
 		summary = "Paused"
 	}
-	send(iconPath(st), summary, trackLine(st))
+	send(iconPath(st), summary, trackLine(st), "low", LowTimeoutMs)
 }
 
 func Favorite(env paths.Env, liked bool, path string) {
@@ -110,5 +120,5 @@ func Favorite(env paths.Env, liked bool, path string) {
 	if !liked {
 		summary = "Unliked"
 	}
-	send(iconPath(st), summary, trackLine(st))
+	send(iconPath(st), summary, trackLine(st), "low", LowTimeoutMs)
 }
