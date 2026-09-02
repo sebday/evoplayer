@@ -48,19 +48,12 @@ func (m model) tagEditInputs() [5]*textinput.Model {
 }
 
 func (m model) blurTagEditFields() model {
-	for _, ti := range m.tagEditInputs() {
-		ti.Blur()
-	}
+	m.tagEditTitle.Blur()
+	m.tagEditArtist.Blur()
+	m.tagEditYear.Blur()
+	m.tagEditGenre.Blur()
+	m.tagEditLabel.Blur()
 	return m
-}
-
-func (m model) tagEditFocusedIndex() int {
-	for i, ti := range m.tagEditInputs() {
-		if ti.Focused() {
-			return i
-		}
-	}
-	return -1
 }
 
 func (m model) focusTagEditField() (model, tea.Cmd) {
@@ -86,9 +79,11 @@ func (m model) focusTagEditField() (model, tea.Cmd) {
 
 func (m model) configureTagEditWidths(width int) model {
 	inner := max(8, width-4)
-	for _, ti := range m.tagEditInputs() {
-		ti.Width = max(6, inner)
-	}
+	m.tagEditTitle.Width = max(6, inner)
+	m.tagEditArtist.Width = max(6, inner)
+	m.tagEditYear.Width = max(6, inner)
+	m.tagEditGenre.Width = max(6, inner)
+	m.tagEditLabel.Width = max(6, inner)
 	return m
 }
 
@@ -101,15 +96,13 @@ func (m model) renderTagEditor(width int) string {
 	}
 	m = m.configureTagEditWidths(width)
 	var b strings.Builder
-	b.WriteString(styleMuted().Render("tab field · type to edit · enter next/save · esc cancel"))
-	b.WriteByte('\n')
 	if m.err != "" {
 		b.WriteString(styleWarn().Render(clipWidth(m.err, width)))
 		b.WriteByte('\n')
 	}
 	labels := []string{"title", "artist", "year", "genre", "label"}
 	for i, ti := range m.tagEditInputs() {
-		active := m.tagEditFocusedIndex() == i
+		active := m.tagEditFocus == i
 		if active {
 			b.WriteString(styleSelected().Render(labels[i]))
 		} else {
@@ -164,6 +157,7 @@ func (m model) restoreTagEditorCursor() model {
 	m.tagEditor = false
 	m.tagEditBusy = false
 	m.tagEditPath = ""
+	m.tagEditPendingFreeze = false
 	m = m.blurTagEditFields()
 	if m.tagEditSaved {
 		m.playlistIdx = m.tagEditSavedIdx
@@ -177,6 +171,7 @@ func (m model) restoreTagEditorCursor() model {
 func (m model) closeTagEditor() (tea.Model, tea.Cmd) {
 	m.err = ""
 	m = m.restoreTagEditorCursor()
+	m.unfreezeFrame()
 	return m, nil
 }
 
@@ -197,60 +192,49 @@ func (m model) applyTagEditor() (tea.Model, tea.Cmd) {
 	return m, saveTrackTags(env, path, tags)
 }
 
-func (m model) tagEditAdvance(delta int) (model, tea.Cmd) {
-	idx := m.tagEditFocusedIndex()
-	if idx < 0 {
-		idx = m.tagEditFocus
-	}
-	m.tagEditFocus = idx + delta
-	if m.tagEditFocus >= len(m.tagEditInputs()) {
+func (m model) tagEditMoveFocus(delta int) (model, tea.Cmd) {
+	next := m.tagEditFocus + delta
+	if next >= len(m.tagEditInputs()) {
 		return m, nil
 	}
-	if m.tagEditFocus < 0 {
-		m.tagEditFocus = len(m.tagEditInputs()) - 1
+	if next < 0 {
+		next = len(m.tagEditInputs()) - 1
 	}
-	return m.focusTagEditField()
+	m.tagEditFocus = next
+	m, cmd := m.focusTagEditField()
+	m.syncPlaylistPatch()
+	return m, cmd
 }
 
 func (m model) handleTagEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tagEditBusy && m.tagEditTitle.Value() == "" && m.tagEditArtist.Value() == "" && msg.String() != "esc" {
 		return m, nil
 	}
-	idx := m.tagEditFocusedIndex()
-	if idx < 0 {
-		switch msg.String() {
-		case "esc":
-			return m.closeTagEditor()
-		case "tab", "enter", "down":
-			m.tagEditFocus = 0
-			return m.focusTagEditField()
-		case "ctrl+c", "q":
-			return m, m.quitCmd()
-		}
-		return m, nil
+	if m.tagEditFocus < 0 || m.tagEditFocus >= len(m.tagEditInputs()) {
+		m.tagEditFocus = 0
 	}
 
 	switch msg.String() {
 	case "esc":
 		return m.closeTagEditor()
 	case "enter":
-		if idx >= len(m.tagEditInputs())-1 {
+		if m.tagEditFocus >= len(m.tagEditInputs())-1 {
 			return m.applyTagEditor()
 		}
-		return m.tagEditAdvance(1)
+		return m.tagEditMoveFocus(1)
 	case "tab", "down":
-		if idx >= len(m.tagEditInputs())-1 {
+		if m.tagEditFocus >= len(m.tagEditInputs())-1 {
 			return m.applyTagEditor()
 		}
-		return m.tagEditAdvance(1)
+		return m.tagEditMoveFocus(1)
 	case "shift+tab", "up":
-		return m.tagEditAdvance(-1)
+		return m.tagEditMoveFocus(-1)
 	case "ctrl+c", "q":
 		return m, m.quitCmd()
 	}
 
 	var cmd tea.Cmd
-	switch idx {
+	switch m.tagEditFocus {
 	case 0:
 		m.tagEditTitle, cmd = m.tagEditTitle.Update(msg)
 	case 1:
@@ -262,5 +246,6 @@ func (m model) handleTagEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case 4:
 		m.tagEditLabel, cmd = m.tagEditLabel.Update(msg)
 	}
+	m.syncPlaylistPatch()
 	return m, cmd
 }

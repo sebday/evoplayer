@@ -85,6 +85,7 @@ type model struct {
 	tagEditSavedOffset int
 	tagEditSavedFocus  focus
 	tagEditSaved       bool
+	tagEditPendingFreeze bool
 	frames             *frameCache
 	wavePeaks          []int
 	wavePath           string
@@ -390,14 +391,28 @@ func (m model) patchFocusedList() (tea.Model, tea.Cmd) {
 }
 
 func (m model) canFreeze() bool {
-	return !m.artPicker && !m.tagEditor && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
+	return !m.artPicker && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
+}
+
+func (m model) shouldUnfreeze(msg tea.Msg) bool {
+	if !m.tagEditor {
+		return true
+	}
+	switch msg.(type) {
+	case tea.WindowSizeMsg:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case tickMsg, vizSubMsg:
 	default:
-		m.unfreezeFrame()
+		if m.shouldUnfreeze(msg) {
+			m.unfreezeFrame()
+		}
 	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -408,6 +423,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.settingsPath.Width = max(8, paneInnerWidth(m.playerGeom().playlistW)-4)
 		if m.art != nil {
 			m.art.cols = 0
+		}
+		if m.tagEditor {
+			m.tagEditPendingFreeze = true
 		}
 		return m, nil
 	case navMsg:
@@ -509,12 +527,31 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		oldArt := m.artPath
 		oldStatusArt := m.status.Art
 		revChanged := m.status.QueueRevision != msg.status.QueueRevision
+		pathChanged := oldPath != msg.status.Path
 		m.status = msg.status
+		if pathChanged {
+			m.artPath = ""
+		}
 		m.refreshNowPlayingAssets()
 		artChanged := oldStatusArt != m.status.Art || oldArt != m.artPath
-		if m.focus == focusPlaylist && oldPath != m.status.Path {
-			if m.scrollPlaylistForPlayingTrack() && m.canPatchLists() {
-				m.patchPlaylist()
+		if pathChanged || artChanged {
+			m.invalidateArtCache()
+			if !m.tagEditor {
+				m.unfreezeFrame()
+				m.clearStoredArtOverlay()
+				if m.art != nil {
+					m.art.shown = false
+				}
+				if m.frames != nil {
+					m.frames.view = ""
+				}
+			}
+		}
+		if m.focus == focusPlaylist && pathChanged {
+			if m.scrollPlaylistForPlayingTrack() {
+				if m.frames != nil && m.frames.freeze && m.canPatchLists() {
+					m.patchPlaylist()
+				}
 			}
 		}
 		if same && !artChanged && m.canFreeze() {
@@ -591,6 +628,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case tickMsg:
+		if m.tagEditor {
+			m.patchPlaylist()
+		}
 		if m.canFreeze() {
 			m.freezeFrame()
 		}
@@ -699,6 +739,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.tagEditYear.SetValue(msg.tags.Year)
 		m.tagEditGenre.SetValue(msg.tags.Genre)
 		m.tagEditLabel.SetValue(msg.tags.Label)
+		m.tagEditPendingFreeze = true
 		var cmd tea.Cmd
 		m, cmd = m.focusTagEditField()
 		return m, cmd
@@ -710,6 +751,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.err = ""
 		m = m.restoreTagEditorCursor()
+		m.unfreezeFrame()
 		row := msg.track
 		for i := range m.queue {
 			if m.queue[i].Path == msg.path {

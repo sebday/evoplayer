@@ -89,8 +89,32 @@ func (m model) View() string {
 		m.frames.playlistH = browseH
 		m.frames.lastPlaylist = lastPlaylist
 		m.frames.mu.Unlock()
+		if m.tagEditor && m.tagEditPendingFreeze {
+			m.frames.freeze = true
+			m.tagEditPendingFreeze = false
+			m.syncPlaylistPatch()
+		}
 	}
 	return out
+}
+
+func (m model) syncPlaylistPatch() {
+	if m.frames == nil {
+		return
+	}
+	m.frames.mu.Lock()
+	row, col, w, h := m.frames.playlistRow, m.frames.playlistCol, m.frames.playlistW, m.frames.playlistH
+	m.frames.mu.Unlock()
+	if row < 1 || col < 1 || w < 1 || h < 1 {
+		return
+	}
+	inner := m.renderPlaylistInner(w, h)
+	lines := patchLines(inner, w, h)
+	out := strings.Join(lines, "\n")
+	m.frames.mu.Lock()
+	m.frames.lastPlaylist = out
+	m.frames.mu.Unlock()
+	paintVizAt(row, col, lines)
 }
 
 func (m model) renderSearch(width int) string {

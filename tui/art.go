@@ -460,7 +460,7 @@ func (m *model) storeArtOverlay(seq string, row, col, cols, rows int) {
 	if strings.Contains(seq, "\x1b_G") {
 		place = kittyPlaceSeq(cols, rows)
 	}
-	m.frames.artDirty = m.frames.artSeq != seq || m.frames.artRow != row || m.frames.artCol != col
+	m.frames.artDirty = m.frames.artSeq != seq || m.frames.artRow != row || m.frames.artCol != col || m.frames.artSeq == ""
 	m.frames.artSeq = seq
 	m.frames.artPlace = place
 	m.frames.artRow = row

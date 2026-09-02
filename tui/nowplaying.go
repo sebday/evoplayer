@@ -273,7 +273,7 @@ func (m model) renderPlaylistPane(g playerGeom) string {
 		bottomLeft += "  " + hint("⇧↑↓", "reorder", 3, true)
 	}
 	if m.tagEditor {
-		bottomLeft = hint("tab", "next", 3, m.focus == focusPlaylist) + "  " + hint("⏎", "save", 3, m.focus == focusPlaylist)
+		bottomLeft = ""
 	} else if m.movePicker {
 		bottomLeft = hint("⏎", "move", 3, m.focus == focusPlaylist)
 	} else if m.artPicker {
