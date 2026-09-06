@@ -69,6 +69,7 @@ Item {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                     anchors.centerIn: parent
                     visible: root.icon !== "" && (root.iconUrl === "" || legendIconImage.status !== Image.Ready)
                     text: root.icon
@@ -81,6 +82,7 @@ Item {
             }
 
             Text {
+              textFormat: Text.PlainText
                 id: labelText
                 visible: root.text !== ""
                 text: root.text

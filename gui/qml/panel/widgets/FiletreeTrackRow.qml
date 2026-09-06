@@ -135,6 +135,7 @@ Rectangle {
             }
 
             Text {
+              textFormat: Text.PlainText
                 anchors.centerIn: parent
                 visible: browseArt.opacity < 0.01
                 text: "󰎈"
@@ -168,6 +169,7 @@ Rectangle {
                 spacing: 0
 
                 Text {
+                  textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: browseRow.trackTitle
                     color: Theme.accent
@@ -178,6 +180,7 @@ Rectangle {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.fillWidth: true
                         visible: browseRow.artistAlbumLine !== ""
                         text: browseRow.artistAlbumLine

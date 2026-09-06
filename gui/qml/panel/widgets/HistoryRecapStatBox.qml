@@ -48,6 +48,7 @@ Item {
                 spacing: Theme.spacingS
 
                 Text {
+                  textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: root.label
                     color: Theme.foreground
@@ -65,6 +66,7 @@ Item {
                     implicitHeight: peakLabel.implicitHeight + 4
 
                     Text {
+                      textFormat: Text.PlainText
                         id: peakLabel
                         anchors.centerIn: parent
                         text: "PEAK"
@@ -82,6 +84,7 @@ Item {
                 spacing: Theme.spacingS
 
                 Text {
+                  textFormat: Text.PlainText
                     text: root.value
                     color: Theme.foreground
                     font.family: Theme.fontFamily
@@ -90,6 +93,7 @@ Item {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: root.trendLabel
                     color: root.trendUp ? Theme.accent : Theme.urgent
@@ -112,6 +116,7 @@ Item {
                 visible: root.topName !== ""
 
                 Text {
+                  textFormat: Text.PlainText
                     text: "#1"
                     color: Theme.accent
                     font.family: Theme.fontFamily
@@ -120,6 +125,7 @@ Item {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: root.topName
                     color: Theme.foreground
@@ -130,6 +136,7 @@ Item {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                     visible: root.topCount > 0
                     text: root.topCount + " scrobbles"
                     color: Theme.foreground

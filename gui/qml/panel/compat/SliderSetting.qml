@@ -68,6 +68,7 @@ Item {
             spacing: Theme.spacingM
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: root.label
                 color: Theme.foreground
@@ -78,6 +79,7 @@ Item {
             }
 
             Text {
+              textFormat: Text.PlainText
                 text: root.activeValue + root.valueSuffix
                 color: Theme.accent
                 font.family: Theme.fontFamily

@@ -36,6 +36,7 @@ Item {
     z: 2
 
     Text {
+      textFormat: Text.PlainText
         id: rowIconGlyph
         anchors.centerIn: parent
         text: rowIconBtn.icon

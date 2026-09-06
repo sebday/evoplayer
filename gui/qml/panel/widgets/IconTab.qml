@@ -46,6 +46,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
         id: iconTabGlyph
         anchors.centerIn: parent
         text: iconTab.icon

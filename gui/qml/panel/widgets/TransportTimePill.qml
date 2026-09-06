@@ -24,6 +24,7 @@ Rectangle {
     Layout.alignment: Qt.AlignVCenter
 
     Text {
+      textFormat: Text.PlainText
         id: pillText
         anchors.centerIn: parent
         text: parent.label

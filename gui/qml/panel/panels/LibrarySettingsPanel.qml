@@ -75,6 +75,7 @@ SectionPanel {
                     Layout.preferredHeight: 34
 
                     Text {
+                      textFormat: Text.PlainText
                         anchors.centerIn: parent
                         text: "󰉖"
                         color: Theme.foreground
@@ -98,6 +99,7 @@ SectionPanel {
         }
 
         Text {
+          textFormat: Text.PlainText
             Layout.fillWidth: true
             text: String(dashboard.libraryStats.tracks || 0) + " tracks · "
                 + String(dashboard.libraryStats.genres || 0) + " genres"

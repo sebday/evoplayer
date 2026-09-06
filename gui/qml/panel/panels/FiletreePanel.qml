@@ -83,6 +83,7 @@ SectionPanel {
         }
 
         Text {
+          textFormat: Text.PlainText
             anchors.centerIn: parent
             visible: dashboard.filetreeTreeLoading && dashboard.filetreeRows.length === 0
             text: "loading…"
@@ -93,6 +94,7 @@ SectionPanel {
         }
 
         footer: Text {
+          textFormat: Text.PlainText
             width: filetreeListRoot.width
             visible: dashboard.filetreeLoadingMore
             horizontalAlignment: Text.AlignHCenter
@@ -136,6 +138,7 @@ SectionPanel {
                         : "transparent")
 
                 Text {
+                  textFormat: Text.PlainText
                     x: indent + 5
                     anchors.verticalCenter: parent.verticalCenter
                     text: modelData.expanded ? "󰅃" : "󰅂"
@@ -155,6 +158,7 @@ SectionPanel {
                     spacing: Theme.spacingS
 
                     Text {
+                      textFormat: Text.PlainText
                         text: "󰉋"
                         color: Theme.foreground
                         opacity: Theme.opacityMuted
@@ -163,6 +167,7 @@ SectionPanel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.fillWidth: true
                         text: dash.playlistTabLabel(modelData.name || "")
                         color: Theme.foreground
@@ -203,6 +208,7 @@ SectionPanel {
                     spacing: Theme.spacingS
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.preferredWidth: 36
                         horizontalAlignment: Text.AlignRight
                         visible: modelData.count !== undefined && modelData.count !== null

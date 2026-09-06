@@ -33,6 +33,7 @@ Item {
         spacing: Theme.spacingM
 
         Text {
+          textFormat: Text.PlainText
             Layout.alignment: Qt.AlignHCenter
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter

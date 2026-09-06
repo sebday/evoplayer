@@ -63,6 +63,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
         id: volIcon
         anchors.centerIn: parent
         text: dashboard.volumeIcon(volBtn.level)

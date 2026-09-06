@@ -168,36 +168,71 @@ Item {
 
     Process {
         id: settingsLoadProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         command: root.playerCmd(["config", "get", "--json"])
-        stdout: StdioCollector {
-            onStreamFinished: root.parsePlayerSettings(text)
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        settingsLoadProc.stdoutBuf += chunk
+        if (settingsLoadProc.stdoutBuf.length > 262144) {
+          settingsLoadProc.signal(15)
+          settingsLoadProc.stdoutBuf = ""
         }
+      }
+    }
     }
 
     Process {
         id: settingsSetProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property string key: ""
         property string value: ""
         command: root.playerCmd(["config", "set", settingsSetProc.key, settingsSetProc.value, "--json"])
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.parsePlayerSettings(text)
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        settingsSetProc.stdoutBuf += chunk
+        if (settingsSetProc.stdoutBuf.length > 262144) {
+          settingsSetProc.signal(15)
+          settingsSetProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      root.parsePlayerSettings(stdoutBuf)
                 if (String(settingsSetProc.key || "").indexOf("viz.") === 0)
                     applyVizProc.running = true
-            }
-        }
     }
+  }
 
     Process {
         id: settingsPickProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         command: root.playerCmd(["config", "pick"])
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (String(text || "").trim())
-                    root.parsePlayerSettings(text)
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        settingsPickProc.stdoutBuf += chunk
+        if (settingsPickProc.stdoutBuf.length > 262144) {
+          settingsPickProc.signal(15)
+          settingsPickProc.stdoutBuf = ""
         }
+      }
     }
+        onExited: function(exitCode) {
+      if (String(stdoutBuf || "").trim())
+                    root.parsePlayerSettings(stdoutBuf)
+    }
+  }
 
     Process {
         id: applyVizProc
@@ -206,38 +241,67 @@ Item {
 
     Process {
         id: statsProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         command: root.playerCmd(["stats", "--json"])
-        stdout: StdioCollector {
-            onStreamFinished: {
-                try {
-                    root.libraryStats = JSON.parse(String(text || "{}"))
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        statsProc.stdoutBuf += chunk
+        if (statsProc.stdoutBuf.length > 262144) {
+          statsProc.signal(15)
+          statsProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      try {
+                    root.libraryStats = JSON.parse(String(stdoutBuf || "{}"))
                 } catch (e) {
                     root.libraryStats = { tracks: 0, genres: 0 }
                 }
-            }
-        }
     }
+  }
 
     Process {
         id: jobProc
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var out = String(text || "").trim()
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        jobProc.stdoutBuf += chunk
+        if (jobProc.stdoutBuf.length > 262144) {
+          jobProc.signal(15)
+          jobProc.stdoutBuf = ""
+        }
+      }
+    }
+        stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        jobProc.stderrBuf += chunk
+        if (jobProc.stderrBuf.length > 4096) {
+          jobProc.signal(15)
+          jobProc.stderrBuf = ""
+        }
+      }
+    }
+        onExited: function(code) {
+      var out = String(stdoutBuf || "").trim()
                 if (out)
                     root.jobLog = String(root.jobLog || "") + "\n" + out
                 root.jobBusy = false
                 root.jobLabel = ""
                 root.activeLibraryJobKey = ""
-            }
-        }
-        stderr: StdioCollector {
-            onStreamFinished: {
-                var err = String(text || "").trim()
+      var err = String(stderrBuf || "").trim()
                 if (err)
                     root.jobLog = String(root.jobLog || "") + "\n" + err
-            }
-        }
-        onExited: function(code) {
+
             if (code !== 0 && root.jobBusy) {
                 root.jobBusy = false
                 root.jobLabel = ""

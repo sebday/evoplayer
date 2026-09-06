@@ -25,6 +25,7 @@ SectionPanel {
             spacing: 4
 
             Text {
+              textFormat: Text.PlainText
                 text: "YouTube or SoundCloud URL"
                 color: Theme.foreground
                 font.family: Theme.fontFamily
@@ -33,6 +34,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "https://www.youtube.com/watch?v=… or soundcloud.com/…/…"
                 color: Theme.foreground
@@ -79,6 +81,7 @@ SectionPanel {
                     spacing: Theme.spacingS
 
                     Text {
+                      textFormat: Text.PlainText
                         text: "󰇚"
                         color: downloadUrlMouse.containsMouse ? Theme.accent : Theme.foreground
                         font.family: Theme.fontFamily
@@ -86,6 +89,7 @@ SectionPanel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.fillWidth: true
                         text: "Download"
                         color: downloadUrlMouse.containsMouse ? Theme.accent : Theme.foreground
@@ -139,6 +143,7 @@ SectionPanel {
                     spacing: Theme.spacingS
 
                     Text {
+                      textFormat: Text.PlainText
                         text: modelData.icon
                         color: actionActive ? Theme.accent : Theme.foreground
                         font.family: Theme.fontFamily
@@ -147,6 +152,7 @@ SectionPanel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.fillWidth: true
                         text: modelData.button || modelData.label
                         color: actionActive ? Theme.accent : Theme.foreground
@@ -181,6 +187,7 @@ SectionPanel {
                 spacing: Theme.spacingS
 
                 Text {
+                  textFormat: Text.PlainText
                     text: "󰓛"
                     color: Theme.urgent
                     font.family: Theme.fontFamily
@@ -188,6 +195,7 @@ SectionPanel {
                 }
 
                 Text {
+                  textFormat: Text.PlainText
                     Layout.fillWidth: true
                     text: "Stop processing"
                     color: Theme.foreground
@@ -206,6 +214,7 @@ SectionPanel {
         }
 
         Text {
+          textFormat: Text.PlainText
             Layout.fillWidth: true
             visible: (dashboard.downloadFiles || []).length === 0
                 && (String(dashboard.jobLog || "").trim() !== "" || dashboard.libraryActivityBusy)
@@ -279,6 +288,7 @@ SectionPanel {
                                         color: Theme.foregroundDivider
                                         visible: artImage.status !== Image.Ready
                                         Text {
+                                          textFormat: Text.PlainText
                                             anchors.centerIn: parent
                                             text: "󰝚"
                                             color: Theme.foreground
@@ -293,6 +303,7 @@ SectionPanel {
                                     spacing: 2
 
                                     Text {
+                                      textFormat: Text.PlainText
                                         Layout.fillWidth: true
                                         text: String((modelData && modelData.title) || "downloaded")
                                         color: Theme.foreground
@@ -302,6 +313,7 @@ SectionPanel {
                                     }
 
                                     Text {
+                                      textFormat: Text.PlainText
                                         Layout.fillWidth: true
                                         visible: String((modelData && modelData.artist) || "") !== ""
                                             && String((modelData && modelData.title) || "") !== ""
@@ -314,6 +326,7 @@ SectionPanel {
                                     }
 
                                     Text {
+                                      textFormat: Text.PlainText
                                         Layout.fillWidth: true
                                         text: {
                                             var parts = []
@@ -339,6 +352,7 @@ SectionPanel {
                             }
 
                             Text {
+                              textFormat: Text.PlainText
                                 visible: needsFolder
                                 text: "choose a library folder"
                                 color: Theme.accent

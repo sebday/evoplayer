@@ -38,6 +38,7 @@ SectionPanel {
             Item { Layout.fillWidth: true }
 
             Text {
+              textFormat: Text.PlainText
                 text: "+ add"
                 color: Theme.accent
                 font.family: Theme.fontFamily
@@ -83,6 +84,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 anchors.centerIn: parent
                 visible: dashboard.playlistsLoading && dashboard.libraryPlaylists.length === 0
                 text: "loading…"
@@ -110,6 +112,7 @@ SectionPanel {
                     spacing: Theme.spacingM
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.fillWidth: true
                         text: dashboard.playlistTabLabel(modelData.name || "")
                         color: dashboard.selectedLibraryPlaylist === (modelData.name || "")
@@ -122,6 +125,7 @@ SectionPanel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         visible: dashboard.selectedLibraryPlaylist === (modelData.name || "")
                             && dashboard.playlistIsUserEditable(modelData.name || "")
                         text: "󰐊"
@@ -137,6 +141,7 @@ SectionPanel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         visible: dashboard.selectedLibraryPlaylist === (modelData.name || "")
                             && dashboard.playlistIsUserEditable(modelData.name || "")
                         text: "󰑗"
@@ -153,6 +158,7 @@ SectionPanel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         visible: dashboard.selectedLibraryPlaylist === (modelData.name || "")
                             && dashboard.playlistIsUserEditable(modelData.name || "")
                         text: "󰆴"
@@ -169,6 +175,7 @@ SectionPanel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         text: String(modelData.count || 0)
                         color: Theme.foreground
                         font.family: Theme.fontFamily
@@ -177,6 +184,7 @@ SectionPanel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         visible: dashboard.playlistCanStar(modelData.name || "")
                         text: modelData.starred === true ? "󰓎" : "󰓒"
                         color: modelData.starred === true ? Theme.accent : Theme.foreground
@@ -259,6 +267,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 anchors.centerIn: parent
                 visible: dashboard.tracksLoading
                 text: "loading…"
@@ -269,6 +278,7 @@ SectionPanel {
             }
 
             footer: Text {
+              textFormat: Text.PlainText
                 width: sidePlaylistTrackList.width
                 visible: dashboard.playlistTracksLoadingMore
                 horizontalAlignment: Text.AlignHCenter

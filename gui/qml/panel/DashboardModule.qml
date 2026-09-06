@@ -5037,8 +5037,8 @@ Item {
 
     function startNeighborWaveformJob() {
         if (neighborWaveformJobIndex >= neighborWaveformJobs.length) {
-            neighborWaveformFile.trackPath = ""
-            neighborWaveformFile.path = ""
+            neighborReadProc.trackPath = ""
+            neighborReadProc.expectedPath = ""
             return
         }
         var job = neighborWaveformJobs[neighborWaveformJobIndex]
@@ -5047,8 +5047,7 @@ Item {
             startNeighborWaveformJob()
             return
         }
-        neighborWaveformFile.trackPath = job.path
-        neighborWaveformFile.path = job.file
+        startNeighborRead(job.path, job.file)
     }
 
     function advanceNeighborWaveform() {
@@ -5350,6 +5349,51 @@ Item {
             if (p)
                 finishWaveformLoading(p, samples.length > 0)
         })
+    }
+
+    function boundedFilePath(filePath) {
+        var p = String(filePath || "")
+        if (p.indexOf("file://") === 0)
+            p = p.substring(7)
+        if (!p || p.indexOf("..") >= 0)
+            return ""
+        return p
+    }
+
+    function startWaveformRead(filePath) {
+        var p = boundedFilePath(filePath)
+        if (!p) {
+            applyWaveform("")
+            return
+        }
+        if (waveformReadProc.running)
+            waveformReadProc.running = false
+        waveformReadProc.expectedPath = p
+        waveformReadProc.command = ["/usr/bin/dd", "if=" + p, "iflag=nofollow,nonblock,count_bytes,fullblock", "bs=4096", "count=257", "status=none"]
+        waveformReadProc.running = true
+    }
+
+    function startNeighborRead(trackPath, filePath) {
+        var p = boundedFilePath(filePath)
+        if (!p) {
+            advanceNeighborWaveform()
+            return
+        }
+        if (neighborReadProc.running)
+            neighborReadProc.running = false
+        neighborReadProc.trackPath = String(trackPath || "")
+        neighborReadProc.expectedPath = p
+        neighborReadProc.command = ["/usr/bin/dd", "if=" + p, "iflag=nofollow,nonblock,count_bytes,fullblock", "bs=4096", "count=257", "status=none"]
+        neighborReadProc.running = true
+    }
+
+    readonly property string waveformPath: currentWaveformFilePath()
+    onWaveformPathChanged: {
+        if (!waveformPath) {
+            applyWaveform("")
+            return
+        }
+        startWaveformRead(waveformPath)
     }
 
     function currentWaveformFilePath() {
@@ -6198,14 +6242,30 @@ Item {
 
     Process {
         id: jobProc
-        stdout: StdioCollector {
-            id: jobOut
-            waitForEnd: false
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        jobProc.stdoutBuf += chunk
+        if (jobProc.stdoutBuf.length > 262144) {
+          jobProc.signal(15)
+          jobProc.stdoutBuf = ""
         }
-        stderr: StdioCollector {
-            id: jobErr
-            waitForEnd: false
+      }
+    }
+        stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        jobProc.stderrBuf += chunk
+        if (jobProc.stderrBuf.length > 4096) {
+          jobProc.signal(15)
+          jobProc.stderrBuf = ""
         }
+      }
+    }
         onExited: function(exitCode) {
             root.onJobFinished(exitCode)
         }
@@ -6213,11 +6273,31 @@ Item {
 
     Process {
         id: sortProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property string _label: ""
-        stdout: StdioCollector {}
-        stderr: StdioCollector {
-            id: sortErr
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        sortProc.stdoutBuf += chunk
+        if (sortProc.stdoutBuf.length > 262144) {
+          sortProc.signal(15)
+          sortProc.stdoutBuf = ""
         }
+      }
+    }
+        stderr: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        sortProc.stderrBuf += chunk
+        if (sortProc.stderrBuf.length > 4096) {
+          sortProc.signal(15)
+          sortProc.stderrBuf = ""
+        }
+      }
+    }
         onExited: function(exitCode) {
             root.onSortFinished(exitCode)
         }
@@ -6254,18 +6334,30 @@ Item {
 
     Process {
         id: libraryCpuPollProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         command: ["bash", "-c",
             "ffmpeg=$(ps -C ffmpeg -o %cpu= 2>/dev/null | awk '{s+=$1} END {printf \"%.0f\", s+0}'); " +
             "evo=$(ps -C evoplayer -o %cpu= 2>/dev/null | awk '{s+=$1} END {printf \"%.0f\", s+0}'); " +
             "echo $ffmpeg $evo"]
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var parts = String(text || "").trim().split(/\s+/)
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        libraryCpuPollProc.stdoutBuf += chunk
+        if (libraryCpuPollProc.stdoutBuf.length > 262144) {
+          libraryCpuPollProc.signal(15)
+          libraryCpuPollProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      var parts = String(stdoutBuf || "").trim().split(/\s+/)
                 root.ffmpegCpuPercent = parseInt(parts[0], 10) || 0
                 root.evoplayerCpuPercent = parseInt(parts[1], 10) || 0
-            }
-        }
     }
+  }
 
     Timer {
         id: daemonJobPollTimer
@@ -6292,47 +6384,95 @@ Item {
 
     Process {
         id: cmdProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (cmdProc._onDone)
-                    cmdProc._onDone(text)
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        cmdProc.stdoutBuf += chunk
+        if (cmdProc.stdoutBuf.length > 262144) {
+          cmdProc.signal(15)
+          cmdProc.stdoutBuf = ""
         }
+      }
     }
+        onExited: function(exitCode) {
+      if (cmdProc._onDone)
+                    cmdProc._onDone(stdoutBuf)
+    }
+  }
 
     Process {
         id: seekProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (seekProc._onDone)
-                    seekProc._onDone(text)
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        seekProc.stdoutBuf += chunk
+        if (seekProc.stdoutBuf.length > 262144) {
+          seekProc.signal(15)
+          seekProc.stdoutBuf = ""
         }
+      }
     }
+        onExited: function(exitCode) {
+      if (seekProc._onDone)
+                    seekProc._onDone(stdoutBuf)
+    }
+  }
 
     Process {
         id: volumeProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (volumeProc._onDone)
-                    volumeProc._onDone(text)
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        volumeProc.stdoutBuf += chunk
+        if (volumeProc.stdoutBuf.length > 262144) {
+          volumeProc.signal(15)
+          volumeProc.stdoutBuf = ""
         }
+      }
     }
+        onExited: function(exitCode) {
+      if (volumeProc._onDone)
+                    volumeProc._onDone(stdoutBuf)
+    }
+  }
 
     Process {
         id: deactivateProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (deactivateProc._onDone)
-                    deactivateProc._onDone(text)
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        deactivateProc.stdoutBuf += chunk
+        if (deactivateProc.stdoutBuf.length > 262144) {
+          deactivateProc.signal(15)
+          deactivateProc.stdoutBuf = ""
         }
+      }
     }
+        onExited: function(exitCode) {
+      if (deactivateProc._onDone)
+                    deactivateProc._onDone(stdoutBuf)
+    }
+  }
 
     Process {
         id: openDirProc
@@ -6348,9 +6488,22 @@ Item {
 
     Process {
         id: loadProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property string pendingPath: ""
         property bool pendingFolder: false
-        stdout: StdioCollector {}
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        loadProc.stdoutBuf += chunk
+        if (loadProc.stdoutBuf.length > 262144) {
+          loadProc.signal(15)
+          loadProc.stdoutBuf = ""
+        }
+      }
+    }
         onExited: function() {
             root.refreshStatus()
             if (pendingPath) {
@@ -6365,18 +6518,29 @@ Item {
 
     Process {
         id: filetreeProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
         property bool _jobDone: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (filetreeProc._onDone) {
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        filetreeProc.stdoutBuf += chunk
+        if (filetreeProc.stdoutBuf.length > 262144) {
+          filetreeProc.signal(15)
+          filetreeProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: {
+      if (filetreeProc._onDone) {
                     var done = filetreeProc._onDone
                     filetreeProc._onDone = null
-                    done(text)
+                    done(stdoutBuf)
                 }
-            }
-        }
-        onExited: {
+
             if (filetreeProc._onDone) {
                 var fallback = filetreeProc._onDone
                 filetreeProc._onDone = null
@@ -6388,17 +6552,28 @@ Item {
 
     Process {
         id: queryProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (queryProc._onDone) {
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        queryProc.stdoutBuf += chunk
+        if (queryProc.stdoutBuf.length > 262144) {
+          queryProc.signal(15)
+          queryProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: {
+      if (queryProc._onDone) {
                     var done = queryProc._onDone
                     queryProc._onDone = null
-                    done(text)
+                    done(stdoutBuf)
                 }
-            }
-        }
-        onExited: {
+
             if (queryProc._onDone) {
                 var fallback = queryProc._onDone
                 queryProc._onDone = null
@@ -6409,25 +6584,48 @@ Item {
 
     Process {
         id: settingsLoadProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         command: root.playerCmd(["config", "get", "--json"])
-        stdout: StdioCollector {
-            onStreamFinished: root.parsePlayerSettings(text)
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        settingsLoadProc.stdoutBuf += chunk
+        if (settingsLoadProc.stdoutBuf.length > 262144) {
+          settingsLoadProc.signal(15)
+          settingsLoadProc.stdoutBuf = ""
         }
+      }
+    }
     }
 
     Process {
         id: settingsSetProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property string key: ""
         property string value: ""
         command: root.playerCmd(["config", "set", settingsSetProc.key, settingsSetProc.value, "--json"])
-        stdout: StdioCollector {
-            onStreamFinished: {
-                root.parsePlayerSettings(text)
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        settingsSetProc.stdoutBuf += chunk
+        if (settingsSetProc.stdoutBuf.length > 262144) {
+          settingsSetProc.signal(15)
+          settingsSetProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      root.parsePlayerSettings(stdoutBuf)
                 if (String(settingsSetProc.key || "").indexOf("viz.") === 0)
                     applyVizProc.running = true
-            }
-        }
     }
+  }
 
     Process {
         id: applyVizProc
@@ -6436,26 +6634,51 @@ Item {
 
     Process {
         id: settingsPickProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         command: root.playerCmd(["config", "pick"])
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (String(text || "").trim())
-                    root.parsePlayerSettings(text)
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        settingsPickProc.stdoutBuf += chunk
+        if (settingsPickProc.stdoutBuf.length > 262144) {
+          settingsPickProc.signal(15)
+          settingsPickProc.stdoutBuf = ""
         }
+      }
     }
+        onExited: function(exitCode) {
+      if (String(stdoutBuf || "").trim())
+                    root.parsePlayerSettings(stdoutBuf)
+    }
+  }
 
     Process {
         id: favoriteProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
         property var _queuedArgs: null
         property var _queuedOnDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var cb = favoriteProc._onDone
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        favoriteProc.stdoutBuf += chunk
+        if (favoriteProc.stdoutBuf.length > 262144) {
+          favoriteProc.signal(15)
+          favoriteProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      var cb = favoriteProc._onDone
                 favoriteProc._onDone = null
                 if (cb)
-                    cb(text)
+                    cb(stdoutBuf)
                 if (favoriteProc._queuedArgs) {
                     var args = favoriteProc._queuedArgs
                     var done = favoriteProc._queuedOnDone
@@ -6463,130 +6686,237 @@ Item {
                     favoriteProc._queuedOnDone = null
                     root.runFavoriteQuery(args, done)
                 }
-            }
-        }
     }
+  }
 
     Process {
         id: queuePlayProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (queuePlayProc._onDone)
-                    queuePlayProc._onDone(text)
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        queuePlayProc.stdoutBuf += chunk
+        if (queuePlayProc.stdoutBuf.length > 262144) {
+          queuePlayProc.signal(15)
+          queuePlayProc.stdoutBuf = ""
         }
+      }
     }
+        onExited: function(exitCode) {
+      if (queuePlayProc._onDone)
+                    queuePlayProc._onDone(stdoutBuf)
+    }
+  }
 
     Process {
         id: appendFiletreeProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (appendFiletreeProc._onDone)
-                    appendFiletreeProc._onDone(text)
-                appendFiletreeProc._onDone = null
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        appendFiletreeProc.stdoutBuf += chunk
+        if (appendFiletreeProc.stdoutBuf.length > 262144) {
+          appendFiletreeProc.signal(15)
+          appendFiletreeProc.stdoutBuf = ""
         }
-        onExited: appendFiletreeProc._onDone = null
+      }
+    }
+        onExited: function(exitCode) {
+      if (appendFiletreeProc._onDone)
+                    appendFiletreeProc._onDone(stdoutBuf)
+                appendFiletreeProc._onDone = null
+      appendFiletreeProc._onDone = null
+    }
     }
 
     Process {
         id: transportProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (transportProc._onDone)
-                    transportProc._onDone(text)
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        transportProc.stdoutBuf += chunk
+        if (transportProc.stdoutBuf.length > 262144) {
+          transportProc.signal(15)
+          transportProc.stdoutBuf = ""
         }
+      }
     }
+        onExited: function(exitCode) {
+      if (transportProc._onDone)
+                    transportProc._onDone(stdoutBuf)
+    }
+  }
 
     Process {
         id: saveCurrentProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (saveCurrentProc._onDone)
-                    saveCurrentProc._onDone(text)
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        saveCurrentProc.stdoutBuf += chunk
+        if (saveCurrentProc.stdoutBuf.length > 262144) {
+          saveCurrentProc.signal(15)
+          saveCurrentProc.stdoutBuf = ""
         }
+      }
     }
+        onExited: function(exitCode) {
+      if (saveCurrentProc._onDone)
+                    saveCurrentProc._onDone(stdoutBuf)
+    }
+  }
 
     Process {
         id: currentPlaylistLoadProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
         property var _pendingJob: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (currentPlaylistLoadProc._onDone) {
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        currentPlaylistLoadProc.stdoutBuf += chunk
+        if (currentPlaylistLoadProc.stdoutBuf.length > 262144) {
+          currentPlaylistLoadProc.signal(15)
+          currentPlaylistLoadProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      if (currentPlaylistLoadProc._onDone) {
                     var done = currentPlaylistLoadProc._onDone
                     currentPlaylistLoadProc._onDone = null
-                    done(text)
+                    done(stdoutBuf)
                 }
-            }
-        }
-        onExited: currentPlaylistLoadProc._onDone = null
+      currentPlaylistLoadProc._onDone = null
+    }
     }
 
     Process {
         id: rowArtWarmProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (rowArtWarmProc._onDone) {
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        rowArtWarmProc.stdoutBuf += chunk
+        if (rowArtWarmProc.stdoutBuf.length > 262144) {
+          rowArtWarmProc.signal(15)
+          rowArtWarmProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      if (rowArtWarmProc._onDone) {
                     var done = rowArtWarmProc._onDone
                     rowArtWarmProc._onDone = null
-                    done(text)
+                    done(stdoutBuf)
                 }
-            }
-        }
     }
+  }
 
     Process {
         id: warmArtProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
         property var _pendingJob: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (warmArtProc._onDone) {
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        warmArtProc.stdoutBuf += chunk
+        if (warmArtProc.stdoutBuf.length > 262144) {
+          warmArtProc.signal(15)
+          warmArtProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      if (warmArtProc._onDone) {
                     var done = warmArtProc._onDone
                     warmArtProc._onDone = null
-                    done(text)
+                    done(stdoutBuf)
                 }
-            }
-        }
     }
+  }
 
     Process {
         id: displayArtCacheProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
         property string _requestedPath: ""
         property var _pendingJob: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (displayArtCacheProc._onDone) {
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        displayArtCacheProc.stdoutBuf += chunk
+        if (displayArtCacheProc.stdoutBuf.length > 262144) {
+          displayArtCacheProc.signal(15)
+          displayArtCacheProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      if (displayArtCacheProc._onDone) {
                     var done = displayArtCacheProc._onDone
                     displayArtCacheProc._onDone = null
-                    done(text)
+                    done(stdoutBuf)
                 }
-            }
-        }
     }
+  }
 
     Process {
         id: playlistQueryProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (playlistQueryProc._onDone) {
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        playlistQueryProc.stdoutBuf += chunk
+        if (playlistQueryProc.stdoutBuf.length > 262144) {
+          playlistQueryProc.signal(15)
+          playlistQueryProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      if (playlistQueryProc._onDone) {
                     var done = playlistQueryProc._onDone
                     playlistQueryProc._onDone = null
-                    done(text)
+                    done(stdoutBuf)
                 }
-            }
-        }
-        onExited: playlistQueryProc._onDone = null
+      playlistQueryProc._onDone = null
+    }
     }
 
     ListModel {
@@ -6595,71 +6925,131 @@ Item {
 
     Process {
         id: playerQueryProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (playerQueryProc._onDone)
-                    playerQueryProc._onDone(text)
-                playerQueryProc._onDone = null
-            }
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        playerQueryProc.stdoutBuf += chunk
+        if (playerQueryProc.stdoutBuf.length > 262144) {
+          playerQueryProc.signal(15)
+          playerQueryProc.stdoutBuf = ""
         }
-        onExited: playerQueryProc._onDone = null
+      }
+    }
+        onExited: function(exitCode) {
+      if (playerQueryProc._onDone)
+                    playerQueryProc._onDone(stdoutBuf)
+                playerQueryProc._onDone = null
+      playerQueryProc._onDone = null
+    }
     }
 
     Process {
         id: statusQueryProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property var _onDone: null
-        stdout: StdioCollector {
-            onStreamFinished: {
-                if (statusQueryProc._onDone)
-                    statusQueryProc._onDone(text)
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        statusQueryProc.stdoutBuf += chunk
+        if (statusQueryProc.stdoutBuf.length > 262144) {
+          statusQueryProc.signal(15)
+          statusQueryProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      if (statusQueryProc._onDone)
+                    statusQueryProc._onDone(stdoutBuf)
                 statusQueryProc._onDone = null
+      statusQueryProc._onDone = null
+    }
+    }
+
+    Process {
+        id: waveformReadProc
+        property string expectedPath: ""
+        property string stdoutBuf: ""
+        onStarted: stdoutBuf = ""
+        stdout: SplitParser {
+            splitMarker: ""
+            onRead: function(chunk) {
+                waveformReadProc.stdoutBuf += chunk
+                if (waveformReadProc.stdoutBuf.length > 1048576) {
+                    waveformReadProc.signal(15)
+                    waveformReadProc.stdoutBuf = ""
+                }
             }
         }
-        onExited: statusQueryProc._onDone = null
+        onExited: function(exitCode) {
+            if (expectedPath !== boundedFilePath(root.currentWaveformFilePath()))
+                return
+            if (exitCode !== 0) {
+                var p = String(root.player.path || "")
+                if (!p) {
+                    root.applyWaveform("")
+                    root.waveformLoading = false
+                    return
+                }
+                if (root.player.waveform) {
+                    var cleared = Object.assign({}, root.player, { waveform: "" })
+                    root.player = cleared
+                }
+                root.ensureWaveformForPath(p)
+                if (!String(root.player.waveform || ""))
+                    root.finishWaveformLoading(p, false)
+                return
+            }
+            root.applyWaveform(stdoutBuf)
+        }
     }
 
     FileView {
         id: waveformFile
-        path: root.currentWaveformFilePath()
+        path: root.waveformPath
         watchChanges: true
-        onLoaded: {
-            if (String(path) !== root.currentWaveformFilePath())
-                return
-            root.applyWaveform(text())
+        preload: false
+        blockAllReads: true
+        printErrors: false
+        onFileChanged: root.startWaveformRead(path)
+    }
+
+    Process {
+        id: neighborReadProc
+        property string trackPath: ""
+        property string expectedPath: ""
+        property string stdoutBuf: ""
+        onStarted: stdoutBuf = ""
+        stdout: SplitParser {
+            splitMarker: ""
+            onRead: function(chunk) {
+                neighborReadProc.stdoutBuf += chunk
+                if (neighborReadProc.stdoutBuf.length > 1048576) {
+                    neighborReadProc.signal(15)
+                    neighborReadProc.stdoutBuf = ""
+                }
+            }
         }
-        onLoadFailed: {
-            var p = String(root.player.path || "")
-            if (!p) {
-                root.applyWaveform("")
-                root.waveformLoading = false
-                return
-            }
-            if (root.player.waveform) {
-                var cleared = Object.assign({}, root.player, { waveform: "" })
-                root.player = cleared
-            }
-            root.ensureWaveformForPath(p)
-            if (!String(root.player.waveform || ""))
-                root.finishWaveformLoading(p, false)
+        onExited: function(exitCode) {
+            if (exitCode === 0 && trackPath)
+                root.cacheWaveformText(trackPath, stdoutBuf)
+            root.advanceNeighborWaveform()
         }
     }
 
     FileView {
         id: neighborWaveformFile
-        property string trackPath: ""
-        path: ""
+        visible: false
+        preload: false
+        blockAllReads: true
         printErrors: false
-        onLoaded: {
-            if (!trackPath || !path)
-                return
-            root.cacheWaveformText(trackPath, text())
-            root.advanceNeighborWaveform()
-        }
-        onLoadFailed: {
-            if (path)
-                root.advanceNeighborWaveform()
-        }
     }
 
     Repeater {
@@ -7164,6 +7554,7 @@ Item {
                                 spacing: Theme.spacingS
 
                                 Text {
+                                  textFormat: Text.PlainText
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: root.playlistTabLabel(name)
                                     color: root.playlistsPanelOpen && root.selectedPlaylist === name ? Theme.accent : Theme.foreground
@@ -7238,6 +7629,7 @@ Item {
                         }
 
                         Text {
+                          textFormat: Text.PlainText
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.left: parent.left
                             anchors.leftMargin: 8
@@ -7260,6 +7652,7 @@ Item {
                             z: 1
 
                             Text {
+                              textFormat: Text.PlainText
                                 anchors.centerIn: parent
                                 text: "󰅖"
                                 color: Theme.foreground
@@ -7373,6 +7766,7 @@ Item {
                                             clip: true
 
                                             Text {
+                                              textFormat: Text.PlainText
                                                 id: titleLabel
                                                 width: parent.width
                                                 text: root.nowplayingTitle
@@ -7406,6 +7800,7 @@ Item {
                                             clip: true
 
                                             Text {
+                                              textFormat: Text.PlainText
                                                 visible: root.nowplayingArtist !== ""
                                                 width: bylineFlow.width > 0
                                                     ? Math.min(implicitWidth, bylineFlow.width)
@@ -7433,6 +7828,7 @@ Item {
                                             }
 
                                             Text {
+                                              textFormat: Text.PlainText
                                                 visible: root.nowplayingArtist !== "" && root.nowplayingAlbum !== ""
                                                 text: " - "
                                                 color: Theme.foreground
@@ -7442,6 +7838,7 @@ Item {
                                             }
 
                                             Text {
+                                              textFormat: Text.PlainText
                                                 visible: root.nowplayingAlbum !== ""
                                                 width: bylineFlow.width > 0
                                                     ? Math.min(implicitWidth, bylineFlow.width)
@@ -7666,6 +8063,7 @@ Item {
                                 visible: !albumartHost.artShowing
 
                                 Text {
+                                  textFormat: Text.PlainText
                                     anchors.centerIn: parent
                                     text: "󰎈"
                                     color: Theme.accent
@@ -7818,6 +8216,7 @@ Item {
                                 implicitHeight: artStatusText.height + 8
 
                                 Text {
+                                  textFormat: Text.PlainText
                                     id: artStatusText
                                     anchors.centerIn: parent
                                     width: Math.min(implicitWidth, Math.max(48, albumartHost.width - 28))
@@ -7888,6 +8287,7 @@ Item {
                     spacing: Theme.spacingL
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.fillWidth: true
                         text: "trash this track?"
                         color: Theme.foreground
@@ -7897,6 +8297,7 @@ Item {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.fillWidth: true
                         visible: root.trashConfirmTitle !== ""
                         text: root.trashConfirmTitle

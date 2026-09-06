@@ -32,6 +32,7 @@ Rectangle {
     implicitHeight: chipText.implicitHeight + 6
 
     Text {
+      textFormat: Text.PlainText
         id: chipText
         anchors.centerIn: parent
         width: parent.maxLabelWidth > 0 ? parent.maxLabelWidth : implicitWidth

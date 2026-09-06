@@ -95,6 +95,7 @@ Item {
             spacing: root.labelGap
 
             Text {
+              textFormat: Text.PlainText
                 id: frameLabel
                 visible: root.hasLabel
                 Layout.fillWidth: true

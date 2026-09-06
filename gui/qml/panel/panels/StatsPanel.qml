@@ -96,6 +96,7 @@ SectionPanel {
             visible: !dashboard.statsLoading && dashboard.statsTopTracks().length > 0
 
             Text {
+              textFormat: Text.PlainText
                 Layout.preferredWidth: 22
                 text: "#"
                 color: Theme.foreground
@@ -105,6 +106,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "Track"
                 color: Theme.foreground
@@ -114,6 +116,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.preferredWidth: 36
                 horizontalAlignment: Text.AlignRight
                 text: "Plays"
@@ -158,6 +161,7 @@ SectionPanel {
                     z: 1
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.preferredWidth: 22
                         text: String(index + 1)
                         color: Theme.foreground
@@ -171,6 +175,7 @@ SectionPanel {
                         spacing: 0
 
                         Text {
+                          textFormat: Text.PlainText
                             Layout.fillWidth: true
                             text: dashboard.statsTrackTitle(modelData)
                             color: Theme.foreground
@@ -180,6 +185,7 @@ SectionPanel {
                         }
 
                         Text {
+                          textFormat: Text.PlainText
                             Layout.fillWidth: true
                             visible: dashboard.statsTrackArtist(modelData) !== ""
                             text: dashboard.statsTrackArtist(modelData)
@@ -192,6 +198,7 @@ SectionPanel {
                     }
 
                     Text {
+                      textFormat: Text.PlainText
                         Layout.preferredWidth: 36
                         horizontalAlignment: Text.AlignRight
                         text: String(modelData.count || 0)
@@ -213,6 +220,7 @@ SectionPanel {
         }
 
         Text {
+          textFormat: Text.PlainText
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: !dashboard.statsLoading && dashboard.statsTopTracks().length === 0

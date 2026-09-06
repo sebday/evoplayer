@@ -35,6 +35,7 @@ SectionPanel {
             spacing: 4
 
             Text {
+              textFormat: Text.PlainText
                 text: "User"
                 color: Theme.foreground
                 font.family: Theme.fontFamily
@@ -86,6 +87,7 @@ SectionPanel {
             spacing: 4
 
             Text {
+              textFormat: Text.PlainText
                 text: "OAuth"
                 color: Theme.foreground
                 font.family: Theme.fontFamily
@@ -94,6 +96,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: oauthLabel
                 color: Theme.foreground
@@ -102,6 +105,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "Uses a logged-in SoundCloud session in Brave, or pass show omarchy/soundcloud/oauth-token"
                 color: Theme.foreground

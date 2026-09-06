@@ -25,6 +25,7 @@ SectionPanel {
         model: dashboard.filterTracks
 
         Text {
+          textFormat: Text.PlainText
             anchors.centerIn: parent
             visible: dashboard.filterLoading
             text: "loading…"
@@ -35,6 +36,7 @@ SectionPanel {
         }
 
         Text {
+          textFormat: Text.PlainText
             anchors.centerIn: parent
             visible: !dashboard.filterLoading && dashboard.filterTracks.length === 0
             text: "no tracks"

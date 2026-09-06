@@ -35,6 +35,7 @@ Item {
         spacing: Theme.spacingS
 
         Text {
+          textFormat: Text.PlainText
             Layout.alignment: Qt.AlignVCenter
             text: upNext.bannerLabel
             color: upNext.activityMode && upNext.cpuHot ? Theme.urgent : Theme.accent
@@ -58,6 +59,7 @@ Item {
             clip: true
 
             Text {
+              textFormat: Text.PlainText
                 id: lineMeasure
                 visible: false
                 text: upNext.lineText
@@ -69,6 +71,7 @@ Item {
             readonly property real loopWidth: lineMeasure.width + 24
 
             Text {
+              textFormat: Text.PlainText
                 id: scrollLine
                 anchors.verticalCenter: parent.verticalCenter
                 text: scrollClip.needsScroll

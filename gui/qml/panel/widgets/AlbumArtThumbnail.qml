@@ -80,6 +80,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
             anchors.centerIn: parent
             visible: thumbRoot.art === "" || coverImage.status !== Image.Ready
             text: "󰎈"
@@ -98,6 +99,7 @@ Item {
             radius: Theme.radiusM
 
             Text {
+              textFormat: Text.PlainText
                 anchors.centerIn: parent
                 text: "drop image"
                 color: Theme.accent

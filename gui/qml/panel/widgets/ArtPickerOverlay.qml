@@ -34,6 +34,7 @@ Rectangle {
                 spacing: Theme.spacingS
 
                 Text {
+                  textFormat: Text.PlainText
                     text: "Apply to"
                     color: Theme.foreground
                     font.family: Theme.fontFamily
@@ -74,6 +75,7 @@ Rectangle {
                 height: 22
 
                 Text {
+                  textFormat: Text.PlainText
                     anchors.centerIn: parent
                     text: "󰅖"
                     color: Theme.foreground
@@ -134,6 +136,7 @@ Rectangle {
             }
 
             Text {
+              textFormat: Text.PlainText
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left
                 anchors.leftMargin: 8
@@ -152,6 +155,7 @@ Rectangle {
             visible: dashboard.artPickerLoading
 
             Text {
+              textFormat: Text.PlainText
                 anchors.centerIn: parent
                 text: "󰇘"
                 color: Theme.accent
@@ -169,6 +173,7 @@ Rectangle {
         }
 
         Text {
+          textFormat: Text.PlainText
             Layout.fillWidth: true
             Layout.fillHeight: true
             visible: !dashboard.artPickerLoading
@@ -277,6 +282,7 @@ Rectangle {
                         color: Qt.rgba(Theme.mantle.r, Theme.mantle.g, Theme.mantle.b, 0.78)
 
                         Text {
+                          textFormat: Text.PlainText
                             anchors.centerIn: parent
                             text: String(result.source || "")
                             color: Theme.foreground

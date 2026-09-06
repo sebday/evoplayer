@@ -26,6 +26,7 @@ Item {
         spacing: Theme.spacingS
 
         Text {
+          textFormat: Text.PlainText
             Layout.alignment: Qt.AlignVCenter
             text: dashboard.libraryActivityBannerLabel()
             color: scanBar.cpuHot ? Theme.urgent : Theme.accent
@@ -41,6 +42,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
             Layout.alignment: Qt.AlignVCenter
             text: scanBar.phaseText
             color: Theme.foreground
@@ -50,6 +52,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
             visible: scanBar.folderText !== ""
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
@@ -69,6 +72,7 @@ Item {
         }
 
         Text {
+          textFormat: Text.PlainText
             visible: scanBar.cpuText !== ""
             Layout.alignment: Qt.AlignVCenter
             text: scanBar.cpuText

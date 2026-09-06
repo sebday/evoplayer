@@ -21,7 +21,11 @@ Item {
     property int lastNowPlayingScrobbleAt: 0
 
     readonly property string home: Quickshell.env("HOME") || ""
-    readonly property string socketPath: (Quickshell.env("XDG_RUNTIME_DIR") || "/tmp") + "/evoplayer.sock"
+    readonly property string socketPath: {
+        var dir = Quickshell.env("XDG_RUNTIME_DIR") || ""
+        if (!dir) return ""
+        return dir + "/evoplayer.sock"
+    }
 
     function playerCmd(args) {
         return Util.evoplayerCommand(home, args || [])
@@ -40,6 +44,19 @@ Item {
     readonly property int notifyNormalMs: 5000
     readonly property int notifyLowMs: 3000
 
+    function stripNotify(value) {
+        var s = String(value == null ? "" : value)
+        var out = ""
+        for (var i = 0; i < s.length && out.length < 180; i++) {
+            var code = s.charCodeAt(i)
+            if (code < 32 || (code >= 127 && code < 160)) continue
+            var c = s.charAt(i)
+            if (c === "<" || c === ">" || c === "&") continue
+            out += c
+        }
+        return out
+    }
+
     function omarchyNotify(opts) {
         var o = opts || {}
         var args = ["omarchy", "notification", "send", "--app-name", PluginIds.pluginId]
@@ -52,8 +69,8 @@ Item {
         var image = String(o.image || "").trim()
         if (image)
             args.push("--image", image)
-        args.push(String(o.summary || "Evoplayer"))
-        var body = String(o.body || "")
+        args.push(stripNotify(o.summary || "Evoplayer"))
+        var body = stripNotify(o.body || "")
         if (body)
             args.push(body)
         Quickshell.execDetached(args)
@@ -634,14 +651,27 @@ Item {
 
     Process {
         id: notifyArtProc
+    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+
+    property string stdoutBuf: ""
+    property string stderrBuf: ""
         property string requestedPath: ""
         property string pendingPath: ""
 
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var requested = String(notifyArtProc.requestedPath || "")
+        stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        notifyArtProc.stdoutBuf += chunk
+        if (notifyArtProc.stdoutBuf.length > 262144) {
+          notifyArtProc.signal(15)
+          notifyArtProc.stdoutBuf = ""
+        }
+      }
+    }
+        onExited: function(exitCode) {
+      var requested = String(notifyArtProc.requestedPath || "")
                 notifyArtProc.requestedPath = ""
-                var cached = String(text || "").trim()
+                var cached = String(stdoutBuf || "").trim()
                 if (cached && requested)
                     root.notifyDisplayArtReady(requested, cached)
                 var pending = String(notifyArtProc.pendingPath || "")
@@ -651,9 +681,8 @@ Item {
                     notifyArtProc.command = root.playerCmd(["art", "notify-cache", pending])
                     notifyArtProc.running = true
                 }
-            }
-        }
     }
+  }
 
     Process {
         id: scrobbleProc
@@ -665,7 +694,16 @@ Item {
         target: "evoplayer"
 
         function status(): string {
-            return JSON.stringify(root.player || {})
+            var p = root.player || {}
+            return JSON.stringify({
+                state: String(p.state || ""),
+                title: String(p.title || "").slice(0, 120),
+                artist: String(p.artist || "").slice(0, 120),
+                album: String(p.album || "").slice(0, 120),
+                playing: String(p.state || "") === "playing",
+                position: Number(p.position) || 0,
+                duration: Number(p.duration) || 0
+            })
         }
 
         function toggle(): string {

@@ -34,6 +34,7 @@ Item {
     }
 
     Text {
+      textFormat: Text.PlainText
         anchors.centerIn: parent
         anchors.horizontalCenterOffset: btn.iconOffsetX
         anchors.verticalCenterOffset: btn.iconOffsetY

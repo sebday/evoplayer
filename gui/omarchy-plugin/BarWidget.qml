@@ -28,6 +28,7 @@ BarWidget {
         spacing: Style.space(6)
 
         Text {
+          textFormat: Text.PlainText
             id: glyph
             anchors.verticalCenter: parent.verticalCenter
             text: root.playIcon
@@ -54,6 +55,7 @@ BarWidget {
             visible: !root.bar.vertical && root.title !== ""
 
             Text {
+              textFormat: Text.PlainText
                 id: labelText
                 text: root.title + (root.artist ? "  ·  " + root.artist : "")
                 color: root.bar.barForeground

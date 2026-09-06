@@ -22,6 +22,7 @@ SectionPanel {
         spacing: Theme.spacingM
 
         Text {
+          textFormat: Text.PlainText
             Layout.fillWidth: true
             text: "Live waveform overlay on the now-playing view. Uses the same CAVA-style analyzer as the bar volume viz."
             color: Theme.foreground
@@ -50,6 +51,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "How often bar levels update."
                 color: Theme.foreground
@@ -78,6 +80,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "Overall bar height multiplier."
                 color: Theme.foreground
@@ -106,6 +109,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "Auto-boosts quiet tracks over time. 0 disables."
                 color: Theme.foreground
@@ -134,6 +138,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "Suppresses background noise and idle hiss."
                 color: Theme.foreground
@@ -149,6 +154,7 @@ SectionPanel {
             spacing: 4
 
             Text {
+              textFormat: Text.PlainText
                 text: "Monstercat"
                 color: Theme.foreground
                 font.family: Theme.fontFamily
@@ -199,6 +205,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "Peak fall smoothing — bars linger and drop more slowly."
                 color: Theme.foreground
@@ -228,6 +235,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "Ignore bass below this frequency."
                 color: Theme.foreground
@@ -257,6 +265,7 @@ SectionPanel {
             }
 
             Text {
+              textFormat: Text.PlainText
                 Layout.fillWidth: true
                 text: "Ignore treble above this frequency."
                 color: Theme.foreground
