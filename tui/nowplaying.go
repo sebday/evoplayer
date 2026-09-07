@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	browseColW = 27
-	panePadX   = 1
-	panePadY   = 1
+	browseColW        = 27
+	panePadX          = 1
+	panePadY          = 1
+	minArtColumnCols  = 18
+	compactArtMaxRows = vizPaintRows + 2
 )
 
 type artworkPlacement struct {
@@ -22,6 +24,7 @@ type artworkPlacement struct {
 	row      int
 	col      int
 	atCursor bool
+	inHeader bool
 }
 
 type playerGeom struct {
@@ -29,7 +32,9 @@ type playerGeom struct {
 	artworkCols, artworkRows     int
 	bodyH, nowPlayingH           int
 	nowPlayingInnerW             int
+	nowPlayingPad                int
 	vizW                         int
+	headerArt                    bool
 }
 
 func (m model) playerGeom() playerGeom {
@@ -109,6 +114,46 @@ func (m model) playerGeom() playerGeom {
 		playlistW = max(8, total-browseW-artworkW)
 	}
 
+	npPad := nowPlayingPadX
+	headerArt := useHeaderArt(artworkCols, artworkRows)
+	if headerArt {
+		artworkW = 0
+		browseW = max(minBrowse, browseColW)
+		playlistW = max(8, total-browseW)
+		if playlistW < minPlaylist {
+			browseW = max(minBrowse, browseW-(minPlaylist-playlistW))
+			playlistW = max(8, total-browseW)
+		}
+		npPad = 0
+		contentW = max(8, nowInner)
+		maxHeaderCols := max(8, contentW-minNowPlaying-1)
+		artworkCols, artworkRows = squareArtworkFit(maxHeaderCols, vizPaintRows, cw, ch)
+		if artworkRows > vizPaintRows {
+			artworkRows = vizPaintRows
+			artworkCols = min(artworkCols, squareArtworkCols(artworkRows, cw, ch))
+		}
+		nowPlayingW = contentW - artworkCols - 1
+		if nowPlayingW < minNowPlaying {
+			nowPlayingW = minNowPlaying
+			artworkCols = contentW - nowPlayingW - 1
+			if artworkCols < 8 {
+				headerArt = false
+				npPad = nowPlayingPadX
+				artworkCols = 0
+				artworkRows = 0
+				nowPlayingW = max(minNowPlaying, contentW)
+			} else {
+				artworkRows = min(vizPaintRows, squareArtworkRows(artworkCols, cw, ch))
+			}
+		}
+		vizW = 0
+		nowPlayingH = lipgloss.Height(m.renderNowPlaying(nowPlayingW)) + 3
+		if headerArt {
+			nowPlayingH = max(nowPlayingH, vizPaintRows+2)
+		}
+		bodyH = max(5, m.contentHeight()-nowPlayingH-footerH)
+	}
+
 	return playerGeom{
 		browseW:          browseW,
 		playlistW:        playlistW,
@@ -118,8 +163,14 @@ func (m model) playerGeom() playerGeom {
 		bodyH:            bodyH,
 		nowPlayingH:      nowPlayingH,
 		nowPlayingInnerW: nowPlayingW,
+		nowPlayingPad:    npPad,
 		vizW:             vizW,
+		headerArt:        headerArt,
 	}
+}
+
+func useHeaderArt(cols, rows int) bool {
+	return cols < minArtColumnCols || rows <= compactArtMaxRows
 }
 
 func squareArtworkFit(maxCols, maxRows, cw, ch int) (cols, rows int) {
@@ -202,11 +253,16 @@ func (m model) renderNowPlayingChrome(width int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (m model) renderNowPlayingBar() string {
+func (m model) renderNowPlayingBar() (string, artworkPlacement) {
 	g := m.playerGeom()
 	chrome := m.renderNowPlayingChrome(g.nowPlayingInnerW)
 	inner := chrome
-	if g.vizW >= 8 {
+	place := artworkPlacement{}
+	if g.headerArt && g.artworkCols >= 2 {
+		var art string
+		art, place = m.renderHeaderArtwork(g)
+		inner = lipgloss.JoinHorizontal(lipgloss.Top, chrome, " ", art)
+	} else if g.vizW >= 8 {
 		waveW := vizWaveWidth(g.vizW)
 		raw := padToHeight(m.renderFooterViz(waveW), vizPaintRows)
 		lines := strings.Split(raw, "\n")
@@ -217,11 +273,34 @@ func (m model) renderNowPlayingBar() string {
 		inner = lipgloss.JoinHorizontal(lipgloss.Top, chrome, " ", wave)
 	}
 	h := lipgloss.Height(inner) + 2
-	return fieldsetPad(m.nowPlayingLegend(g.nowPlayingInnerW), "", inner, m.mainWidth(), h, false, nowPlayingPadY, nowPlayingPadX, "", m.nowPlayingHintLegend(), 1)
+	return fieldsetPad(m.nowPlayingLegend(g.nowPlayingInnerW), "", inner, m.mainWidth(), h, false, nowPlayingPadY, g.nowPlayingPad, "", m.nowPlayingHintLegend(g.headerArt), 1), place
 }
 
-func (m model) nowPlayingHintLegend() string {
-	return m.spaceHint() + "  " + hint("/", "find", 1, false) + "  " + hint("?", "help", 1, false)
+func (m model) renderHeaderArtwork(g playerGeom) (string, artworkPlacement) {
+	layout, seq, overlay := m.cachedArtwork(g.artworkCols, g.artworkRows)
+	place := artworkPlacement{inHeader: true}
+	if overlay {
+		place.seq = seq
+		place.atCursor = !strings.Contains(layout, kittyPlaceholder)
+		place.col = nowPlayingContentCol(g.nowPlayingPad) + g.nowPlayingInnerW + 1
+	}
+	raw := padToHeight(layout, vizPaintRows)
+	lines := strings.Split(raw, "\n")
+	if len(lines) > vizPaintRows {
+		lines = lines[:vizPaintRows]
+	}
+	for i := range lines {
+		lines[i] = padExact(lines[i], g.artworkCols)
+	}
+	return strings.Join(lines, "\n"), place
+}
+
+func (m model) nowPlayingHintLegend(headerArt bool) string {
+	s := m.spaceHint() + "  " + hint("/", "find", 1, false) + "  " + hint("?", "help", 1, false)
+	if headerArt {
+		s += "  " + hint("a", "art", 1, false)
+	}
+	return s
 }
 
 func (m model) renderBody(height int) (string, artworkPlacement) {
@@ -229,6 +308,9 @@ func (m model) renderBody(height int) (string, artworkPlacement) {
 	g.bodyH = height
 	browse := m.renderBrowsePane(g)
 	playlist := m.renderPlaylistPane(g)
+	if g.headerArt {
+		return lipgloss.JoinHorizontal(lipgloss.Top, browse, playlist), artworkPlacement{}
+	}
 	artwork, place := m.renderArtworkPane(g)
 	joined := lipgloss.JoinHorizontal(lipgloss.Top, browse, playlist, artwork)
 	if place.seq != "" && place.atCursor {

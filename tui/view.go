@@ -18,12 +18,15 @@ func (m model) View() string {
 		return m.frames.view
 	}
 	m.search.Width = max(8, m.browseInnerWidth())
-	nowPlaying := m.renderNowPlayingBar()
+	nowPlaying, headerPlace := m.renderNowPlayingBar()
 	footer := m.renderFooter()
 	nowPlayingH := lipgloss.Height(nowPlaying)
 	footerH := footerBlockHeight(footer)
 	bodyH := max(5, m.contentHeight()-nowPlayingH-footerH)
 	body, place := m.renderBody(bodyH)
+	if headerPlace.seq != "" {
+		place = headerPlace
+	}
 	body = padToHeight(body, bodyH)
 	var inner string
 	if footer != "" {
@@ -40,7 +43,11 @@ func (m model) View() string {
 		}
 		row, col := 0, 0
 		if place.atCursor {
-			row = padY + nowPlayingH + place.row
+			if place.inHeader {
+				row = padY + 2 + nowPlayingPadY + place.row
+			} else {
+				row = padY + nowPlayingH + place.row
+			}
 			col = padX + place.col
 		}
 		m.storeArtOverlay(place.seq, row, col, g.artworkCols, g.artworkRows)
@@ -53,7 +60,7 @@ func (m model) View() string {
 		m.frames.view = out
 		nowPlayingW := g.nowPlayingInnerW
 		nowPlayingRow := padY + 2 + nowPlayingPadY
-		nowPlayingCol := padX + nowPlayingContentCol()
+		nowPlayingCol := padX + nowPlayingContentCol(g.nowPlayingPad)
 		vizRow, vizCol, vizW := 0, 0, 0
 		if g.vizW >= 8 {
 			vizRow = nowPlayingRow

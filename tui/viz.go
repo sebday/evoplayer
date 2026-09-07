@@ -682,8 +682,8 @@ func vizWaveWidth(vizW int) int {
 }
 
 // nowPlayingContentCol is the 1-based terminal column of the first inner cell.
-func nowPlayingContentCol() int {
-	return 2 + nowPlayingPadX
+func nowPlayingContentCol(padX int) int {
+	return 2 + padX
 }
 
 func paneContentCol() int {

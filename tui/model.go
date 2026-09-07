@@ -27,80 +27,80 @@ const (
 )
 
 type model struct {
-	env                paths.Env
-	width              int
-	height             int
-	focus              focus
-	search             textinput.Model
-	nav                []navItem
-	navIdx             int
-	browseIdx          int
-	browseOffset       int
-	queue              []library.Track
-	queueFiltered      []library.Track
-	playlistIdx        int
-	playlistOffset     int
-	browsePath         string
-	browseAll          []library.BrowseEntry
-	browse             []library.BrowseEntry
-	searchQuery        string
-	searchGen          int
-	searchMoved        bool
-	status             playback.Status
-	artPath            string
-	artImg             image.Image
-	art                *artCache
-	artPicker          bool
-	artHits            []art.Result
-	artPickPath        string
-	artPickQuery       string
-	artPickBusy        bool
-	artPickSavedIdx    int
-	artPickSavedOffset int
-	artPickSavedFocus  focus
-	artPickSaved       bool
-	artPickPreviewURL  string
-	artPickPreviewIdx  int
-	artPickPreviewGen  int
-	artPreviewImg      image.Image
-	artPreviewCache    map[string]image.Image
-	movePicker         bool
-	moveFolders        []string
-	movePickPath       string
-	movePickBusy       bool
-	movePickSavedIdx   int
-	movePickSavedOffset int
-	movePickSavedFocus focus
-	movePickSaved      bool
-	tagEditor          bool
-	tagEditPath        string
-	tagEditBusy        bool
-	tagEditFocus       int
-	tagEditTitle       textinput.Model
-	tagEditArtist      textinput.Model
-	tagEditYear        textinput.Model
-	tagEditGenre       textinput.Model
-	tagEditLabel       textinput.Model
-	tagEditSavedIdx    int
-	tagEditSavedOffset int
-	tagEditSavedFocus  focus
-	tagEditSaved       bool
+	env                  paths.Env
+	width                int
+	height               int
+	focus                focus
+	search               textinput.Model
+	nav                  []navItem
+	navIdx               int
+	browseIdx            int
+	browseOffset         int
+	queue                []library.Track
+	queueFiltered        []library.Track
+	playlistIdx          int
+	playlistOffset       int
+	browsePath           string
+	browseAll            []library.BrowseEntry
+	browse               []library.BrowseEntry
+	searchQuery          string
+	searchGen            int
+	searchMoved          bool
+	status               playback.Status
+	artPath              string
+	artImg               image.Image
+	art                  *artCache
+	artPicker            bool
+	artHits              []art.Result
+	artPickPath          string
+	artPickQuery         string
+	artPickBusy          bool
+	artPickSavedIdx      int
+	artPickSavedOffset   int
+	artPickSavedFocus    focus
+	artPickSaved         bool
+	artPickPreviewURL    string
+	artPickPreviewIdx    int
+	artPickPreviewGen    int
+	artPreviewImg        image.Image
+	artPreviewCache      map[string]image.Image
+	movePicker           bool
+	moveFolders          []string
+	movePickPath         string
+	movePickBusy         bool
+	movePickSavedIdx     int
+	movePickSavedOffset  int
+	movePickSavedFocus   focus
+	movePickSaved        bool
+	tagEditor            bool
+	tagEditPath          string
+	tagEditBusy          bool
+	tagEditFocus         int
+	tagEditTitle         textinput.Model
+	tagEditArtist        textinput.Model
+	tagEditYear          textinput.Model
+	tagEditGenre         textinput.Model
+	tagEditLabel         textinput.Model
+	tagEditSavedIdx      int
+	tagEditSavedOffset   int
+	tagEditSavedFocus    focus
+	tagEditSaved         bool
 	tagEditPendingFreeze bool
-	frames             *frameCache
-	wavePeaks          []int
-	wavePath           string
-	waveFile           string
-	waveBusy           string
-	vizSub             bool
-	vizMode            vizMode
-	paint              *vizPainter
-	settingsPath       textinput.Model
-	settings           config.JSONView
-	job                jobs.State
-	err                string
-	loading            bool
-	ready              bool
-	pendingBrowse      int
+	frames               *frameCache
+	wavePeaks            []int
+	wavePath             string
+	waveFile             string
+	waveBusy             string
+	vizSub               bool
+	vizMode              vizMode
+	paint                *vizPainter
+	settingsPath         textinput.Model
+	settings             config.JSONView
+	job                  jobs.State
+	err                  string
+	loading              bool
+	ready                bool
+	pendingBrowse        int
 }
 
 type navMsg struct {
@@ -391,7 +391,7 @@ func (m model) patchFocusedList() (tea.Model, tea.Cmd) {
 }
 
 func (m model) canFreeze() bool {
-	return !m.artPicker && m.frames != nil && m.frames.view != "" && m.frames.vizRow > 0
+	return !m.artPicker && m.frames != nil && m.frames.view != "" && m.frames.nowPlayingRow > 0
 }
 
 func (m model) shouldUnfreeze(msg tea.Msg) bool {
