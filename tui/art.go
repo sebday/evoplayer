@@ -338,6 +338,10 @@ func artGridPixels(cols, rows int) (pxW, pxH int) {
 	return max(1, cols*cw), max(1, rows*ch)
 }
 
+func sixelPixelHeight(px int) int {
+	return max(6, (px+5)/6*6)
+}
+
 func renderKittyArt(img image.Image, cols, rows int) (layout, seq string, err error) {
 	cols = max(2, cols)
 	rows = max(1, rows)
@@ -421,6 +425,9 @@ func replaceKittyDim(seq, key string, n int) string {
 func renderGraphicsArt(img image.Image, cols, rows int, p termimg.Protocol) (string, error) {
 	if p == termimg.Sixel && detectEmulator() == "foot" {
 		pxW, pxH := artGridPixels(cols, rows)
+		// SIXEL encodes six vertical pixels per band. Foot fills unused pixels
+		// in a partial final band with black, so render a complete band.
+		pxH = sixelPixelHeight(pxH)
 		ti := termimg.New(img).Protocol(p).WidthPixels(pxW).HeightPixels(pxH).Scale(termimg.ScaleFill)
 		return ti.Render()
 	}

@@ -101,6 +101,10 @@ type model struct {
 	loading              bool
 	ready                bool
 	pendingBrowse        int
+	pendingSeek          float64
+	pendingSeekPath      string
+	seekPending          bool
+	seekGen              int
 }
 
 type navMsg struct {
@@ -149,6 +153,10 @@ type errMsg struct {
 }
 
 type tickMsg struct{}
+
+type seekDebounceMsg struct {
+	gen int
+}
 
 type likeMsg struct {
 	path  string
@@ -563,6 +571,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, loadTracks(m.env, "current"))
 		}
 		return m, tea.Batch(cmds...)
+	case seekDebounceMsg:
+		if !m.seekPending || msg.gen != m.seekGen || m.pendingSeekPath != m.status.Path {
+			if msg.gen == m.seekGen {
+				m.seekPending = false
+			}
+			return m, nil
+		}
+		sec := m.pendingSeek
+		m.seekPending = false
+		return m, m.playbackCmd(func(env paths.Env) error { return seekPlayback(env, sec) })
 	case jobMsg:
 		if msg.err != nil {
 			m.err = msg.err.Error()
@@ -1057,9 +1075,9 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case ",":
 		return m, m.playbackCmd(func(env paths.Env) error { return skipTrack(env, "playback.prev") })
 	case "<", "shift+,":
-		return m, m.seekBy(-10)
+		return m.seekBy(-10)
 	case ">", "shift+.":
-		return m, m.seekBy(10)
+		return m.seekBy(10)
 	case "-", "_":
 		return m, m.volumeDelta(-5)
 	case "=":
@@ -1503,12 +1521,22 @@ func seekTarget(pos, duration, delta float64) float64 {
 	return t
 }
 
-func (m model) seekBy(delta float64) tea.Cmd {
+func (m model) seekBy(delta float64) (tea.Model, tea.Cmd) {
 	if m.status.Path == "" {
-		return nil
+		return m, nil
 	}
-	sec := seekTarget(m.status.Position, m.status.Duration, delta)
-	return m.playbackCmd(func(env paths.Env) error { return seekPlayback(env, sec) })
+	pos := m.status.Position
+	if m.seekPending && m.pendingSeekPath == m.status.Path {
+		pos = m.pendingSeek
+	}
+	m.pendingSeek = seekTarget(pos, m.status.Duration, delta)
+	m.pendingSeekPath = m.status.Path
+	m.seekPending = true
+	m.seekGen++
+	gen := m.seekGen
+	return m, tea.Tick(200*time.Millisecond, func(time.Time) tea.Msg {
+		return seekDebounceMsg{gen: gen}
+	})
 }
 
 func (m model) playbackCmd(fn func(paths.Env) error) tea.Cmd {

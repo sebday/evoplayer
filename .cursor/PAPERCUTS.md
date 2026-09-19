@@ -10,6 +10,8 @@ data, or sensitive paths.
 
 ## Open
 
+- `go build ./cmd/evoplayer` overwrites the tracked root `evoplayer` binary, leaving an unrelated binary diff after routine validation.
+
 ## Resolved
 
 Move fixed entries here, mark them checked, and append the resolving date or commit.

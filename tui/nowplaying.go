@@ -23,6 +23,8 @@ type artworkPlacement struct {
 	seq      string
 	row      int
 	col      int
+	cols     int
+	rows     int
 	atCursor bool
 	inHeader bool
 }
@@ -216,6 +218,10 @@ func artPaneHeight(rows int) int {
 	return max(6, rows+2)
 }
 
+func insetArtworkSize(cols, rows int) (int, int) {
+	return max(2, cols-1), max(1, rows-1)
+}
+
 func padNowPlayingGap(chrome string, rows int) string {
 	lines := strings.Split(chrome, "\n")
 	w := 0
@@ -277,8 +283,9 @@ func (m model) renderNowPlayingBar() (string, artworkPlacement) {
 }
 
 func (m model) renderHeaderArtwork(g playerGeom) (string, artworkPlacement) {
-	layout, seq, overlay := m.cachedArtwork(g.artworkCols, g.artworkRows)
-	place := artworkPlacement{inHeader: true}
+	artCols, artRows := insetArtworkSize(g.artworkCols, g.artworkRows)
+	layout, seq, overlay := m.cachedArtwork(artCols, artRows)
+	place := artworkPlacement{cols: artCols, rows: artRows, inHeader: true}
 	if overlay {
 		place.seq = seq
 		place.atCursor = !strings.Contains(layout, kittyPlaceholder)
@@ -369,8 +376,9 @@ func (m model) renderPlaylistPane(g playerGeom) string {
 }
 
 func (m model) renderArtworkPane(g playerGeom) (string, artworkPlacement) {
-	layout, seq, overlay := m.cachedArtwork(g.artworkCols, g.artworkRows)
-	place := artworkPlacement{}
+	artCols, artRows := insetArtworkSize(g.artworkCols, g.artworkRows)
+	layout, seq, overlay := m.cachedArtwork(artCols, artRows)
+	place := artworkPlacement{cols: artCols, rows: artRows}
 	if overlay {
 		place.seq = seq
 		place.atCursor = !strings.Contains(layout, kittyPlaceholder)
@@ -380,7 +388,7 @@ func (m model) renderArtworkPane(g playerGeom) (string, artworkPlacement) {
 	artH := artPaneHeight(g.artworkRows)
 	var pane string
 	if overlay {
-		pane = fieldsetArt(m.artworkLegend(), layout, g.artworkW, artH, panePadX, g.artworkCols, hint("a", "art", 4, false), 4)
+		pane = fieldsetArt(m.artworkLegend(), layout, g.artworkW, artH, panePadX, artCols, hint("a", "art", 4, false), 4)
 	} else {
 		pane = fieldsetPad(m.artworkLegend(), "", layout, g.artworkW, artH, false, 0, panePadX, "", hint("a", "art", 4, false), 4)
 	}

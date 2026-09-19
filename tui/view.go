@@ -50,7 +50,7 @@ func (m model) View() string {
 			}
 			col = padX + place.col
 		}
-		m.storeArtOverlay(place.seq, row, col, g.artworkCols, g.artworkRows)
+		m.storeArtOverlay(place.seq, row, col, place.cols, place.rows)
 	} else if m.art != nil && m.art.shown {
 		m.art.shown = false
 		m.clearStoredArtOverlay()
