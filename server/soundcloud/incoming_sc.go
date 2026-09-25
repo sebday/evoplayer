@@ -16,10 +16,11 @@ import (
 )
 
 type incomingSCMeta struct {
-	artist    string
-	title     string
-	playlists []string
-	folder    string
+	artist      string
+	title       string
+	playlists   []string
+	folder      string
+	genreFolder string
 }
 
 type incomingSCRow struct {
@@ -79,24 +80,25 @@ func IncomingSCApply(env library.Env, setsURL, oauth string, dryRun bool) (tagge
 
 		probed, _ := tags.ProbeImport(path)
 		meta, ok := lookupIncomingSCMeta(byKey, probed.Tag.Artist, probed.Tag.Title, e.Name(), ext)
-		if !ok || strings.TrimSpace(meta.folder) == "" {
+		folder := resolveIncomingFolder(env, ok, meta, probed)
+		if folder == "" {
 			skipped++
 			continue
 		}
 
 		pl := strings.Join(meta.playlists, ", ")
 		if dryRun {
-			fmt.Printf("tag %s -> %s (%s)\n", e.Name(), meta.folder, pl)
+			fmt.Printf("tag %s -> %s (%s)\n", e.Name(), folder, pl)
 			tagged++
 			continue
 		}
 
-		if _, err := library.SetIncomingGenre(env, path, meta.folder); err != nil {
+		if _, err := library.SetIncomingGenre(env, path, folder); err != nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: fail %s: %v\n", e.Name(), err)
 			failed++
 			continue
 		}
-		fmt.Printf("tagged %s -> %s (%s)\n", e.Name(), meta.folder, pl)
+		fmt.Printf("tagged %s -> %s (%s)\n", e.Name(), folder, pl)
 		tagged++
 	}
 	return tagged, skipped, failed, nil
@@ -125,9 +127,13 @@ func buildIncomingSCIndex(env library.Env, oauth, setsURL string) (map[string]st
 		if u != "" {
 			urlToMeta[u] = incomingSCMeta{artist: tr.User.Username, title: tr.Title}
 		}
-		if _, ok := keyToMeta[key]; !ok {
-			keyToMeta[key] = incomingSCMeta{artist: tr.User.Username, title: tr.Title}
+		meta := keyToMeta[key]
+		meta.artist = tr.User.Username
+		meta.title = tr.Title
+		if meta.genreFolder == "" {
+			meta.genreFolder = FolderFromLikedTrack(env, &tr)
 		}
+		keyToMeta[key] = meta
 	}
 
 	sets, err := ytdlpFlatEntries(nil, setsURL, oauth, "")
@@ -150,7 +156,7 @@ func buildIncomingSCIndex(env library.Env, oauth, setsURL string) (map[string]st
 			folder = library.MatchLibraryGenre(env, title)
 		}
 		if folder == "" {
-			folder = guessIncomingSCFolder(title)
+			folder = guessIncomingSCFolder(env, title)
 		}
 		playlistFolder[title] = folder
 
@@ -247,43 +253,55 @@ func normIncomingSCMatch(s string) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
-func guessIncomingSCFolder(playlistTitle string) string {
-	n := library.NormalizeGenreKey(playlistTitle)
-	switch {
-	case strings.Contains(n, "drumandbass"), strings.Contains(n, "dnb"), n == "jungle", n == "liquid", n == "neurofunk":
-		return "drum&bass"
-	case strings.Contains(n, "dubstep"), n == "140", n == "dub", strings.Contains(n, "riddim"):
-		return "dubstep"
-	case strings.Contains(n, "garage"), n == "ukg", strings.Contains(n, "2step"):
-		return "garage"
-	case strings.Contains(n, "grime"):
-		return "grime"
-	case strings.Contains(n, "hiphop"), strings.Contains(n, "rap"), strings.Contains(n, "phonk"), n == "trap", n == "beats":
-		return "hiphop"
-	case strings.Contains(n, "house"):
-		return "house"
-	case strings.Contains(n, "electronic"), strings.Contains(n, "edm"), strings.Contains(n, "techno"), strings.Contains(n, "chill"):
-		return "electronic"
-	case strings.Contains(n, "calibre"), strings.Contains(n, "metalheadz"), strings.Contains(n, "doc"), strings.Contains(n, "skeptical"), strings.Contains(n, "marcus"):
-		return "drum&bass"
-	case strings.Contains(n, "oldskool"):
-		return "drum&bass"
-	case strings.Contains(n, "spacejazz"):
-		return "drum&bass"
+func guessIncomingSCFolder(env library.Env, playlistTitle string) string {
+	if folder := library.GuessFolderFromCandidates(env, playlistTitle); folder != "" {
+		return folder
+	}
+	return library.GuessFolderName(playlistTitle)
+}
+
+func resolveIncomingFolder(env library.Env, liked bool, meta incomingSCMeta, probed tags.ProbeResult) string {
+	if f := strings.TrimSpace(meta.folder); f != "" {
+		return f
+	}
+	if liked {
+		if f := strings.TrimSpace(meta.genreFolder); f != "" {
+			return f
+		}
+	}
+	tag := probed.Tag
+	if f := library.MatchLibraryGenre(env, tag.Genre); f != "" {
+		return f
+	}
+	if f := library.GuessFolderFromCandidates(env, tag.Genre, tag.Title, tag.Comment); f != "" {
+		return f
+	}
+	if strings.Contains(strings.ToLower(tag.Comment), "source:youtube") {
+		if g, err := config.Get(env.MusicConfig, "download", "youtube_genre", ""); err == nil {
+			if f := library.MatchLibraryGenre(env, strings.TrimSpace(g)); f != "" {
+				return f
+			}
+		}
+	}
+	if liked {
+		// Liked SoundCloud downloads with junk genre tags still belong in the library.
+		if f := library.MatchLibraryGenre(env, "electronic"); f != "" {
+			return f
+		}
 	}
 	return ""
 }
 
 func lookupIncomingSCMeta(byKey map[string]incomingSCMeta, artist, title, filename, ext string) (incomingSCMeta, bool) {
-	if m, ok := byKey[incomingSCMatchKey(artist, title)]; ok {
-		return m, true
-	}
 	if i := strings.Index(filename, " - "); i > 0 {
 		fnArtist := strings.TrimSpace(filename[:i])
 		fnTitle := strings.TrimSpace(strings.TrimSuffix(filename[i+3:], ext))
 		if m, ok := byKey[incomingSCMatchKey(fnArtist, fnTitle)]; ok {
 			return m, true
 		}
+	}
+	if m, ok := byKey[incomingSCMatchKey(artist, title)]; ok {
+		return m, true
 	}
 	return incomingSCMeta{}, false
 }
