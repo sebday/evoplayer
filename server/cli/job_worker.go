@@ -14,7 +14,7 @@ import (
 
 func CmdJobWorker(env paths.Env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: evoplayer _job <soundcloud-download|import-incoming|download-url|cache> [args]")
+		return fmt.Errorf("usage: evoplayer _job <soundcloud-download|import-incoming|download-url|cache|discover-preview|discover-keep> [args]")
 	}
 	switch args[0] {
 	case "soundcloud-download":
@@ -25,6 +25,10 @@ func CmdJobWorker(env paths.Env, args []string) error {
 		return runDownloadURLWorker(env, args[1:])
 	case "cache":
 		return runCacheWorker(env, args[1:])
+	case "discover-preview":
+		return runDiscoverPreviewWorker(env, args[1:])
+	case "discover-keep":
+		return runDiscoverKeepWorker(env, args[1:])
 	default:
 		return fmt.Errorf("evoplayer: unknown job %q", args[0])
 	}
@@ -51,6 +55,22 @@ func runDownloadURLWorker(env paths.Env, args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	os.Exit(worker.RunDownloadURL(ctx, env, rawURL, importAfter))
+	return nil
+}
+
+func runDiscoverPreviewWorker(env paths.Env, args []string) error {
+	id := worker.ParseTrackID(args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	os.Exit(worker.RunDiscoverPreview(ctx, env, id))
+	return nil
+}
+
+func runDiscoverKeepWorker(env paths.Env, args []string) error {
+	id := worker.ParseTrackID(args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	os.Exit(worker.RunDiscoverKeep(ctx, env, id))
 	return nil
 }
 

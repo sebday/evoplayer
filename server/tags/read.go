@@ -31,6 +31,7 @@ type TagInfo struct {
 	Label         string `json:"label"`
 	CatalogNumber string `json:"catalog_number"`
 	Comment       string `json:"comment"`
+	SoundcloudID  string `json:"soundcloud_id"`
 }
 
 type ProbeResult struct {
@@ -90,12 +91,16 @@ func readID3(path string) (TagInfo, float64) {
 		info.Comment = strings.TrimSpace(comm.Text)
 	}
 	for _, frame := range tag.GetFrames("TXXX") {
-		if user, ok := frame.(id3v2.UserDefinedTextFrame); ok {
-			desc := strings.ToLower(user.Description)
-			if desc == "catalognumber" || desc == "catalog" || desc == "catalogue" {
-				info.CatalogNumber = strings.TrimSpace(user.Value)
-				break
-			}
+		user, ok := frame.(id3v2.UserDefinedTextFrame)
+		if !ok {
+			continue
+		}
+		desc := strings.ToLower(user.Description)
+		switch desc {
+		case "catalognumber", "catalog", "catalogue":
+			info.CatalogNumber = strings.TrimSpace(user.Value)
+		case "soundcloud_id":
+			info.SoundcloudID = strings.TrimSpace(user.Value)
 		}
 	}
 	dur := 0.0
@@ -145,6 +150,7 @@ func readFFProbe(path string) (TagInfo, float64) {
 	info.Label = pick("label", "publisher", "organization", "tpub")
 	info.CatalogNumber = pick("catalognumber", "catalog", "catalogue", "catno")
 	info.Comment = pick("comment", "description")
+	info.SoundcloudID = pick("soundcloud_id")
 	year := pick("date", "year", "originaldate", "original_year", "tyer")
 	if m := yearInTag.FindStringSubmatch(year); len(m) > 1 {
 		info.Year = m[1]

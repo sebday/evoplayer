@@ -23,6 +23,9 @@ type Track struct {
 	PermalinkURL string `json:"permalink_url"`
 	CreatedAt    string `json:"created_at"`
 	ArtworkURL   string `json:"artwork_url"`
+	Duration     int64  `json:"duration"`
+	Policy       string `json:"policy"`
+	Streamable   *bool  `json:"streamable"`
 	User         struct {
 		Username string `json:"username"`
 	} `json:"user"`

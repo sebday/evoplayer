@@ -11,6 +11,7 @@ data, or sensitive paths.
 ## Open
 
 - `go build ./cmd/evoplayer` overwrites the tracked root `evoplayer` binary, leaving an unrelated binary diff after routine validation.
+- Quickshell keeps panel QML from process start. Edits under `gui/omarchy-plugin` do not show until `omarchy-shell shell rescanPlugins` (reopening the panel is not enough).
 
 ## Resolved
 

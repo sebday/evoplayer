@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -345,6 +346,9 @@ func trackMeta(track *Track, opts DownloadOptions) map[string]string {
 		"artist":  artist,
 		"title":   title,
 		"comment": "source:soundcloud",
+	}
+	if track.ID != 0 {
+		meta["soundcloud_id"] = strconv.FormatInt(track.ID, 10)
 	}
 	if year != "" {
 		meta["year"] = year

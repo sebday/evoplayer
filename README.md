@@ -1,19 +1,18 @@
 # Evoplayer
 
-Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. Styled like btop, because btop looks awesome.
+Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. The panel is Quickshell, laid out like btop: numbered panes for now playing, the library, the playlist, and the cover.
 
-I used Soundcloud for years and ignored my mp3 collection. This TUI (and probably Quickshell) music player is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library.
+I used Soundcloud for years and ignored my mp3 collection. This is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library. The terminal UI is on `feat/player-tui`.
 
 ![Evoplayer TUI](preview.png)
 
 ## Layout
 
 ```
-cmd/evoplayer/     thin main (serve, tui, CLI)
+cmd/evoplayer/     thin main (serve, gui, CLI)
 server/            daemon, playback, library, ipc, cli
-tui/               terminal player
-gui/               quickshell dashboard (optional, not default)
-scripts/           install (binary + desktop entry)
+gui/               quickshell panel (omarchy plugin)
+scripts/           install (binary, desktop entry, plugin link)
 ```
 
 ## Install
@@ -26,13 +25,13 @@ Puts `evoplayer` on `PATH` (`~/.local/bin/evoplayer` → `.build/evoplayer`).
 
 ## Usage
 
-With no arguments, `evoplayer` opens the terminal player (and starts `serve` if the socket is missing). `evoplayer tui` is the same.
+With no arguments, `evoplayer` opens the Quickshell panel and starts `serve` if the socket is missing. `evoplayer gui` is the same. Install links the Omarchy plugin and adds it to the bar. Reload plugins with `omarchy-shell shell rescanPlugins` after install.
 
 ### Player and daemon
 
 ```bash
-evoplayer                    # TUI (default)
-evoplayer tui
+evoplayer                    # open the panel (default)
+evoplayer gui
 evoplayer serve              # daemon only (playback, IPC, MPRIS, jobs)
 evoplayer start              # start daemon if needed
 evoplayer restart
@@ -83,6 +82,8 @@ evoplayer library browse|meta|import|cache|download …
 ```bash
 evoplayer download [--import]                    # SoundCloud likes sync
 evoplayer download <url> [--no-import]           # YouTube or SoundCloud URL
+evoplayer discover [--json]                      # similar SoundCloud tracks for the current song
+evoplayer discover keep|dismiss <id>
 evoplayer job status|stop|cancel [--json]
 ```
 

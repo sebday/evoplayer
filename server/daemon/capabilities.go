@@ -17,6 +17,7 @@ func capabilities() map[string]any {
 			{"name": "playback.volume.set", "params": map[string]string{"volume": "int"}},
 			{"name": "playback.volume.delta", "params": map[string]string{"delta": "int"}},
 			{"name": "playback.shuffle", "params": map[string]string{"on": "bool"}},
+			{"name": "playback.repeat", "params": map[string]string{"on": "bool"}},
 			{"name": "queue.replace", "params": map[string]string{"paths": "[]string", "start_path": "string", "if_revision": "uint64?"}},
 			{"name": "queue.load", "params": map[string]string{"paths": "[]string", "start_path": "string", "if_revision": "uint64?"}},
 			{"name": "queue.play_path", "params": map[string]string{"path": "string", "if_revision": "uint64?"}},
@@ -59,6 +60,10 @@ func capabilities() map[string]any {
 			{"name": "scrobble.submit", "params": map[string]string{"started": "int"}},
 			{"name": "job.status", "params": nil},
 			{"name": "job.cancel", "params": nil},
+			{"name": "discover.similar", "params": map[string]string{"path": "string", "id": "int"}},
+			{"name": "discover.preview", "params": map[string]string{"id": "int"}},
+			{"name": "discover.keep", "params": map[string]string{"id": "int"}},
+			{"name": "discover.dismiss", "params": map[string]string{"id": "int"}},
 		},
 		"error_codes": []string{
 			"invalid_params",

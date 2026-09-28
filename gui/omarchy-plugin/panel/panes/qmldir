@@ -1,0 +1,5 @@
+module panes
+NowPlayingPane 1.0 NowPlayingPane.qml
+BrowsePane 1.0 BrowsePane.qml
+PlaylistPane 1.0 PlaylistPane.qml
+ArtPane 1.0 ArtPane.qml

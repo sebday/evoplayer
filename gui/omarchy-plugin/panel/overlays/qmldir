@@ -1,0 +1,6 @@
+module overlays
+HelpOverlay 1.0 HelpOverlay.qml
+TagEditor 1.0 TagEditor.qml
+MovePicker 1.0 MovePicker.qml
+SettingsOverlay 1.0 SettingsOverlay.qml
+DownloadOverlay 1.0 DownloadOverlay.qml

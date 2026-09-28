@@ -19,6 +19,7 @@ import (
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
+	"github.com/sebday/evoplayer/server/soundcloud"
 	"github.com/sebday/evoplayer/server/status"
 	"github.com/sebday/evoplayer/server/viz"
 	"github.com/sebday/evoplayer/server/warm"
@@ -58,6 +59,9 @@ type Daemon struct {
 	notifyMu          sync.Mutex
 	notifyPrev        playback.Status
 	notifyReady       bool
+	discoverMu        sync.Mutex
+	discoverByID      map[int64]soundcloud.SimilarResult
+	discoverByPath    map[string]int64
 }
 
 type mprisCloser interface {
@@ -460,6 +464,15 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		}
 		go func() { d.Actor.SetShuffle(p.On) }()
 		return nil, nil
+	case "playback.repeat":
+		var p struct {
+			On bool `json:"on"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		go func() { d.Actor.SetRepeat(p.On) }()
+		return nil, nil
 	case "viz.config":
 		return d.vizConfigView(), nil
 	case "viz.config.apply":
@@ -522,6 +535,8 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 			return d.handleJob(req)
 		case "scrobble":
 			return d.handleScrobble(req)
+		case "discover":
+			return d.handleDiscover(req)
 		default:
 			return nil, ipc.ErrUnknownMethod(req.Method)
 		}
@@ -530,7 +545,7 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 
 func (d *Daemon) saveCurrentQueue() error {
 	env := playlist.EnvFrom(d.Env)
-	paths := d.Actor.QueuePaths()
+	paths := withoutDiscoverPreviews(d.Env.CacheDir, d.Actor.QueuePaths())
 	if _, err := playlist.SaveCurrentFast(env, paths); err != nil {
 		return err
 	}

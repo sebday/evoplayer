@@ -21,6 +21,7 @@ type Status struct {
 	Waveform      string  `json:"waveform"`
 	Playlist      string  `json:"playlist"`
 	Shuffle       bool    `json:"shuffle"`
+	Repeat        bool    `json:"repeat"`
 	PlaylistPos   int     `json:"playlist_pos"`
 	PlaylistCount int     `json:"playlist_count"`
 	QueueRevision uint64  `json:"queue_revision,omitempty"`

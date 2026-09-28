@@ -19,6 +19,7 @@ type Actor struct {
 	queueRev           uint64
 	shuffle            bool
 	shuffleOrd         []int
+	repeat             bool
 	volumePct          int
 	paused             bool
 	path               string
@@ -34,6 +35,8 @@ type Actor struct {
 	outputOnce         sync.Once
 	outputInitErr      error
 	loadGen            uint64
+	detached           bool
+	resumePos          float64
 	cmdCh              chan func()
 	viz                *viz.Analyzer
 }
@@ -183,6 +186,7 @@ func (a *Actor) buildStatusLocked() Status {
 		Duration:      a.durationSec,
 		Volume:        a.volumePct,
 		Shuffle:       a.shuffle,
+		Repeat:        a.repeat,
 		PlaylistPos:   pos,
 		PlaylistCount: count,
 		QueueRevision: a.queueRev,
@@ -468,6 +472,7 @@ func (a *Actor) Seek(seconds float64) error {
 func (a *Actor) Next() error {
 	return a.dispatchErr(func() error {
 		a.mu.Lock()
+		a.detached = false
 		if len(a.queue) == 0 {
 			a.mu.Unlock()
 			return nil
@@ -481,6 +486,12 @@ func (a *Actor) Next() error {
 func (a *Actor) Prev() error {
 	return a.dispatchErr(func() error {
 		a.mu.Lock()
+		if a.detached && a.positionSec <= 3 {
+			resume := a.resumePos
+			a.detached = false
+			a.mu.Unlock()
+			return a.loadCurrentAt(resume, false)
+		}
 		if len(a.queue) == 0 {
 			a.mu.Unlock()
 			return nil
@@ -489,9 +500,27 @@ func (a *Actor) Prev() error {
 			a.mu.Unlock()
 			return a.restartPlaybackFrom(0)
 		}
+		a.detached = false
 		a.index = a.nextIndexLocked(-1)
 		a.mu.Unlock()
 		return a.loadCurrent()
+	})
+}
+
+// PlayDetached plays path without changing the queue. When it ends, playback
+// returns to the queue track that was interrupted.
+func (a *Actor) PlayDetached(path string) error {
+	return a.dispatchErr(func() error {
+		if !IsSupportedPath(path) {
+			return fmt.Errorf("unsupported path: %s", path)
+		}
+		a.mu.Lock()
+		if !a.detached {
+			a.resumePos = a.positionSec
+		}
+		a.detached = true
+		a.mu.Unlock()
+		return a.loadPath(path, 0, false)
 	})
 }
 
@@ -520,6 +549,15 @@ func (a *Actor) AdjustVolume(delta int) {
 		if a.volumePct > 100 {
 			a.volumePct = 100
 		}
+		a.mu.Unlock()
+		a.emit()
+	})
+}
+
+func (a *Actor) SetRepeat(on bool) {
+	a.dispatch(func() {
+		a.mu.Lock()
+		a.repeat = on
 		a.mu.Unlock()
 		a.emit()
 	})
@@ -594,6 +632,7 @@ func (a *Actor) loadCurrent() error {
 
 func (a *Actor) loadCurrentAt(position float64, paused bool) error {
 	a.mu.Lock()
+	a.detached = false
 	if len(a.queue) == 0 {
 		a.mu.Unlock()
 		a.haltPlayback()
@@ -605,7 +644,10 @@ func (a *Actor) loadCurrentAt(position float64, paused bool) error {
 	}
 	path := a.queue[a.index]
 	a.mu.Unlock()
+	return a.loadPath(path, position, paused)
+}
 
+func (a *Actor) loadPath(path string, position float64, paused bool) error {
 	stream, format, err := OpenDecoder(path)
 	if err != nil {
 		return err
@@ -700,12 +742,15 @@ func (a *Actor) seekPlayback(seconds float64) error {
 	}
 	stream := a.stream
 	srcRate := a.sourceSampleRate
+	path := a.path
 	if srcRate <= 0 {
 		srcRate = outputSampleRate
 	}
 	samples := int(seconds * float64(srcRate))
 	a.mu.Unlock()
 
+	restartPlay := false
+	var loadGen uint64
 	if seeker, ok := stream.(StreamSeeker); ok {
 		if samples < 0 {
 			samples = 0
@@ -713,6 +758,12 @@ func (a *Actor) seekPlayback(seconds float64) error {
 		if max := seeker.Len(); max > 0 && samples > max {
 			samples = max
 		}
+		// Seeking restarts the decoder. That looks like EOF to the current
+		// reader, so invalidate the end watcher before the read loop notices.
+		a.mu.Lock()
+		a.loadGen++
+		loadGen = a.loadGen
+		a.mu.Unlock()
 		a.playMu.Lock()
 		err := seeker.Seek(samples)
 		a.playMu.Unlock()
@@ -720,12 +771,24 @@ func (a *Actor) seekPlayback(seconds float64) error {
 			return err
 		}
 		seconds = float64(samples) / float64(srcRate)
+		restartPlay = true
+	}
+
+	if restartPlay {
+		done := make(chan struct{})
+		if err := a.output.Play(a.playChain(), &a.playMu, func() { close(done) }); err != nil {
+			return err
+		}
+		go a.watchPlaybackEnd(path, loadGen, done)
 	}
 
 	a.mu.Lock()
 	a.positionSec = seconds
 	a.playbackAnchorSec = seconds
 	a.playbackAnchorTime = time.Now()
+	if restartPlay {
+		a.startPositionLoopLocked()
+	}
 	a.mu.Unlock()
 	if srcRate <= 0 {
 		srcRate = outputSampleRate
@@ -743,13 +806,29 @@ func (a *Actor) watchPlaybackEnd(path string, gen uint64, done <-chan struct{}) 
 	a.dispatch(func() {
 		a.mu.Lock()
 		stale := a.loadGen != gen || a.path != path
+		repeat := a.repeat
+		detached := a.detached
+		resume := a.resumePos
 		a.mu.Unlock()
 		if stale {
 			return
 		}
-		a.mu.Lock()
-		a.index = a.nextIndexLocked(1)
-		a.mu.Unlock()
+		if detached {
+			if repeat {
+				_ = a.loadPath(path, 0, false)
+				return
+			}
+			a.mu.Lock()
+			a.detached = false
+			a.mu.Unlock()
+			_ = a.loadCurrentAt(resume, false)
+			return
+		}
+		if !repeat {
+			a.mu.Lock()
+			a.index = a.nextIndexLocked(1)
+			a.mu.Unlock()
+		}
 		_ = a.loadCurrent()
 	})
 }

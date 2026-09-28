@@ -1,0 +1,4 @@
+module compat
+singleton Theme 1.0 Theme.qml
+singleton Util 1.0 Util.qml
+Fieldset 1.0 Fieldset.qml

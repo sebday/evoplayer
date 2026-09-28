@@ -40,6 +40,13 @@ func EmbedMP3(path string, targets map[string]string, picture []byte, pictureMIM
 		tag.DeleteFrames("TLEN")
 		tag.AddTextFrame("TLEN", tag.DefaultEncoding(), strings.TrimSpace(v))
 	}
+	if v, ok := targets["soundcloud_id"]; ok && strings.TrimSpace(v) != "" {
+		tag.AddUserDefinedTextFrame(id3v2.UserDefinedTextFrame{
+			Encoding:    tag.DefaultEncoding(),
+			Description: "soundcloud_id",
+			Value:       strings.TrimSpace(v),
+		})
+	}
 	if len(picture) > 0 {
 		mime := pictureMIME
 		if mime == "" {

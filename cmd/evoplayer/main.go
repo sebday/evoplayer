@@ -10,7 +10,6 @@ import (
 	"github.com/sebday/evoplayer/server/cli"
 	"github.com/sebday/evoplayer/server/daemon"
 	"github.com/sebday/evoplayer/server/paths"
-	"github.com/sebday/evoplayer/tui"
 )
 
 func main() {
@@ -18,7 +17,7 @@ func main() {
 	exe, _ := os.Executable()
 
 	if len(os.Args) < 2 {
-		if err := tui.Run(env, exe); err != nil {
+		if err := cli.CmdGUI(env, exe); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -32,8 +31,8 @@ func main() {
 	switch cmd {
 	case "serve":
 		err = daemon.New(env).Run()
-	case "tui":
-		err = tui.Run(env, exe)
+	case "gui":
+		err = cli.CmdGUI(env, exe)
 	case "start":
 		err = cli.CmdStart(env, exe)
 	case "restart":
@@ -135,6 +134,8 @@ func main() {
 		err = cli.CmdWarm(env, args)
 	case "download":
 		err = cli.CmdDownload(env, args)
+	case "discover":
+		err = cli.CmdDiscover(env, args)
 	case "stats":
 		err = cli.CmdStats(env, args)
 	case "job":
