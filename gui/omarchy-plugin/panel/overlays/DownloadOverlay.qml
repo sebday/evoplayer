@@ -9,69 +9,171 @@ Column {
     spacing: 8
     width: parent ? parent.width : implicitWidth
 
-    Text {
-        textFormat: Text.PlainText
-        text: "youtube or soundcloud url"
-        color: Theme.border
-        font.family: Theme.fontFamily
-        font.bold: true
-        font.pixelSize: Theme.fontSizeS
+    component FieldBox: Rectangle {
+        id: box
+
+        property int index: 0
+        property string label: ""
+        property string placeholder: ""
+        property bool selected: false
+        property string value: ""
+        signal edited(string text)
+        signal accepted()
+
+        width: pane.width
+        implicitHeight: 48
+        radius: Theme.fieldsetCornerRadius
+        color: Theme.mantle
+        border.width: 1
+        border.color: selected ? Theme.good : Theme.inactiveBorder
+
+        Text {
+            id: caption
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            anchors.topMargin: 4
+            text: box.label
+            color: box.selected ? Theme.border : Theme.muted
+            font.family: Theme.fontFamily
+            font.bold: true
+            font.pixelSize: Theme.fontSizeS
+            elide: Text.ElideRight
+        }
+
+        Text {
+            anchors.left: field.left
+            anchors.right: field.right
+            anchors.verticalCenter: field.verticalCenter
+            visible: field.text === ""
+            text: box.placeholder
+            color: Theme.muted
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSizeM
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+
+        TextInput {
+            id: field
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: caption.bottom
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            height: 22
+            color: Theme.foreground
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSizeM
+            clip: true
+            selectByMouse: true
+            selectionColor: Theme.good
+            selectedTextColor: Theme.background
+            verticalAlignment: TextInput.AlignVCenter
+            onTextChanged: box.edited(text)
+            onAccepted: box.accepted()
+            onActiveFocusChanged: {
+                pane.view.textCapture = activeFocus
+                if (!activeFocus)
+                    return
+                pane.view.downloadHit = -1
+                pane.view.downloadIdx = box.index
+            }
+            Keys.priority: Keys.BeforeItem
+            Keys.onPressed: function(event) {
+                if (pane.view.dispatch(event))
+                    event.accepted = true
+            }
+        }
+
+        function grab() {
+            field.forceActiveFocus()
+        }
+
+        function drop() {
+            field.focus = false
+        }
+
+        function show(text) {
+            if (field.activeFocus || field.text === text)
+                return
+            field.text = text
+        }
     }
 
-    TextInput {
-        id: urlField
-        width: pane.width
-        color: Theme.foreground
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSizeM
-        clip: true
-        selectByMouse: true
-        selectionColor: Theme.good
-        selectedTextColor: Theme.background
-        onTextChanged: {
+    FieldBox {
+        id: urlBox
+        index: 0
+        label: "url"
+        placeholder: "youtube or soundcloud link"
+        selected: view.downloadIdx === 0 && view.downloadHit < 0
+        onEdited: function(text) {
             if (view.downloadUrl !== text)
                 view.downloadUrl = text
         }
-        Component.onCompleted: text = view.downloadUrl
-        onActiveFocusChanged: view.textCapture = activeFocus
-        Keys.priority: Keys.BeforeItem
-        Keys.onPressed: function(event) {
-            if (view.dispatch(event))
-                event.accepted = true
-        }
+        onAccepted: view.submitDownload()
     }
 
-    Text {
-        textFormat: Text.PlainText
-        width: pane.width
-        text: "enter downloads and imports"
-        color: Theme.muted
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSizeS
+    FieldBox {
+        id: searchBox
+        index: 1
+        label: "soundcloud"
+        placeholder: "search, enter plays a result"
+        selected: view.downloadIdx === 1 && view.downloadHit < 0
+        onEdited: function(text) {
+            if (view.downloadQuery !== text)
+                view.downloadQuery = text
+        }
+        onAccepted: view.searchSoundCloud()
     }
 
-    Rectangle {
+    ListView {
+        id: hits
         width: pane.width
-        height: 22
-        radius: 2
-        color: view.downloadIdx === 1 ? Theme.good : "transparent"
+        height: Math.min(6, count) * 22
+        visible: count > 0
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        interactive: false
+        model: view.downloadHits || []
 
-        Text {
-            anchors.fill: parent
-            anchors.leftMargin: 2
-            textFormat: Text.PlainText
-            text: "sync likes"
-            verticalAlignment: Text.AlignVCenter
-            color: view.downloadIdx === 1 ? Theme.background : Theme.foreground
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeM
-        }
+        delegate: Rectangle {
+            required property int index
+            required property var modelData
+            width: hits.width
+            height: 22
+            radius: 2
+            color: view.downloadHit === index ? Theme.good : "transparent"
 
-        MouseArea {
-            anchors.fill: parent
-            onClicked: {
-                view.downloadIdx = 1
-                view.syncLikes()
+            Text {
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                textFormat: Text.PlainText
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+                text: pane.hitLabel(modelData)
+                color: view.downloadHit === index ? Theme.background : Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeM
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                onClicked: function(mouse) {
+                    view.downloadHit = index
+                    if (mouse.button === Qt.RightButton)
+                        view.downloadSoundCloudHit()
+                }
+                onDoubleClicked: function(mouse) {
+                    if (mouse.button !== Qt.LeftButton)
+                        return
+                    view.downloadHit = index
+                    view.playSoundCloudHit()
+                }
             }
         }
     }
@@ -132,23 +234,42 @@ Column {
         target: view
         function onModeChanged() {
             if (view.mode === "download")
-                pane.focusUrl()
+                pane.focusCurrent()
         }
-        function onDownloadIdxChanged() {
-            if (view.mode !== "download")
-                return
-            if (view.downloadIdx === 0)
-                pane.focusUrl()
-            else
-                urlField.focus = false
-        }
-        function onDownloadUrlChanged() {
-            if (!urlField.activeFocus && urlField.text !== view.downloadUrl)
-                urlField.text = view.downloadUrl
-        }
+        function onDownloadIdxChanged() { pane.focusCurrent() }
+        function onDownloadHitChanged() { pane.focusCurrent() }
+        function onDownloadUrlChanged() { urlBox.show(view.downloadUrl) }
+        function onDownloadQueryChanged() { searchBox.show(view.downloadQuery) }
     }
 
-    function focusUrl() {
-        Qt.callLater(function() { urlField.forceActiveFocus() })
+    function hitLabel(row) {
+        var artist = String(row && row.artist || "").replace(/^\s+|\s+$/g, "")
+        var title = String(row && row.title || "").replace(/^\s+|\s+$/g, "")
+        var name = artist && title ? artist + " — " + title : (title || artist)
+        var dur = view.clock(row ? row.duration : 0)
+        return dur ? name + "  " + dur : name
+    }
+
+    function focusCurrent() {
+        if (view.mode !== "download")
+            return
+        if (view.downloadHit >= 0) {
+            urlBox.drop()
+            searchBox.drop()
+            return
+        }
+        Qt.callLater(function() {
+            if (view.downloadIdx === 1)
+                searchBox.grab()
+            else
+                urlBox.grab()
+        })
+    }
+
+    Component.onCompleted: {
+        urlBox.show(view.downloadUrl)
+        searchBox.show(view.downloadQuery)
+        if (view.mode === "download")
+            focusCurrent()
     }
 }

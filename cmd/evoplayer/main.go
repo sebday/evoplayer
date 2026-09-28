@@ -134,6 +134,8 @@ func main() {
 		err = cli.CmdWarm(env, args)
 	case "download":
 		err = cli.CmdDownload(env, args)
+	case "soundcloud":
+		err = cli.CmdSoundCloud(env, args)
 	case "discover":
 		err = cli.CmdDiscover(env, args)
 	case "stats":

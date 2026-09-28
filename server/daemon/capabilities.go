@@ -53,6 +53,7 @@ func capabilities() map[string]any {
 			{"name": "library.current.save", "params": map[string]string{"paths": "[]string"}},
 			{"name": "library.import", "params": nil},
 			{"name": "library.cache", "params": map[string]string{"genre": "string", "force": "bool"}},
+			{"name": "library.soundcloud.search", "params": map[string]string{"query": "string", "limit": "int?"}},
 			{"name": "library.soundcloud.download", "params": map[string]string{"import": "bool"}},
 			{"name": "library.download", "params": map[string]string{"url": "string", "import": "bool?"}},
 			{"name": "library.art.maintain", "params": nil},

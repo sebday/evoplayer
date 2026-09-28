@@ -160,10 +160,38 @@ Fieldset {
                     anchors.rightMargin: 2
                     spacing: 8
 
+                    Rectangle {
+                        id: cover
+                        width: pane.rowH - 2
+                        height: width
+                        radius: 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: selected ? Theme.background : Theme.mantle
+                        clip: true
+
+                        Image {
+                            anchors.fill: parent
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: true
+                            sourceSize.width: 72
+                            sourceSize.height: 72
+                            source: {
+                                if (playing) {
+                                    var live = view.artSource()
+                                    if (live)
+                                        return live
+                                }
+                                var path = String(modelData.thumb || modelData.art || "")
+                                return path ? Util.fileUrl(path) : ""
+                            }
+                        }
+                    }
+
                     Row {
                         id: titleRow
                         spacing: 4
-                        width: parent.width - meta.implicitWidth - 8
+                        width: parent.width - meta.implicitWidth - cover.width - 16
                         anchors.verticalCenter: parent.verticalCenter
 
                         Text {
@@ -431,16 +459,12 @@ Fieldset {
             view: pane.view
         }
 
-        SettingsOverlay {
-            anchors.fill: parent
-            anchors.topMargin: errLine.height
-            visible: view.mode === "settings"
-            view: pane.view
-        }
-
         DownloadOverlay {
             anchors.fill: parent
-            anchors.topMargin: errLine.height
+            anchors.topMargin: errLine.height + 8
+            anchors.leftMargin: 8
+            anchors.rightMargin: 8
+            anchors.bottomMargin: 4
             visible: view.mode === "download"
             view: pane.view
         }

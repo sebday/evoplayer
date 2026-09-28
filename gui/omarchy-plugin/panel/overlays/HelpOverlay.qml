@@ -46,7 +46,6 @@ Flickable {
                 { key: "e", label: "edit tags" },
                 { key: "tab", label: "next tag field (in editor)" },
                 { key: "a", label: "art" },
-                { key: "s", label: "art (track)" },
                 { key: "v", label: "visualizer on / off" },
                 { key: "V", label: "visualizer prev" },
                 { key: "esc", label: "back" },

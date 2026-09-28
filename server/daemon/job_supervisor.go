@@ -126,15 +126,15 @@ func superviseWorker(ctx context.Context, jm jobRelay, cmd *exec.Cmd) error {
 		return ctx.Err()
 	case err := <-waitDone:
 		scanErr := <-scanDone
+		if scanErr != nil {
+			return scanErr
+		}
 		if err != nil {
 			var exitErr *exec.ExitError
 			if errors.As(err, &exitErr) {
 				return fmt.Errorf("worker exited with status %s", exitErr.ProcessState)
 			}
 			return err
-		}
-		if scanErr != nil {
-			return scanErr
 		}
 		return nil
 	}

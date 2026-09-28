@@ -15,6 +15,7 @@ import (
 	"github.com/sebday/evoplayer/server/notify"
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
+	"github.com/sebday/evoplayer/server/soundcloud"
 	"github.com/sebday/evoplayer/server/status"
 	"github.com/sebday/evoplayer/server/viz"
 	"github.com/sebday/evoplayer/server/warm"
@@ -185,6 +186,22 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		return find.Tracks(d.Env.TracksCacheDir, p.Mode, p.Query)
+	case "library.soundcloud.search":
+		var search struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit"`
+		}
+		if err := ipc.DecodeParams(req.Params, &search); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(search.Query) == "" {
+			return nil, ipc.ErrInvalidParams("query required")
+		}
+		tracks, err := soundcloud.Search(d.Env, search.Query, search.Limit)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"tracks": tracks}, nil
 	case "library.playlist.list":
 		return playlist.ListIndex(playlist.EnvFrom(d.Env))
 	case "library.playlist.tracks":

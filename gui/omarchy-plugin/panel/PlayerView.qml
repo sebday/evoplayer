@@ -51,10 +51,18 @@ Item {
     property string discoverNote: ""
     property string discoverSeedTitle: ""
     property string downloadUrl: ""
+    property string downloadQuery: ""
+    property var downloadHits: []
+    property int downloadHit: -1
+    property string downloadPreviewId: ""
+    property string downloadPreviewURL: ""
     property int downloadIdx: 0
     property string downloadNote: ""
     property string downloadLog: ""
     property var downloadFiles: []
+    property string _scBuf: ""
+    property string _scErr: ""
+    property bool _scOverflow: false
     property int playlistPage: 16
     property int savedPlaylistIdx: 0
     property string savedFocus: "browse"
@@ -102,16 +110,11 @@ Item {
     property string tagLabel: ""
 
     property string musicRoot: ""
-    property string settingsRoot: ""
-    property string scUser: ""
-    property string scOauth: ""
 
     property string _waveBuf: ""
     property bool _waveOverflow: false
     property string _artBuf: ""
     property bool _artOverflow: false
-    property string _cfgBuf: ""
-    property bool _cfgOverflow: false
 
     onQueueRevisionChanged: {
         if (active && reorderPending === 0)
@@ -138,7 +141,6 @@ Item {
             loadBrowse("")
             loadPlaylistIndex()
             loadQueue()
-            loadAccount()
             loadRoot()
             if (service)
                 service.ipcCall("job.status", {}, function(ok, msg) {
@@ -301,8 +303,6 @@ Item {
             return "move"
         if (mode === "art")
             return "cover"
-        if (mode === "settings")
-            return "settings"
         if (mode === "download")
             return "download"
         if (mode === "help")
@@ -318,11 +318,23 @@ Item {
         if (mode === "move")
             return [{ key: "⏎", label: "move" }]
         if (mode === "art")
-            return [{ key: "⏎", label: "set" }, { key: "s", label: "track" }]
-        if (mode === "settings")
-            return [{ key: "⏎", label: "save" }]
-        if (mode === "download")
-            return [{ key: "⏎", label: downloadIdx === 1 ? "sync likes" : "download" }, { key: "↓", label: "likes" }]
+            return [{ key: "⏎", label: "set" }]
+        if (mode === "download") {
+            var hints = []
+            if (downloadHit >= 0)
+                hints = [{ key: "⏎", label: "play" }, { key: "d", label: "download" }, { key: "l", label: "like" }, { key: "↑", label: "search" }]
+            else if (downloadIdx === 1)
+                hints = [{ key: "⏎", label: "search" }, { key: "↓", label: "results" }]
+            else
+                hints = [{ key: "⏎", label: "download" }, { key: "↓", label: "search" }]
+            var withSync = []
+            for (var i = 0; i < hints.length; i++) {
+                withSync.push(hints[i])
+                if (hints[i].label === "search")
+                    withSync.push({ key: "s", label: "sync" })
+            }
+            return withSync
+        }
         if (mode === "help" || mode === "tags")
             return []
         if (mode === "discover")
@@ -424,9 +436,10 @@ Item {
                     id: String(it.name || "")
                 })
             }
+            if (rows.length)
+                rows.push({ kind: "rule", type: "", label: "", path: "", count: 0, id: "" })
             rows.push({ kind: "tool", type: "", label: "download", path: "", count: 0, id: "download" })
             rows.push({ kind: "tool", type: "", label: "discover", path: "", count: 0, id: "discover" })
-            rows.push({ kind: "tool", type: "", label: "settings", path: "", count: 0, id: "settings" })
         }
         sidebar = rows
         if (browseIdx >= rows.length)
@@ -448,12 +461,7 @@ Item {
                 openDownload()
             return
         }
-        if (tool === "settings") {
-            if (mode === "queue" || mode === "discover" || mode === "download")
-                mode = "settings"
-            return
-        }
-        if (mode === "settings" || mode === "discover" || mode === "download")
+        if (mode === "discover" || mode === "download")
             mode = "queue"
     }
 
@@ -464,10 +472,11 @@ Item {
         loadIncoming()
     }
 
-    function submitDownload() {
-        var url = String(downloadUrl || "").replace(/^\s+|\s+$/g, "")
+    function submitDownload(explicitUrl) {
+        var fromBox = explicitUrl === undefined || explicitUrl === null
+        var url = String(fromBox ? downloadUrl : explicitUrl).replace(/^\s+|\s+$/g, "")
         if (!url) {
-            err = "paste a url"
+            err = fromBox ? "paste a url" : "no soundcloud link"
             return
         }
         err = ""
@@ -484,8 +493,103 @@ Item {
                 return
             }
             root.err = ""
-            root.downloadUrl = ""
+            if (fromBox)
+                root.downloadUrl = ""
         })
+    }
+
+    function searchSoundCloud() {
+        var q = String(downloadQuery || "").replace(/^\s+|\s+$/g, "")
+        if (!q) {
+            err = "type a search"
+            return
+        }
+        if (scSearchProc.running)
+            return
+        err = ""
+        downloadNote = "searching…"
+        _scBuf = ""
+        _scErr = ""
+        _scOverflow = false
+        scSearchProc.command = [Util.evoplayerBinPath(service ? service.home : ""), "soundcloud", "search", "--json", q]
+        scSearchProc.running = true
+    }
+
+    function applySoundCloudSearch(code) {
+        downloadNote = ""
+        if (_scOverflow || code !== 0) {
+            var msg = String(_scErr || "").replace(/^\s+|\s+$/g, "")
+            err = msg || "soundcloud search failed"
+            _scBuf = ""
+            _scErr = ""
+            return
+        }
+        var parsed
+        try {
+            parsed = JSON.parse(_scBuf || "{}")
+        } catch (e) {
+            err = "soundcloud search failed"
+            _scBuf = ""
+            return
+        }
+        _scBuf = ""
+        _scErr = ""
+        err = ""
+        downloadHits = parsed.tracks || []
+        if (downloadHits.length) {
+            downloadHit = 0
+            downloadNote = ""
+        } else {
+            downloadHit = -1
+            downloadNote = "nothing on soundcloud"
+        }
+    }
+
+    function selectedDownloadHit() {
+        var rows = downloadHits || []
+        if (downloadHit < 0 || downloadHit >= rows.length)
+            return null
+        return rows[downloadHit]
+    }
+
+    function playSoundCloudHit() {
+        var row = selectedDownloadHit()
+        if (!row || !row.id) {
+            err = "nothing to play"
+            return
+        }
+        if (!service || !service.ipcCall) {
+            err = "not connected"
+            return
+        }
+        err = ""
+        downloadNote = "playing…"
+        downloadPreviewId = String(row.id)
+        downloadPreviewURL = String(row.permalink || "")
+        service.ipcCall("discover.preview", { id: Number(downloadPreviewId) }, function(ok, msg) {
+            if (!ok) {
+                root.downloadNote = ""
+                root.err = msg && msg.error ? String(msg.error) : "request failed"
+                return
+            }
+            var data = msg ? msg.data : null
+            if (data && data.path)
+                root.downloadNote = ""
+        })
+    }
+
+    function downloadSoundCloudHit() {
+        var row = selectedDownloadHit()
+        submitDownload(row && row.permalink ? String(row.permalink) : "")
+    }
+
+    function importPlayingPreview() {
+        if (!downloadPreviewId || !downloadPreviewURL)
+            return false
+        if (trackPath.indexOf("/discover/" + downloadPreviewId + ".mp3") < 0)
+            return false
+        submitDownload(downloadPreviewURL)
+        return true
     }
 
     function syncLikes() {
@@ -502,6 +606,20 @@ Item {
                 root.err = msg && msg.error ? String(msg.error) : "request failed"
             }
         })
+    }
+
+    function jobError(data) {
+        var shown = String(data && data.error || "failed")
+        if (shown.indexOf("worker exited") < 0)
+            return shown
+        var lines = String(data && data.log || "").split("\n")
+        for (var i = lines.length - 1; i >= 0; i--) {
+            var line = String(lines[i] || "").replace(/^\s+|\s+$/g, "").replace(/^·\s*/, "")
+            if (!line || line.indexOf("preview ") === 0)
+                continue
+            return line
+        }
+        return shown
     }
 
     function noteDownloadJob(data) {
@@ -1050,13 +1168,11 @@ Item {
             applyMove()
             return
         }
-        if (mode === "settings") {
-            saveSettings()
-            return
-        }
         if (mode === "download") {
-            if (downloadIdx === 1)
-                syncLikes()
+            if (downloadHit >= 0)
+                playSoundCloudHit()
+            else if (downloadIdx === 1)
+                searchSoundCloud()
             else
                 submitDownload()
             return
@@ -1091,8 +1207,6 @@ Item {
                 pane = "playlist"
                 return
             }
-            mode = "settings"
-            pane = "playlist"
             return
         }
         if (row.kind === "playlist") {
@@ -1204,11 +1318,17 @@ Item {
     }
 
     function likePlaying() {
+        if (mode === "download" && downloadHit >= 0) {
+            downloadSoundCloudHit()
+            return
+        }
+        if (importPlayingPreview())
+            return
         toggleLike(trackPath)
     }
 
     function pushOverlay(next) {
-        if (mode === "queue" || mode === "settings") {
+        if (mode === "queue") {
             savedPlaylistIdx = playlistIdx
             savedFocus = pane === "search" ? "browse" : pane
         }
@@ -1242,7 +1362,7 @@ Item {
     }
 
     function openSearch() {
-        if (mode !== "queue" && mode !== "settings")
+        if (mode !== "queue")
             closeMode()
         pane = "search"
     }
@@ -1383,7 +1503,7 @@ Item {
     }
 
     function openArt() {
-        if (mode === "settings" || mode === "help" || !trackPath)
+        if (mode === "help" || !trackPath)
             return
         if (artSearchProc.running)
             return
@@ -1485,35 +1605,24 @@ Item {
             service.requestEnrich(trackPath)
     }
 
-    function saveSettings() {
-        var path = String(settingsRoot || "").replace(/^\s+|\s+$/g, "").replace(/\/$/, "")
-        if (!path) {
-            err = "library path required"
+    function applyLibrary(path) {
+        path = String(path || "").replace(/^\s+|\s+$/g, "").replace(/\/$/, "")
+        if (!path)
             return
-        }
-        ipc("config.set", { section: "paths", key: "root", value: path }, function(data) {
+        musicRoot = path
+        ipc("config.set", { section: "paths", key: "root", value: path }, function() {
             root.err = ""
-            var paths = data && data.paths ? data.paths : {}
-            if (paths.root) {
-                root.musicRoot = String(paths.root)
-                root.settingsRoot = root.musicRoot
-            }
-            var sc = data && data.soundcloud ? data.soundcloud : null
-            if (sc) {
-                root.scUser = String(sc.user || "")
-                root.scOauth = String(sc.oauth_source || "")
-            }
             root.loadBrowse("")
+            root.loadPlaylistIndex()
         })
     }
 
-    function loadAccount() {
-        if (accountProc.running)
+    function pickLibrary() {
+        if (musicRoot || pickProc.running)
             return
-        _cfgBuf = ""
-        _cfgOverflow = false
-        accountProc.command = [Util.evoplayerBinPath(""), "config", "get"]
-        accountProc.running = true
+        pickProc.stdoutBuf = ""
+        pickProc.command = [Util.evoplayerBinPath(service ? service.home : ""), "config", "pick"]
+        pickProc.running = true
     }
 
     function loadRoot() {
@@ -1522,16 +1631,6 @@ Item {
         rootProc.stdoutBuf = ""
         rootProc.command = [Util.evoplayerBinPath(""), "config", "toml-get", "paths", "root"]
         rootProc.running = true
-    }
-
-    function parseAccount(text) {
-        var lines = String(text || "").split("\n")
-        for (var i = 0; i < lines.length; i++) {
-            if (lines[i].indexOf("user:") === 0)
-                scUser = lines[i].slice(5).replace(/^\s+/, "")
-            if (lines[i].indexOf("oauth:") === 0)
-                scOauth = lines[i].slice(6).replace(/^\s+/, "")
-        }
     }
 
     function transport(action) {
@@ -1790,20 +1889,12 @@ Item {
             closeDownload()
             return
         }
-        if (mode !== "queue" && mode !== "settings") {
+        if (mode !== "queue") {
             closeMode()
             return
         }
         if (pane === "search") {
             clearSearch()
-            return
-        }
-        if (mode === "settings") {
-            mode = "queue"
-            pane = "browse"
-            textCapture = false
-            if (host && host.forceKeyFocus)
-                host.forceKeyFocus()
             return
         }
         if (browsePath)
@@ -1825,24 +1916,61 @@ Item {
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { moveTag(1); return true }
             return false
         }
-        if (mode === "settings" && textCapture) {
-            if (key === Qt.Key_Escape) { onEsc(); return true }
-            if (key === Qt.Key_Return || key === Qt.Key_Enter) { saveSettings(); return true }
-            if (key === Qt.Key_Up || key === Qt.Key_Backtab) { focusPane("browse"); return true }
-            return false
-        }
         if (mode === "download" && textCapture) {
             if (key === Qt.Key_Escape) { onEsc(); return true }
-            if (key === Qt.Key_Return || key === Qt.Key_Enter) { submitDownload(); return true }
-            if (key === Qt.Key_Down) { downloadIdx = 1; return true }
-            if (key === Qt.Key_Up || key === Qt.Key_Backtab) { focusPane("browse"); return true }
+            if (key === Qt.Key_Return || key === Qt.Key_Enter) {
+                if (downloadIdx === 1)
+                    searchSoundCloud()
+                else
+                    submitDownload()
+                return true
+            }
+            if (key === Qt.Key_Down) {
+                if (downloadIdx === 0) {
+                    downloadIdx = 1
+                    return true
+                }
+                if ((downloadHits || []).length) {
+                    downloadHit = 0
+                    return true
+                }
+                return true
+            }
+            if (key === Qt.Key_Up || key === Qt.Key_Backtab) {
+                if (downloadIdx === 1) {
+                    downloadIdx = 0
+                    return true
+                }
+                focusPane("browse")
+                return true
+            }
             return false
+        }
+        if (mode === "download" && downloadHit >= 0) {
+            if (key === Qt.Key_Escape) { onEsc(); return true }
+            if (text === "s" || text === "S") { syncLikes(); return true }
+            if (key === Qt.Key_Up) {
+                if (downloadHit > 0)
+                    downloadHit -= 1
+                else
+                    downloadHit = -1
+                return true
+            }
+            if (key === Qt.Key_Down) {
+                if (downloadHit < (downloadHits || []).length - 1)
+                    downloadHit += 1
+                return true
+            }
+            if (key === Qt.Key_Return || key === Qt.Key_Enter) { playSoundCloudHit(); return true }
+            if (text === "d" || text === "D" || text === "l" || text === "L") { downloadSoundCloudHit(); return true }
+            return true
         }
         if (mode === "download") {
             if (key === Qt.Key_Escape) { onEsc(); return true }
-            if (key === Qt.Key_Up) { downloadIdx = 0; return true }
-            if (key === Qt.Key_Down) { downloadIdx = 1; return true }
-            if ((key === Qt.Key_Return || key === Qt.Key_Enter) && downloadIdx === 1) { syncLikes(); return true }
+            if (text === "s" || text === "S") { syncLikes(); return true }
+            if ((text === "l" || text === "L") && importPlayingPreview())
+                return true
+            return true
         }
         if (pane === "search" && textCapture) {
             if (key === Qt.Key_Escape) { clearSearch(); return true }
@@ -1890,11 +2018,9 @@ Item {
         if (text === "m" || text === "M") { openMove(); return true }
         if (text === "e" || text === "E") { openTags(); return true }
         if (text === "a" || text === "A") { openArt(); return true }
-        if (text === "s" || text === "S") { applyArt("track"); return true }
         if (text === "v" || text === "V") { cycleViz(text === "V" ? -1 : 1); return true }
         if (key === Qt.Key_Backspace) { leaveFolder(); return true }
         if (key === Qt.Key_Left) {
-            if (mode === "settings" && pane === "playlist") { focusPane("browse"); return true }
             leaveFolder()
             return true
         }
@@ -1955,6 +2081,24 @@ Item {
                 root.noteDownloadJob(data)
                 return
             }
+            if (name === "discover-preview" && root.mode === "download") {
+                var previewStatus = String(data.status || "")
+                if (previewStatus === "running") {
+                    var previewPhase = data.progress && data.progress.phase ? String(data.progress.phase) : ""
+                    root.downloadNote = previewPhase || "playing…"
+                    return
+                }
+                if (previewStatus === "error") {
+                    root.downloadNote = ""
+                    root.err = root.jobError(data)
+                    return
+                }
+                if (previewStatus === "done") {
+                    root.downloadNote = ""
+                    root.err = ""
+                    return
+                }
+            }
             if (name !== "discover-preview" && name !== "discover-keep")
                 return
             var status = String(data.status || "")
@@ -1965,7 +2109,7 @@ Item {
             }
             if (status === "error") {
                 root.discoverNote = ""
-                root.err = String(data.error || "failed")
+                root.err = root.jobError(data)
                 return
             }
             if (status === "done") {
@@ -1979,6 +2123,32 @@ Item {
     }
 
     Process { id: openProc }
+
+    Process {
+        id: scSearchProc
+        stdout: SplitParser {
+            splitMarker: ""
+            onRead: function(chunk) {
+                if (root._scOverflow)
+                    return
+                root._scBuf += String(chunk || "")
+                if (root._scBuf.length > 262144) {
+                    root._scOverflow = true
+                    root._scBuf = ""
+                    scSearchProc.signal(15)
+                }
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: ""
+            onRead: function(chunk) {
+                root._scErr += String(chunk || "")
+            }
+        }
+        onExited: function(code) {
+            root.applySoundCloudSearch(code)
+        }
+    }
 
     Process {
         id: waveProc
@@ -2071,28 +2241,6 @@ Item {
     }
 
     Process {
-        id: accountProc
-        stdout: SplitParser {
-            splitMarker: ""
-            onRead: function(chunk) {
-                if (root._cfgOverflow)
-                    return
-                root._cfgBuf += String(chunk || "")
-                if (root._cfgBuf.length > 4096) {
-                    root._cfgOverflow = true
-                    root._cfgBuf = ""
-                    accountProc.signal(15)
-                }
-            }
-        }
-        onExited: {
-            if (!root._cfgOverflow)
-                root.parseAccount(root._cfgBuf)
-            root._cfgBuf = ""
-        }
-    }
-
-    Process {
         id: channelProc
         property string forPath: ""
         property string stdoutBuf: ""
@@ -2132,11 +2280,40 @@ Item {
         onExited: {
             var path = String(rootProc.stdoutBuf || "").replace(/^\s+|\s+$/g, "")
             rootProc.stdoutBuf = ""
-            if (path) {
+            if (path)
                 root.musicRoot = path
-                if (!root.settingsRoot)
-                    root.settingsRoot = path
+            else
+                root.pickLibrary()
+        }
+    }
+
+    Process {
+        id: pickProc
+        property string stdoutBuf: ""
+        stdout: SplitParser {
+            splitMarker: ""
+            onRead: function(chunk) {
+                pickProc.stdoutBuf += String(chunk || "")
+                if (pickProc.stdoutBuf.length > 65536) {
+                    pickProc.stdoutBuf = ""
+                    pickProc.signal(15)
+                }
             }
+        }
+        onExited: {
+            var raw = String(pickProc.stdoutBuf || "").replace(/^\s+|\s+$/g, "")
+            pickProc.stdoutBuf = ""
+            if (!raw)
+                return
+            var parsed
+            try {
+                parsed = JSON.parse(raw)
+            } catch (e) {
+                return
+            }
+            var path = parsed && parsed.paths && parsed.paths.root ? String(parsed.paths.root) : ""
+            if (path)
+                root.applyLibrary(path)
         }
     }
 

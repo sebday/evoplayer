@@ -19,27 +19,53 @@ Fieldset {
         anchors.fill: parent
         spacing: 4
 
-        TextInput {
-            id: searchField
+        Rectangle {
+            id: searchBox
             width: parent.width
-            height: 20
-            visible: view.pane === "search"
-            color: Theme.foreground
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeM
-            clip: true
-            selectByMouse: true
-            selectionColor: Theme.good
-            selectedTextColor: Theme.background
-            onTextChanged: {
-                if (view.searchQuery !== text)
-                    view.setSearch(text)
+            height: 26
+            radius: Theme.fieldsetCornerRadius
+            color: Theme.mantle
+            border.width: 1
+            border.color: searchField.activeFocus ? Theme.good : Theme.inactiveBorder
+
+            Text {
+                anchors.fill: searchField
+                visible: searchField.text === ""
+                text: "search"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeM
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
             }
-            onActiveFocusChanged: view.textCapture = activeFocus
-            Keys.priority: Keys.BeforeItem
-            Keys.onPressed: function(event) {
-                if (view.dispatch(event))
-                    event.accepted = true
+
+            TextInput {
+                id: searchField
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                verticalAlignment: TextInput.AlignVCenter
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeM
+                clip: true
+                selectByMouse: true
+                selectionColor: Theme.good
+                selectedTextColor: Theme.background
+                onTextChanged: {
+                    if (view.searchQuery !== text)
+                        view.setSearch(text)
+                }
+                onActiveFocusChanged: {
+                    view.textCapture = activeFocus
+                    if (activeFocus && view.pane !== "search")
+                        view.openSearch()
+                }
+                Keys.priority: Keys.BeforeItem
+                Keys.onPressed: function(event) {
+                    if (view.dispatch(event))
+                        event.accepted = true
+                }
             }
         }
 
@@ -57,7 +83,7 @@ Fieldset {
         ListView {
             id: list
             width: parent.width
-            height: parent.height - (searchField.visible ? searchField.height + 4 : 0) - (view.pane !== "search" && (view.browsePath !== "" || view.browseFiles) && !view.searchQuery ? 18 : 0)
+            height: parent.height - searchBox.height - 4 - (view.pane !== "search" && (view.browsePath !== "" || view.browseFiles) && !view.searchQuery ? 18 : 0)
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
@@ -142,7 +168,7 @@ Fieldset {
                         verticalAlignment: Text.AlignVCenter
                         text: String(modelData.label || "")
                         elide: Text.ElideRight
-                        color: selected ? Theme.border : (modelData.type === "dir" ? Theme.muted : Theme.foreground)
+                        color: selected ? Theme.border : (modelData.type === "dir" || modelData.kind === "tool" ? Theme.muted : Theme.foreground)
                         font.family: Theme.fontFamily
                         font.bold: selected
                         font.pixelSize: Theme.fontSizeM

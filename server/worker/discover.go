@@ -19,6 +19,7 @@ func RunDiscoverPreview(ctx context.Context, env paths.Env, id int64) int {
 		return 1
 	}
 	if _, err := soundcloud.DownloadPreview(ctx, env, id, rep); err != nil {
+		rep.Line(err.Error())
 		_ = rep.Error(err.Error())
 		return 1
 	}

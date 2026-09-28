@@ -161,16 +161,54 @@ func (c *Client) MatchTrack(artist, title string, durationSec float64) (*Track, 
 	if q == "" {
 		return nil, fmt.Errorf("soundcloud: nothing to match")
 	}
-	path := "/search/tracks?q=" + url.QueryEscape(q) + "&limit=10&linked_partitioning=1"
-	body, err := c.getJSONWithClientID(path)
-	if err != nil {
-		return nil, err
-	}
-	tracks, err := decodeTrackList(body)
+	tracks, err := c.SearchTracks(q, 10)
 	if err != nil {
 		return nil, err
 	}
 	return pickMatch(tracks, artist, title, durationSec)
+}
+
+// SearchTracks returns SoundCloud track results for a query.
+func (c *Client) SearchTracks(query string, limit int) ([]Track, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("soundcloud: empty search")
+	}
+	if limit <= 0 {
+		limit = 12
+	}
+	if limit > 25 {
+		limit = 25
+	}
+	path := "/search/tracks?q=" + url.QueryEscape(query) + "&limit=" + strconv.Itoa(limit) + "&linked_partitioning=1"
+	body, err := c.getJSONWithClientID(path)
+	if err != nil {
+		return nil, err
+	}
+	return decodeTrackList(body)
+}
+
+// Search looks up SoundCloud tracks that can be downloaded.
+func Search(env paths.Env, query string, limit int) ([]SimilarTrack, error) {
+	opts, err := LoadOptions(env)
+	if err != nil {
+		return nil, err
+	}
+	tracks, err := NewClient(opts.ClientID, opts.OAuthToken).SearchTracks(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SimilarTrack, 0, len(tracks))
+	seen := map[int64]bool{}
+	for i := range tracks {
+		track := tracks[i]
+		if seen[track.ID] || !listable(&track) || strings.TrimSpace(track.PermalinkURL) == "" {
+			continue
+		}
+		seen[track.ID] = true
+		out = append(out, similarTrack(track))
+	}
+	return out, nil
 }
 
 // RelatedTracks returns SoundCloud's similar-track feed, falling back to the
