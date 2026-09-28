@@ -9,6 +9,7 @@ type playerNotify struct {
 	artist         string
 	album          string
 	art            string
+	lengthUs       int64
 	canPlayOrPause bool
 }
 
@@ -31,6 +32,7 @@ func playerNotifyFrom(st playback.Status) playerNotify {
 		artist:         st.Artist,
 		album:          st.Album,
 		art:            st.Art,
+		lengthUs:       int64(st.Duration * 1e6),
 		canPlayOrPause: st.Path != "",
 	}
 }
@@ -41,7 +43,8 @@ func playerNotifyDelta(prev, next playerNotify) (status, metadata, canPlayPause 
 		prev.title != next.title ||
 		prev.artist != next.artist ||
 		prev.album != next.album ||
-		prev.art != next.art
+		prev.art != next.art ||
+		prev.lengthUs != next.lengthUs
 	canPlayPause = prev.canPlayOrPause != next.canPlayOrPause
 	return
 }

@@ -236,6 +236,9 @@ func metadataFrom(st playback.Status) map[string]dbus.Variant {
 		}
 		meta["mpris:artUrl"] = dbus.MakeVariant(artURL)
 	}
+	if st.Duration > 0 {
+		meta["mpris:length"] = dbus.MakeVariant(int64(st.Duration * 1e6))
+	}
 	return meta
 }
 
