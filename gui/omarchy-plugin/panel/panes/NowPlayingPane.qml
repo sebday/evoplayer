@@ -18,7 +18,49 @@ Fieldset {
         anchors.fill: parent
         spacing: 12
 
-        Item {
+        Row {
+            id: transport
+            height: parent.height
+            spacing: 0
+
+            Item {
+                id: prevBtn
+                height: parent.height
+                width: height * 0.62
+
+                Canvas {
+                    anchors.fill: parent
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+                        var s = Math.min(width, height)
+                        var cy = height / 2
+                        var th = s * 0.38
+                        var tw = s * 0.30
+                        var barW = Math.max(2, s * 0.075)
+                        var gap = s * 0.07
+                        var left = (width - (barW + gap + tw)) / 2
+                        ctx.fillStyle = Theme.withOpacity(Theme.foreground, 0.72)
+                        ctx.fillRect(left, cy - th / 2, barW, th)
+                        ctx.beginPath()
+                        ctx.moveTo(left + barW + gap + tw, cy - th / 2)
+                        ctx.lineTo(left + barW + gap + tw, cy + th / 2)
+                        ctx.lineTo(left + barW + gap, cy)
+                        ctx.closePath()
+                        ctx.fill()
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: view.transport("prev")
+                }
+            }
+
+            Item {
             id: playBtn
             height: parent.height
             width: height
@@ -65,11 +107,49 @@ Fieldset {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: view.transport("toggle")
             }
+            }
+
+            Item {
+                id: nextBtn
+                height: parent.height
+                width: height * 0.62
+
+                Canvas {
+                    anchors.fill: parent
+                    onWidthChanged: requestPaint()
+                    onHeightChanged: requestPaint()
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+                        var s = Math.min(width, height)
+                        var cy = height / 2
+                        var th = s * 0.38
+                        var tw = s * 0.30
+                        var barW = Math.max(2, s * 0.075)
+                        var gap = s * 0.07
+                        var left = (width - (tw + gap + barW)) / 2
+                        ctx.fillStyle = Theme.withOpacity(Theme.foreground, 0.72)
+                        ctx.beginPath()
+                        ctx.moveTo(left, cy - th / 2)
+                        ctx.lineTo(left, cy + th / 2)
+                        ctx.lineTo(left + tw, cy)
+                        ctx.closePath()
+                        ctx.fill()
+                        ctx.fillRect(left + tw + gap, cy - th / 2, barW, th)
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: view.transport("next")
+                }
+            }
         }
 
         Column {
             id: metaCol
-            width: Math.max(80, parent.width - playBtn.width - viz.width - 24)
+            width: Math.max(80, parent.width - transport.width - viz.width - 24)
             spacing: 4
 
             Text {
@@ -148,31 +228,6 @@ Fieldset {
                         anchors.fill: parent
                         anchors.margins: -4
                         onClicked: view.likePlaying()
-                    }
-                }
-
-                Repeater {
-                    model: [
-                        { glyph: "󰒮", action: "prev", lit: false },
-                        { glyph: view.playerState() === "playing" ? "󰏤" : "󰐊", action: "toggle", lit: true },
-                        { glyph: "󰓛", action: "stop", lit: false },
-                        { glyph: "󰒭", action: "next", lit: false }
-                    ]
-
-                    Text {
-                        required property var modelData
-                        textFormat: Text.PlainText
-                        text: modelData.glyph
-                        color: modelData.lit ? Theme.good : Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: 18
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        MouseArea {
-                            anchors.fill: parent
-                            anchors.margins: -6
-                            onClicked: view.transport(modelData.action)
-                        }
                     }
                 }
 
