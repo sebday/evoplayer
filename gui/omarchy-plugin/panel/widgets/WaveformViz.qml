@@ -9,6 +9,8 @@ Item {
     property var levels: []
     property real progress: 0
     property bool live: false
+    property string positionText: ""
+    property string durationText: ""
 
     Canvas {
         id: wave
@@ -23,7 +25,7 @@ Item {
                 var bars = Math.max(8, Math.floor(width / 4))
                 var slot = width / bars
                 var barW = Math.max(1, slot * 0.7)
-                ctx.fillStyle = Theme.muted
+                var shade = Theme.mixColors(Theme.background, Theme.muted, 0.35)
                 for (var i = 0; i < bars; i++) {
                     var src = Math.min(n - 1, Math.floor(i * n / bars))
                     var v = Number(raw[src]) || 0
@@ -32,7 +34,10 @@ Item {
                     if (v > 1)
                         v = 1
                     var h = Math.max(1, v * height * 0.46)
-                    ctx.fillRect(i * slot, mid - h, barW, h * 2)
+                    ctx.fillStyle = Theme.muted
+                    ctx.fillRect(i * slot, mid - h, barW, h)
+                    ctx.fillStyle = shade
+                    ctx.fillRect(i * slot, mid, barW, h)
                 }
             }
             var p = root.progress
@@ -54,11 +59,45 @@ Item {
         barColor: Theme.good
     }
 
+    Rectangle {
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width
+        height: 1
+        z: 1
+        color: Theme.foreground
+    }
+
+    Text {
+        anchors.left: parent.left
+        anchors.leftMargin: 4
+        anchors.bottom: parent.verticalCenter
+        anchors.bottomMargin: 3
+        z: 2
+        textFormat: Text.PlainText
+        text: root.positionText
+        color: Theme.foreground
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSizeXs
+    }
+
+    Text {
+        anchors.right: parent.right
+        anchors.rightMargin: 4
+        anchors.bottom: parent.verticalCenter
+        anchors.bottomMargin: 3
+        z: 2
+        textFormat: Text.PlainText
+        text: root.durationText
+        color: Theme.foreground
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSizeXs
+    }
+
     signal seekRequested(real fraction)
 
     MouseArea {
         anchors.fill: parent
-        z: 1
+        z: 3
         cursorShape: Qt.PointingHandCursor
         onClicked: function(mouse) {
             if (width <= 0)

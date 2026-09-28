@@ -22,7 +22,7 @@ Canvas {
         var mid = height / 2
         var slot = width / n
         var barW = Math.max(1, slot * 0.62)
-        ctx.fillStyle = barColor
+        var shade = Theme.mixColors(Theme.background, barColor, 0.28)
         for (var i = 0; i < n; i++) {
             var v = Number(raw[i]) || 0
             if (v < 0)
@@ -31,7 +31,11 @@ Canvas {
                 v = 1
             v = Math.pow(v, 0.85)
             var h = Math.max(1, v * height * 0.46)
-            ctx.fillRect(i * slot + (slot - barW) / 2, mid - h, barW, h * 2)
+            var x = i * slot + (slot - barW) / 2
+            ctx.fillStyle = barColor
+            ctx.fillRect(x, mid - h, barW, h)
+            ctx.fillStyle = shade
+            ctx.fillRect(x, mid, barW, h)
         }
     }
 }

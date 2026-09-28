@@ -30,6 +30,7 @@ Item {
     property bool scanRunning: false
 
     property string browsePath: ""
+    property bool browseFiles: false
     property string browseParent: ""
     property var browseEntries: []
     property var playlists: []
@@ -39,6 +40,8 @@ Item {
 
     property var queue: []
     property int playlistIdx: 0
+    property int reorderPending: 0
+    property real reorderScroll: -1
     property string shownPlaylist: ""
     property var shownTracks: []
     property int shownGen: 0
@@ -76,9 +79,11 @@ Item {
     readonly property int artW: artPane.width > 0 ? artPane.width : 280
     property string artOverride: ""
     property string artOverridePath: ""
+    property int artEpoch: 0
     property var artHits: []
     property int artIdx: 0
     property bool artBusy: false
+    property bool artFromDrop: false
     property string artPreview: ""
 
     property var moveFolders: []
@@ -108,7 +113,7 @@ Item {
     property bool _cfgOverflow: false
 
     onQueueRevisionChanged: {
-        if (active)
+        if (active && reorderPending === 0)
             loadQueue()
     }
     onTrackPathChanged: {
@@ -257,11 +262,16 @@ Item {
     }
 
     function artSource() {
+        var url = ""
         if (mode === "art" && artPreview)
-            return artPreview
-        if (artOverride && artOverridePath === trackPath)
-            return Util.fileUrl(artOverride)
-        return Util.fileUrl(String(player.art || ""))
+            url = artPreview
+        else if (artOverride && artOverridePath === trackPath)
+            url = Util.fileUrl(artOverride)
+        else
+            url = Util.fileUrl(String(player.art || ""))
+        if (url && artEpoch)
+            url += "#" + artEpoch
+        return url
     }
 
     function artHitLabel(hit) {
@@ -371,21 +381,33 @@ Item {
                 })
             }
         } else {
-            var entries = browseEntries || []
-            for (var e = 0; e < entries.length; e++) {
-                var en = entries[e]
-                var dir = String(en.type || "") === "dir"
-                var name = dir ? String(en.name || en.path || "") : trackLabel(en)
-                if (dir && name && name.charAt(name.length - 1) !== "/")
-                    name += "/"
+            if (!browseFiles && !browsePath) {
                 rows.push({
                     kind: "entry",
-                    type: dir ? "dir" : "track",
-                    label: name,
-                    path: String(en.path || ""),
-                    count: Number(en.count) || 0,
-                    id: ""
+                    type: "dir",
+                    label: "filesystem",
+                    path: "",
+                    count: 0,
+                    id: "filesystem"
                 })
+            } else {
+                var entries = browseEntries || []
+                for (var e = 0; e < entries.length; e++) {
+                    var en = entries[e]
+                    if (String(en.type || "") !== "dir")
+                        continue
+                    var name = String(en.name || en.path || "")
+                    if (name && name.charAt(name.length - 1) !== "/")
+                        name += "/"
+                    rows.push({
+                        kind: "entry",
+                        type: "dir",
+                        label: name,
+                        path: String(en.path || ""),
+                        count: Number(en.count) || 0,
+                        id: ""
+                    })
+                }
             }
             var lists = orderedPlaylists()
             if (rows.length && lists.length)
@@ -726,12 +748,22 @@ Item {
         focusPane("playlist")
     }
 
-    function loadBrowse(rel) {
+    function loadBrowse(rel, stayIfLeaf) {
         ipc("library.browse", { path: String(rel || ""), offset: 0, limit: 400 }, function(data) {
             data = data || {}
+            var entries = data.entries || []
+            if (stayIfLeaf) {
+                var dirs = 0
+                for (var i = 0; i < entries.length; i++) {
+                    if (String(entries[i].type || "") === "dir")
+                        dirs++
+                }
+                if (dirs === 0)
+                    return
+            }
             browsePath = String(data.path || "")
             browseParent = data.parent == null ? "" : String(data.parent)
-            browseEntries = data.entries || []
+            browseEntries = entries
             browseIdx = 0
             rebuildSidebar()
         })
@@ -851,12 +883,24 @@ Item {
         var row = currentRow()
         if (!row || row.kind !== "entry" || row.type !== "dir")
             return
-        loadBrowse(row.path)
+        if (row.id === "filesystem") {
+            browseFiles = true
+            browseIdx = 0
+            rebuildSidebar()
+            return
+        }
+        loadBrowse(row.path, true)
     }
 
     function leaveFolder() {
-        if (!browsePath)
+        if (!browsePath) {
+            if (!browseFiles)
+                return
+            browseFiles = false
+            browseIdx = 0
+            rebuildSidebar()
             return
+        }
         loadBrowse(browseParent)
     }
 
@@ -954,6 +998,10 @@ Item {
             playPlaylist(row.id)
             return
         }
+        if (row.id === "filesystem") {
+            enterFolder()
+            return
+        }
         if (row.type === "dir") {
             playFolder(row.path)
             return
@@ -1048,6 +1096,10 @@ Item {
         }
         if (row.kind === "playlist") {
             playPlaylist(row.id)
+            return
+        }
+        if (row.id === "filesystem") {
+            enterFolder()
             return
         }
         if (row.type === "dir") {
@@ -1372,6 +1424,7 @@ Item {
         if (!url || !trackPath || artApplyProc.running)
             return
         artBusy = true
+        artFromDrop = false
         var cmd = [Util.evoplayerBinPath(service ? service.home : ""), "art", "apply", trackPath, url, "--json"]
         if (scope === "album")
             cmd.splice(cmd.length - 1, 0, "--album")
@@ -1381,7 +1434,49 @@ Item {
         artApplyProc.running = true
     }
 
+    function dropArt(raw) {
+        if (!trackPath) {
+            err = "nothing playing"
+            return false
+        }
+        if (artApplyProc.running)
+            return false
+        var value = String(raw || "").replace(/\r/g, "").split("\n")[0].replace(/^\s+|\s+$/g, "")
+        if (!value)
+            return false
+        var local = ""
+        if (value.indexOf("file://") === 0) {
+            local = value.slice("file://".length)
+            try {
+                local = decodeURIComponent(local)
+            } catch (e) {
+            }
+        } else if (value.charAt(0) === "/") {
+            local = value
+        }
+        var cmd
+        var bin = Util.evoplayerBinPath(service ? service.home : "")
+        if (local)
+            cmd = [bin, "art", "set", trackPath, local, "--json"]
+        else if (safeArtURL(value))
+            cmd = [bin, "art", "apply", trackPath, value, "--json"]
+        else {
+            err = "not an image"
+            return false
+        }
+        artFromDrop = true
+        artBusy = true
+        err = ""
+        _artBuf = ""
+        _artOverflow = false
+        artApplyProc.command = cmd
+        artApplyProc.running = true
+        return true
+    }
+
     function finishArt(ok, artPath) {
+        var fromDrop = artFromDrop
+        artFromDrop = false
         artBusy = false
         if (!ok) {
             err = "art apply failed"
@@ -1390,9 +1485,11 @@ Item {
         if (artPath) {
             artOverride = artPath
             artOverridePath = trackPath
+            artEpoch++
         }
         err = ""
-        closeMode()
+        if (!fromDrop)
+            closeMode()
         if (service && service.requestEnrich)
             service.requestEnrich(trackPath)
     }
@@ -1585,14 +1682,57 @@ Item {
     }
 
     function reorder(delta) {
-        if (shuffle || pane !== "playlist" || mode !== "queue" || shownPlaylist)
+        reorderFrom(playlistIdx, delta, -1)
+    }
+
+    // The daemon only accepts a move of one slot, so a longer drag is a chain of those.
+    function reorderFrom(index, delta, scrollY) {
+        if (shuffle || pane !== "playlist" || mode !== "queue" || shownPlaylist || reorderPending)
             return
-        if (playlistIdx < 0 || playlistIdx >= queue.length)
+        if (!delta || index < 0 || index >= queue.length)
             return
-        ipc("queue.move", { index: playlistIdx, delta: delta }, function() {
-            root.playlistIdx = Math.max(0, root.playlistIdx + delta)
-            root.loadQueue()
-        })
+        var dest = index + delta
+        if (dest < 0)
+            dest = 0
+        if (dest >= queue.length)
+            dest = queue.length - 1
+        delta = dest - index
+        if (!delta)
+            return
+        var items = queue.slice()
+        var moved = items.splice(index, 1)[0]
+        items.splice(dest, 0, moved)
+        var step = delta > 0 ? 1 : -1
+        var left = Math.abs(delta)
+        var at = index
+        reorderPending = left
+        if (scrollY >= 0)
+            reorderScroll = scrollY
+        playlistIdx = dest
+        queue = items
+        function stepOnce() {
+            if (!service || !service.ipcCall) {
+                root.reorderPending = 0
+                root.loadQueue()
+                return
+            }
+            service.ipcCall("queue.move", { index: at, delta: step }, function(ok, msg) {
+                if (!ok) {
+                    root.err = msg && msg.error ? String(msg.error) : "request failed"
+                    root.reorderPending = 0
+                    root.loadQueue()
+                    return
+                }
+                at += step
+                left--
+                root.reorderPending--
+                if (left > 0)
+                    stepOnce()
+                else if (root.reorderPending === 0)
+                    root.loadQueue()
+            })
+        }
+        stepOnce()
     }
 
     function cycleFocus(dir) {
@@ -1682,6 +1822,8 @@ Item {
     function dispatch(event) {
         var key = event.key
         var text = event.text || ""
+        if (key === Qt.Key_Back) { leaveFolder(); return true }
+        if (key === Qt.Key_Forward) { enterFolder(); return true }
         var shift = (event.modifiers & Qt.ShiftModifier) !== 0
         var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
 
@@ -2028,7 +2170,7 @@ Item {
 
             BrowsePane {
                 id: browsePane
-                width: Math.round(Math.max(180, Math.min(280, parent.width * 0.24)) * 0.8)
+                width: Math.round(Math.max(180, Math.min(280, parent.width * 0.24)) * 0.6)
                 height: parent.height
                 view: root
             }
@@ -2054,12 +2196,13 @@ Item {
         }
     }
 
-    MouseArea {
-        anchors.fill: parent
-        z: 1
-        acceptedButtons: Qt.BackButton | Qt.ForwardButton
-        onPressed: function(mouse) {
-            if (mouse.button === Qt.BackButton)
+    TapHandler {
+        acceptedButtons: Qt.BackButton | Qt.ForwardButton | Qt.ExtraButton1 | Qt.ExtraButton2 | Qt.ExtraButton3 | Qt.ExtraButton4
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+        gesturePolicy: TapHandler.WithinBounds
+        onTapped: function(eventPoint, button) {
+            var back = button === Qt.BackButton || button === Qt.ExtraButton1 || button === Qt.ExtraButton4
+            if (back)
                 root.leaveFolder()
             else
                 root.enterFolder()

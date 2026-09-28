@@ -8,7 +8,7 @@ Fieldset {
 
     number: 2
     legend: "browse"
-    legendRight: view.searchQuery ? "" : view.browsePath
+    legendRight: view.searchQuery ? "" : (view.browsePath || (view.browseFiles ? "filesystem" : ""))
     active: view.pane === "browse" || view.pane === "search"
     hints: [
         { key: "⏎", label: "play" },
@@ -45,10 +45,10 @@ Fieldset {
 
         Text {
             textFormat: Text.PlainText
-            visible: view.pane !== "search" && view.browsePath !== "" && !view.searchQuery
+            visible: view.pane !== "search" && (view.browsePath !== "" || view.browseFiles) && !view.searchQuery
             width: parent.width
             elide: Text.ElideLeft
-            text: view.browsePath
+            text: view.browsePath || "filesystem"
             color: Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontSizeS
@@ -57,7 +57,7 @@ Fieldset {
         ListView {
             id: list
             width: parent.width
-            height: parent.height - (searchField.visible ? searchField.height + 4 : 0) - (view.pane !== "search" && view.browsePath !== "" && !view.searchQuery ? 18 : 0)
+            height: parent.height - (searchField.visible ? searchField.height + 4 : 0) - (view.pane !== "search" && (view.browsePath !== "" || view.browseFiles) && !view.searchQuery ? 18 : 0)
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
@@ -117,11 +117,13 @@ Fieldset {
                 }
 
                 Row {
+                    id: line
                     anchors.fill: parent
                     visible: modelData.kind !== "rule"
                     spacing: 4
 
                     Text {
+                        id: mark
                         textFormat: Text.PlainText
                         width: 12
                         height: 22
@@ -135,7 +137,7 @@ Fieldset {
 
                     Text {
                         textFormat: Text.PlainText
-                        width: Math.max(20, list.width - 56)
+                        width: Math.max(20, line.width - mark.width - line.spacing * 2 - (countText.visible ? countText.width : 0))
                         height: 22
                         verticalAlignment: Text.AlignVCenter
                         text: String(modelData.label || "")
@@ -147,8 +149,10 @@ Fieldset {
                     }
 
                     Text {
+                        id: countText
                         textFormat: Text.PlainText
-                        width: 36
+                        visible: modelData.count > 0
+                        width: visible ? implicitWidth : 0
                         height: 22
                         verticalAlignment: Text.AlignVCenter
                         horizontalAlignment: Text.AlignRight
@@ -174,8 +178,8 @@ Fieldset {
                     }
                     onDoubleClicked: {
                         view.clickBrowse(index)
-                        if (modelData.kind === "entry" && modelData.type === "dir")
-                            view.loadBrowse(String(modelData.path || ""))
+                        if (modelData.id === "filesystem" || (modelData.kind === "entry" && modelData.type === "dir"))
+                            view.enterFolder()
                         else
                             view.playBrowseAt(index)
                     }

@@ -18,17 +18,58 @@ Fieldset {
         anchors.fill: parent
         spacing: 12
 
-        PixelClock {
-            id: lcd
+        Item {
+            id: playBtn
             height: parent.height
-            width: Math.min(naturalWidth, Math.max(72, parent.width - viz.width - 160))
-            text: view.lcd(view.shownPosition)
-            color: Theme.good
+            width: height
+
+            Canvas {
+                id: playMark
+                anchors.fill: parent
+                property bool playing: view.playerState() === "playing"
+                onPlayingChanged: requestPaint()
+                onWidthChanged: requestPaint()
+                onHeightChanged: requestPaint()
+                onPaint: {
+                    var ctx = getContext("2d")
+                    ctx.clearRect(0, 0, width, height)
+                    var s = Math.min(width, height)
+                    var cx = width / 2
+                    var cy = height / 2
+                    var r = s * 0.46
+                    ctx.strokeStyle = Theme.muted
+                    ctx.lineWidth = Math.max(2, s * 0.035)
+                    ctx.beginPath()
+                    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+                    ctx.stroke()
+                    ctx.fillStyle = Theme.withOpacity(Theme.foreground, 0.72)
+                    if (playing) {
+                        var barW = s * 0.07
+                        var barH = s * 0.28
+                        var gap = s * 0.06
+                        ctx.fillRect(cx - gap - barW, cy - barH / 2, barW, barH)
+                        ctx.fillRect(cx + gap, cy - barH / 2, barW, barH)
+                    } else {
+                        ctx.beginPath()
+                        ctx.moveTo(cx - s * 0.1, cy - s * 0.16)
+                        ctx.lineTo(cx - s * 0.1, cy + s * 0.16)
+                        ctx.lineTo(cx + s * 0.16, cy)
+                        ctx.closePath()
+                        ctx.fill()
+                    }
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: view.transport("toggle")
+            }
         }
 
         Column {
             id: metaCol
-            width: Math.max(80, parent.width - lcd.width - viz.width - 24)
+            width: Math.max(80, parent.width - playBtn.width - viz.width - 24)
             spacing: 4
 
             Text {
@@ -46,7 +87,11 @@ Fieldset {
                 textFormat: Text.PlainText
                 width: parent.width
                 elide: Text.ElideRight
-                text: view.nowRelease()
+                text: {
+                    var rel = view.nowRelease()
+                    var t = view.lcd(view.shownPosition)
+                    return rel ? rel + "   " + t : t
+                }
                 color: Theme.foreground
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeS
@@ -199,6 +244,8 @@ Fieldset {
             levels: view.service ? view.service.vizLevels : []
             progress: view.progressFrac()
             live: view.vizOn && view.playing
+            positionText: view.clock(view.shownPosition) || "0:00"
+            durationText: view.clock(view.player.duration) || "0:00"
             onSeekRequested: function(fraction) {
                 var dur = Number(view.player.duration) || 0
                 view.seekTo(dur * fraction)
