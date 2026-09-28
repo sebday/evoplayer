@@ -332,7 +332,7 @@ Item {
                 { key: "n", label: "more" }
             ]
         var hints = [
-            { key: "l", label: "like" },
+            { key: "l", label: "like playing" },
             { key: "m", label: "move" },
             { key: "e", label: "edit" }
         ]
@@ -1200,18 +1200,6 @@ Item {
         return rows[playlistIdx]
     }
 
-    function likeSelected() {
-        if (pane === "playlist" && mode === "queue") {
-            var track = selectedListTrack()
-            if (track)
-                toggleLike(track.path)
-            return
-        }
-        var row = currentRow()
-        if (row && row.type === "track")
-            toggleLike(row.path)
-    }
-
     function likePlaying() {
         toggleLike(trackPath)
     }
@@ -1895,8 +1883,7 @@ Item {
         if (text === "=" || text === "+") { volumeDelta(5); return true }
         if (text === "d" || text === "D") { addDir(); return true }
         if (text === "f" || text === "F") { openFolder(); return true }
-        if (text === "L") { likePlaying(); return true }
-        if (text === "l") { likeSelected(); return true }
+        if (text === "l") { likePlaying(); return true }
         if (text === "m" || text === "M") { openMove(); return true }
         if (text === "e" || text === "E") { openTags(); return true }
         if (text === "a" || text === "A") { openArt(); return true }
