@@ -74,6 +74,10 @@ Fieldset {
             highlightMoveDuration: 0
             model: view.shownPlaylist ? view.shownTracks : view.queue
             onHeightChanged: view.playlistPage = Math.max(1, Math.floor(height / pane.rowH))
+            onContentYChanged: {
+                if (view.reorderScroll < 0)
+                    view.playlistScroll = contentY
+            }
 
             // A drag reorders the live queue. Wheel scrolling stays.
             readonly property bool canReorder: !view.shuffle && !view.shownPlaylist && view.mode === "queue"

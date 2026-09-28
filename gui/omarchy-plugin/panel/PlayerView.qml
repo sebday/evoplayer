@@ -42,6 +42,7 @@ Item {
     property int playlistIdx: 0
     property int reorderPending: 0
     property real reorderScroll: -1
+    property real playlistScroll: 0
     property string shownPlaylist: ""
     property var shownTracks: []
     property int shownGen: 0
@@ -1164,6 +1165,8 @@ Item {
     }
 
     function patchLiked(path, likedNow) {
+        if (reorderPending === 0)
+            reorderScroll = playlistScroll
         queue = withLiked(queue, path, likedNow)
         if (shownPlaylist)
             shownTracks = withLiked(shownTracks, path, likedNow)

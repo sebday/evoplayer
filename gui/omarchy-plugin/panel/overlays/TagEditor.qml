@@ -22,6 +22,7 @@ Column {
         property string label: ""
         property int index: 0
         property string value: ""
+        property bool syncing: false
         property var view: null
         signal edited(string text)
 
@@ -47,8 +48,15 @@ Column {
             selectByMouse: true
             selectionColor: Theme.good
             selectedTextColor: Theme.background
-            onTextChanged: parent.edited(text)
-            Component.onCompleted: text = parent.value
+            onTextChanged: {
+                if (!parent.syncing)
+                    parent.edited(text)
+            }
+            Component.onCompleted: {
+                parent.syncing = true
+                text = parent.value
+                parent.syncing = false
+            }
             onActiveFocusChanged: {
                 if (!parent.view)
                     return
@@ -68,8 +76,15 @@ Column {
         }
 
         onValueChanged: {
-            if (!input.activeFocus && input.text !== value)
-                input.text = value
+            if (input.text === value)
+                return
+            // The title is focused before the tags arrive. Keep what the user
+            // typed; otherwise show the loaded value.
+            if (input.activeFocus && input.text !== "")
+                return
+            syncing = true
+            input.text = value
+            syncing = false
         }
     }
 
