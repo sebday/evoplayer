@@ -32,8 +32,11 @@ Fieldset {
     component ThinScrollBar: ScrollBar {
         id: bar
         policy: ScrollBar.AsNeeded
-        implicitWidth: 3
-        width: 3
+        implicitWidth: 7
+        leftPadding: 3
+        rightPadding: 1
+        topPadding: 0
+        bottomPadding: 0
         minimumSize: 0.06
         contentItem: Rectangle {
             implicitWidth: 3
