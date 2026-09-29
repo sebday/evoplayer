@@ -861,11 +861,6 @@ Panel {
           }
         }
         }
-
-        Item {
-          Layout.fillWidth: true
-          Layout.preferredHeight: Style.space(6)
-        }
       }
       }
     }
