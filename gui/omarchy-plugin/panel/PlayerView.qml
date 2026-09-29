@@ -40,6 +40,7 @@ Item {
 
     property var queue: []
     property int playlistIdx: 0
+    property int playingReveal: 0
     property int playlistAnchor: 0
     property var playlistPicks: []
     property bool tagMany: false
@@ -981,9 +982,25 @@ Item {
             return
         if (pane === "playlist" && mode === "queue")
             return
-        for (var i = 0; i < queue.length; i++) {
-            if (String(queue[i].path || "") === trackPath) {
+        var rows = queue || []
+        for (var i = 0; i < rows.length; i++) {
+            if (String(rows[i].path || "") === trackPath) {
                 playlistIdx = i
+                return
+            }
+        }
+    }
+
+    function focusPlayingRow() {
+        if (shownPlaylist)
+            return
+        if (String(searchQuery || "").replace(/^\s+|\s+$/g, "") !== "")
+            return
+        var rows = queue || []
+        for (var i = 0; i < rows.length; i++) {
+            if (String(rows[i].path || "") === trackPath) {
+                selectOnly(i)
+                playingReveal++
                 return
             }
         }
@@ -1007,6 +1024,9 @@ Item {
         browseIdx = i
         syncSettingsMode()
         syncShownPlaylist()
+        var landed = sidebar[i]
+        if (landed && landed.kind === "playlist" && landed.id === "current")
+            focusPlayingRow()
     }
 
     function stepIndex(name, len, delta) {
@@ -2166,6 +2186,9 @@ Item {
         pane = searchQuery ? "search" : "browse"
         syncSettingsMode()
         syncShownPlaylist()
+        var row = sidebar[index]
+        if (row && row.kind === "playlist" && row.id === "current")
+            focusPlayingRow()
         if (host && host.forceKeyFocus)
             host.forceKeyFocus()
     }

@@ -163,6 +163,16 @@ Fieldset {
                     if (view.playlistIdx < list.count)
                         list.positionViewAtIndex(view.playlistIdx, ListView.Contain)
                 }
+                function onPlayingRevealChanged() {
+                    Qt.callLater(function() {
+                        if (view.mode !== "queue" || view.shownPlaylist || view.playlistIdx < 0)
+                            return
+                        if (view.playlistIdx >= list.count)
+                            return
+                        list.currentIndex = view.playlistIdx
+                        list.positionViewAtIndex(view.playlistIdx, ListView.Center)
+                    })
+                }
             }
 
             delegate: Item {
