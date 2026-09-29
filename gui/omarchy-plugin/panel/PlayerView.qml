@@ -297,6 +297,9 @@ Item {
             return "cover"
         if (mode === "download")
             return "download"
+        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
+        if (q)
+            return "search (" + ((searchHits && searchHits.length) || 0) + ")"
         if (mode === "help")
             return "help"
         if (mode === "discover")
@@ -341,7 +344,8 @@ Item {
             { key: "m", label: "move" },
             { key: "e", label: "edit" }
         ]
-        if (!shuffle && pane === "playlist" && !shownPlaylist)
+        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
+        if (!q && !shuffle && pane === "playlist" && !shownPlaylist)
             hints.push({ key: "⇧↑↓", label: "reorder" })
         return hints
     }
@@ -371,22 +375,7 @@ Item {
 
     function rebuildSidebar() {
         var rows = []
-        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
-        if (q) {
-            var hits = searchHits || []
-            for (var i = 0; i < hits.length; i++) {
-                var hit = hits[i]
-                rows.push({
-                    kind: "entry",
-                    type: "track",
-                    label: trackLabel(hit),
-                    path: String(hit.path || ""),
-                    count: 0,
-                    id: ""
-                })
-            }
-        } else {
-            if (!browseFiles && !browsePath) {
+        if (!browseFiles && !browsePath) {
                 rows.push({
                     kind: "entry",
                     type: "dir",
@@ -432,7 +421,6 @@ Item {
                 rows.push({ kind: "rule", type: "", label: "", path: "", count: 0, id: "" })
             rows.push({ kind: "tool", type: "", label: "download", path: "", count: 0, id: "download" })
             rows.push({ kind: "tool", type: "", label: "discover", path: "", count: 0, id: "discover" })
-        }
         sidebar = rows
         if (browseIdx >= rows.length)
             browseIdx = Math.max(0, rows.length - 1)
@@ -918,8 +906,11 @@ Item {
             stepIndex("move", (moveFolders || []).length, delta)
         else if (mode === "art")
             stepIndex("art", (artHits || []).length, delta)
-        else if (pane === "playlist" && mode === "queue")
-            stepIndex("playlist", (shownPlaylist ? shownTracks : queue).length, delta)
+        else if (pane === "playlist" && mode === "queue") {
+            var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
+            var rows = q ? (searchHits || []) : (shownPlaylist ? shownTracks : queue)
+            stepIndex("playlist", rows.length, delta)
+        }
         else
             stepBrowse(delta)
     }
@@ -1102,6 +1093,13 @@ Item {
         }
         if (mode === "help" || mode === "tags")
             return
+        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
+        if (q && (pane === "playlist" || pane === "search")) {
+            var hit = (searchHits || [])[playlistIdx]
+            if (hit && hit.path)
+                playTrackList(searchHits, hit.path)
+            return
+        }
         if (pane === "playlist") {
             if (shownPlaylist) {
                 var shown = selectedListTrack()
@@ -1234,7 +1232,8 @@ Item {
     }
 
     function selectedListTrack() {
-        var rows = shownPlaylist ? shownTracks : queue
+        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
+        var rows = q ? (searchHits || []) : (shownPlaylist ? shownTracks : queue)
         if (!rows || playlistIdx < 0 || playlistIdx >= rows.length)
             return null
         return rows[playlistIdx]
@@ -1312,7 +1311,6 @@ Item {
         var gen = searchGen
         if (!q) {
             searchHits = []
-            rebuildSidebar()
             return
         }
         ipc("library.search", { mode: "search", query: q }, function(data) {
@@ -1322,8 +1320,7 @@ Item {
             if (items.length > 400)
                 items = items.slice(0, 400)
             root.searchHits = items
-            root.browseIdx = 0
-            root.rebuildSidebar()
+            root.playlistIdx = 0
         })
     }
 
@@ -1704,6 +1701,8 @@ Item {
 
     // The daemon only accepts a move of one slot, so a longer drag is a chain of those.
     function reorderFrom(index, delta, scrollY) {
+        if (String(searchQuery || "").replace(/^\s+|\s+$/g, "") !== "")
+            return
         if (shuffle || pane !== "playlist" || mode !== "queue" || shownPlaylist || reorderPending)
             return
         if (!delta || index < 0 || index >= queue.length)
@@ -1893,10 +1892,10 @@ Item {
         if (pane === "search" && textCapture) {
             if (key === Qt.Key_Escape) { clearSearch(); return true }
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { playSelected(); return true }
-            if (key === Qt.Key_Up) { stepBrowse(-1); return true }
-            if (key === Qt.Key_Down) { stepBrowse(1); return true }
-            if (key === Qt.Key_PageUp) { stepBrowse(-browsePage); return true }
-            if (key === Qt.Key_PageDown) { stepBrowse(browsePage); return true }
+            if (key === Qt.Key_Up) { stepIndex("playlist", (searchHits || []).length, -1); return true }
+            if (key === Qt.Key_Down) { stepIndex("playlist", (searchHits || []).length, 1); return true }
+            if (key === Qt.Key_PageUp) { stepIndex("playlist", (searchHits || []).length, -playlistPage); return true }
+            if (key === Qt.Key_PageDown) { stepIndex("playlist", (searchHits || []).length, playlistPage); return true }
             return false
         }
 

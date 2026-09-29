@@ -8,7 +8,7 @@ Fieldset {
 
     number: 2
     legend: "browse"
-    legendRight: view.searchQuery ? "" : (view.browsePath || (view.browseFiles ? "filesystem" : ""))
+    legendRight: view.browsePath || (view.browseFiles ? "filesystem" : "")
     active: view.pane === "browse" || view.pane === "search"
     hints: [
         { key: "⏎", label: "play" },
@@ -43,7 +43,7 @@ Fieldset {
                 id: searchField
                 anchors.fill: parent
                 anchors.leftMargin: 8
-                anchors.rightMargin: 8
+                anchors.rightMargin: clearMark.visible ? clearMark.width + 2 : 8
                 verticalAlignment: TextInput.AlignVCenter
                 color: Theme.foreground
                 font.family: Theme.fontFamily
@@ -65,6 +65,34 @@ Fieldset {
                 Keys.onPressed: function(event) {
                     if (view.dispatch(event))
                         event.accepted = true
+                }
+            }
+
+            Item {
+                id: clearMark
+                visible: searchField.text !== ""
+                width: 22
+                height: parent.height
+                anchors.right: parent.right
+                z: 1
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "×"
+                    color: clearArea.containsMouse ? Theme.foreground : Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeM
+                }
+
+                MouseArea {
+                    id: clearArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        searchField.text = ""
+                        searchField.forceActiveFocus()
+                    }
                 }
             }
         }
@@ -95,7 +123,7 @@ Fieldset {
                 anchors.left: parent.left
                 anchors.top: parent.top
                 visible: list.count === 0
-                text: view.scanRunning ? "Please wait for library to finish scanning" : (view.searchQuery ? "no matches" : "loading…")
+                text: view.scanRunning ? "Please wait for library to finish scanning" : "loading…"
                 color: Theme.muted
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeM

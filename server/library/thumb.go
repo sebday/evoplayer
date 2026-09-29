@@ -90,13 +90,18 @@ func thumbWithMagick(src, dest string) error {
 		"-quality", "85", dest).Run()
 }
 
+func ListAssets(env Env, path, storedArt string) (art, thumb string) {
+	art = resolveArt(env, path, storedArt)
+	if art != "" {
+		thumb = resolveThumb(env, art)
+	}
+	return art, thumb
+}
+
 func enrichTrackAssets(env Env, row *Track) {
 	if row == nil {
 		return
 	}
-	row.Art = resolveArt(env, row.Path, row.Art)
+	row.Art, row.Thumb = ListAssets(env, row.Path, row.Art)
 	row.Waveform = resolveWaveform(env, row.Path, row.Waveform)
-	if row.Art != "" {
-		row.Thumb = resolveThumb(env, row.Art)
-	}
 }

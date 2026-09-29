@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 
+	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/library/find"
 	"github.com/sebday/evoplayer/server/paths"
 )
@@ -57,7 +58,7 @@ func CmdFind(env paths.Env, args []string) error {
 	if err := env.EnsureDirs(); err != nil {
 		return err
 	}
-	items, err := find.Tracks(tracksCacheDir(env), mode, query)
+	items, err := find.Tracks(library.EnvFrom(env), mode, query)
 	if err != nil {
 		return err
 	}

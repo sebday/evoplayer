@@ -179,7 +179,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		return find.Tracks(d.env().TracksCacheDir, p.Mode, p.Query)
+		return find.Tracks(libEnv, p.Mode, p.Query)
 	case "library.soundcloud.search":
 		var search struct {
 			Query string `json:"query"`

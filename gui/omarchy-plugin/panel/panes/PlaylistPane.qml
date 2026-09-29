@@ -114,7 +114,7 @@ Fieldset {
                     list.contentY = y
                 }
             }
-            model: view.shownPlaylist ? view.shownTracks : view.queue
+            model: String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") !== "" ? view.searchHits : (view.shownPlaylist ? view.shownTracks : view.queue)
             onHeightChanged: view.playlistPage = Math.max(1, Math.floor(height / pane.rowH))
             onContentYChanged: {
                 if (view.reorderScroll < 0)
@@ -122,7 +122,7 @@ Fieldset {
             }
 
             // A drag reorders the live queue. Wheel scrolling stays.
-            readonly property bool canReorder: !view.shuffle && !view.shownPlaylist && view.mode === "queue"
+            readonly property bool canReorder: !view.shuffle && !view.shownPlaylist && view.mode === "queue" && String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") === ""
             property int dragFrom: -1
             property int dragTo: -1
             property real dragOffset: 0
@@ -144,7 +144,7 @@ Fieldset {
             Text {
                 textFormat: Text.PlainText
                 visible: list.count === 0
-                text: "no tracks"
+                text: String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") !== "" ? "no matches" : "no tracks"
                 color: Theme.muted
                 font.family: Theme.fontFamily
                 font.pointSize: pane.termPt
@@ -170,7 +170,7 @@ Fieldset {
                 z: list.dragFrom === index ? 2 : 0
 
                 readonly property bool playing: String(modelData.path || "") !== "" && String(modelData.path) === view.trackPath
-                readonly property bool selected: view.pane === "playlist" && view.mode === "queue" && index === view.playlistIdx
+                readonly property bool selected: view.mode === "queue" && index === view.playlistIdx && (view.pane === "playlist" || (String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") !== "" && view.pane === "search"))
 
                 Item {
                     id: body

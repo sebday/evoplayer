@@ -9,12 +9,15 @@ import (
 	"github.com/sebday/evoplayer/server/library"
 )
 
-func Tracks(cacheDir, mode, query string) ([]map[string]any, error) {
-	dbPath := filepath.Join(filepath.Dir(cacheDir), "library.sqlite3")
-	return tracksFromSQLite(dbPath, mode, query)
+func Tracks(env library.Env, mode, query string) ([]map[string]any, error) {
+	dbPath := env.LibraryDB
+	if dbPath == "" {
+		dbPath = filepath.Join(filepath.Dir(env.TracksCacheDir), "library.sqlite3")
+	}
+	return tracksFromSQLite(env, dbPath, mode, query)
 }
 
-func tracksFromSQLite(dbPath, mode, query string) ([]map[string]any, error) {
+func tracksFromSQLite(env library.Env, dbPath, mode, query string) ([]map[string]any, error) {
 	if _, err := os.Stat(dbPath); err != nil {
 		if os.IsNotExist(err) {
 			return []map[string]any{}, nil
@@ -26,7 +29,7 @@ func tracksFromSQLite(dbPath, mode, query string) ([]map[string]any, error) {
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.Query(`SELECT path, genre, title, artist, album, year, label, duration FROM tracks`)
+	rows, err := db.Query(`SELECT path, genre, title, artist, album, year, label, duration, art, liked FROM tracks`)
 	if err != nil {
 		return nil, err
 	}
@@ -34,16 +37,25 @@ func tracksFromSQLite(dbPath, mode, query string) ([]map[string]any, error) {
 	needle := strings.ToLower(query)
 	out := make([]map[string]any, 0)
 	for rows.Next() {
-		var path, genre, title, artist, album, year, label string
+		var path, genre, title, artist, album, year, label, art string
 		var duration float64
-		if err := rows.Scan(&path, &genre, &title, &artist, &album, &year, &label, &duration); err != nil {
+		var liked int
+		if err := rows.Scan(&path, &genre, &title, &artist, &album, &year, &label, &duration, &art, &liked); err != nil {
 			continue
 		}
 		item := map[string]any{
 			"path": path, "genre": genre, "title": title, "artist": artist,
 			"album": album, "year": year, "label": label, "duration": duration,
+			"liked": liked == 1,
 		}
 		if matchItem(item, mode, query, needle) {
+			resolved, thumb := library.ListAssets(env, path, art)
+			if resolved != "" {
+				item["art"] = resolved
+			}
+			if thumb != "" {
+				item["thumb"] = thumb
+			}
 			out = append(out, item)
 		}
 	}
