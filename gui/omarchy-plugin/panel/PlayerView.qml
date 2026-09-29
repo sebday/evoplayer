@@ -59,6 +59,7 @@ Item {
     property int downloadHit: -1
     property string downloadPreviewId: ""
     property string downloadPreviewURL: ""
+    property string downloadPreviewArt: ""
     property int downloadIdx: 0
     property string downloadNote: ""
     property string downloadLog: ""
@@ -264,6 +265,39 @@ Item {
         return year || "artwork"
     }
 
+    function soundcloudArtURL(value) {
+        var s = safeArtURL(value)
+        var lower = s.toLowerCase()
+        if (lower.indexOf(".sndcdn.com/") >= 0 && lower.indexOf("/artworks-") >= 0 && lower.slice(-4) === ".png")
+            return s.slice(0, -4) + ".jpg"
+        return s
+    }
+
+    function playingPreviewArt() {
+        var path = String(trackPath || "")
+        var mark = "/discover/"
+        var at = path.lastIndexOf(mark)
+        if (at < 0 || path.slice(-4) !== ".mp3")
+            return ""
+        var id = path.slice(at + mark.length, path.length - 4)
+        if (!id || id.replace(/[0-9]/g, "") !== "")
+            return ""
+        if (String(downloadPreviewId) === id && downloadPreviewArt)
+            return downloadPreviewArt
+        var lists = [downloadHits, discoverTracks]
+        for (var n = 0; n < lists.length; n++) {
+            var rows = lists[n] || []
+            for (var i = 0; i < rows.length; i++) {
+                if (rows[i] && String(rows[i].id) === id) {
+                    var url = soundcloudArtURL(rows[i].artwork)
+                    if (url)
+                        return url
+                }
+            }
+        }
+        return ""
+    }
+
     function artSource() {
         var url = ""
         if (mode === "art" && artPreview)
@@ -273,7 +307,9 @@ Item {
         else if (artOverride && artOverridePath === trackPath)
             url = Util.fileUrl(artOverride)
         else
-            url = Util.fileUrl(String(player.art || ""))
+            url = playingPreviewArt() || Util.fileUrl(String(player.art || ""))
+        if (url.indexOf("https://") === 0 || url.indexOf("http://") === 0)
+            return url
         if (url && artEpoch)
             url += "#" + artEpoch
         return url
@@ -551,6 +587,42 @@ Item {
         return rows[downloadHit]
     }
 
+    function soundcloudPage(url) {
+        url = String(url || "").replace(/^\s+|\s+$/g, "")
+        if (url.indexOf("\n") >= 0 || url.indexOf("\r") >= 0)
+            return ""
+        var lower = url.toLowerCase()
+        if (lower.indexOf("https://soundcloud.com/") !== 0 && lower.indexOf("https://m.soundcloud.com/") !== 0 && lower.indexOf("https://on.soundcloud.com/") !== 0)
+            return ""
+        return url
+    }
+
+    function openInBrave(url) {
+        url = soundcloudPage(url)
+        if (!url)
+            return false
+        Quickshell.execDetached(["/usr/bin/brave", url])
+        return true
+    }
+
+    function playDRMInBrave(message) {
+        if (String(message || "").toLowerCase().indexOf("drm") < 0)
+            return false
+        var url = soundcloudPage(downloadPreviewURL)
+        if (!url && mode === "discover") {
+            var row = currentDiscover()
+            url = soundcloudPage(row && row.permalink)
+        }
+        if (!openInBrave(url))
+            return false
+        err = ""
+        if (mode === "download")
+            downloadNote = "opened in brave"
+        else
+            discoverNote = "opened in brave"
+        return true
+    }
+
     function playSoundCloudHit() {
         var row = selectedDownloadHit()
         if (!row || !row.id) {
@@ -561,6 +633,7 @@ Item {
         downloadNote = "playing…"
         downloadPreviewId = String(row.id)
         downloadPreviewURL = String(row.permalink || "")
+        downloadPreviewArt = soundcloudArtURL(row.artwork)
         ipc("discover.preview", { id: Number(downloadPreviewId) }, function(data) {
             if (data && data.path)
                 root.downloadNote = ""
@@ -647,19 +720,33 @@ Item {
         return out.join("\n")
     }
 
-    function closeTool() {
+    function stepOffTool() {
         var rows = sidebar || []
-        if (rows[browseIdx] && rows[browseIdx].kind === "tool") {
-            var n = browseIdx - 1
-            while (n >= 0 && rows[n] && rows[n].kind === "rule")
-                n--
-            if (n >= 0)
-                browseIdx = n
-        }
+        if (!(rows[browseIdx] && rows[browseIdx].kind === "tool"))
+            return
+        var n = browseIdx - 1
+        while (n >= 0 && rows[n] && rows[n].kind === "rule")
+            n--
+        if (n >= 0)
+            browseIdx = n
+    }
+
+    function closeTool() {
+        stepOffTool()
         mode = "queue"
         pane = "browse"
         syncShownPlaylist()
         err = ""
+    }
+
+    function dismissDownload() {
+        if (mode !== "download")
+            return
+        stepOffTool()
+        mode = "queue"
+        downloadIdx = 0
+        err = ""
+        syncShownPlaylist()
     }
 
     function closeDownload() {
@@ -1518,6 +1605,7 @@ Item {
     }
 
     function openSearch() {
+        dismissDownload()
         if (mode !== "queue")
             closeMode()
         pane = "search"
@@ -1535,6 +1623,7 @@ Item {
     }
 
     function setSearch(text) {
+        dismissDownload()
         searchQuery = String(text || "")
         searchTimer.restart()
     }
@@ -2163,19 +2252,27 @@ Item {
             if (key === Qt.Key_Escape) { onEsc(); return true }
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { runDownloadBox(); return true }
             if (key === Qt.Key_Down) {
-                if ((downloadHits || []).length) {
-                    downloadHit = 0
+                var rows = downloadHits || []
+                if (!rows.length)
                     return true
-                }
+                textCapture = false
+                if (downloadHit < 0)
+                    downloadHit = 0
+                else if (downloadHit < rows.length - 1)
+                    downloadHit += 1
+                if (host && host.forceKeyFocus)
+                    host.forceKeyFocus()
                 return true
             }
-            if (key === Qt.Key_Up || key === Qt.Key_Backtab) {
+            if (key === Qt.Key_Up) {
                 focusPane("browse")
                 return true
             }
+            if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && shift)) { cycleFocus(-1); return true }
+            if (key === Qt.Key_Tab) { cycleFocus(1); return true }
             return false
         }
-        if (mode === "download" && downloadHit >= 0) {
+        if (mode === "download" && pane === "playlist" && downloadHit >= 0) {
             if (key === Qt.Key_Escape) { onEsc(); return true }
             if (text === "s" || text === "S") { syncLikes(); return true }
             if (key === Qt.Key_Up) {
@@ -2192,6 +2289,8 @@ Item {
             }
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { playSoundCloudHit(); return true }
             if (text === "d" || text === "D" || text === "l" || text === "L") { downloadSoundCloudHit(); return true }
+            if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && shift)) { cycleFocus(-1); return true }
+            if (key === Qt.Key_Tab) { cycleFocus(1); return true }
             return true
         }
         if (mode === "download") {
@@ -2337,8 +2436,11 @@ Item {
                     return
                 }
                 if (previewStatus === "error") {
+                    var previewErr = root.jobError(data)
+                    if (root.playDRMInBrave(previewErr))
+                        return
                     root.downloadNote = ""
-                    root.err = root.jobError(data)
+                    root.err = previewErr
                     return
                 }
                 if (previewStatus === "done") {
@@ -2356,8 +2458,11 @@ Item {
                 return
             }
             if (status === "error") {
+                var discoverErr = root.jobError(data)
+                if (name === "discover-preview" && root.playDRMInBrave(discoverErr))
+                    return
                 root.discoverNote = ""
-                root.err = root.jobError(data)
+                root.err = discoverErr
                 return
             }
             if (status === "done") {

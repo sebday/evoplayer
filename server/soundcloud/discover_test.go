@@ -66,6 +66,16 @@ func TestArtworkThumb(t *testing.T) {
 	if got := artworkThumb(missing); got != "https://i1.sndcdn.com/avatars-xyz-t300x300.jpg" {
 		t.Fatalf("avatar = %s", got)
 	}
+	png := scTrack(3, "Playaz", "Return", 1)
+	png.ArtworkURL = "https://i1.sndcdn.com/artworks-abc-t500x500.png"
+	if got := artworkThumb(png); got != "https://i1.sndcdn.com/artworks-abc-t300x300.jpg" {
+		t.Fatalf("png artwork = %s", got)
+	}
+	def := scTrack(4, "nobody", "Track", 1)
+	def.User.AvatarURL = "https://a1.sndcdn.com/images/default_avatar_large.png"
+	if got := artworkThumb(def); got != "https://a1.sndcdn.com/images/default_avatar_large.png" {
+		t.Fatalf("default avatar = %s", got)
+	}
 }
 
 func TestArtistTokens(t *testing.T) {
@@ -108,6 +118,27 @@ func TestLooseMatchPrefersArtistUploadAndRejectsMashup(t *testing.T) {
 	}
 	if pickLooseMatch(tracks[:1], artistTokens("Noisia"), "Meditation", 425.6) != nil {
 		t.Fatal("mashup with a different length should not match")
+	}
+}
+
+func TestFallbackMatchPrefersCleanTitleAndCloserLength(t *testing.T) {
+	tracks := []Track{
+		scTrack(1, "Jeremy Wicks", "J - MAJIK - SOLARIZE - RUN - DMT - AND - BIRD - PETERSON - REMIX", 324500),
+		scTrack(2, "KnownDnB", "J Majik - Solarize", 517300),
+		scTrack(3, "szomfa", "J Majik - Solarize", 470200),
+		scTrack(4, "Maduk", "Solarize (feat. Logistics)", 273300),
+		scTrack(5, "The Renegades/Dynamix", "J Majik - Solarize (The Renegades' Mix)", 181500),
+	}
+	got := pickFallbackMatch(tracks, artistTokens("J. Majik"), "Solarize", 384.1)
+	if got == nil || got.ID != 3 {
+		t.Fatalf("got %+v, want closest titled upload", got)
+	}
+}
+
+func TestFallbackMatchRejectsUncreditedTitle(t *testing.T) {
+	tracks := []Track{scTrack(4, "Maduk", "Solarize (feat. Logistics)", 273300)}
+	if pickFallbackMatch(tracks, artistTokens("J. Majik"), "Solarize", 384.1) != nil {
+		t.Fatal("title-only upload should not match another artist")
 	}
 }
 

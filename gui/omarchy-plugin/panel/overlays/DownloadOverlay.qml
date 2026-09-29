@@ -6,8 +6,20 @@ Item {
 
     required property var view
 
+    readonly property int artSide: 32
+    readonly property int rowH: artSide + 8
     readonly property bool onResults: view.downloadHit >= 0
     readonly property bool focused: view.pane === "playlist"
+    readonly property bool searchStatus: {
+        var note = String(view.downloadNote || "")
+        return note === "searching…" || note === "nothing on soundcloud"
+    }
+
+    FontMetrics {
+        id: metaFont
+        font.family: Theme.fontFamily
+        font.pointSize: 9
+    }
 
     component FieldInput: Item {
         id: box
@@ -112,7 +124,7 @@ Item {
             }
 
             NoteLine {
-                visible: view.downloadNote !== "" && !pane.onResults
+                visible: view.downloadNote !== "" && !pane.onResults && !pane.searchStatus
             }
 
             Flickable {
@@ -172,7 +184,7 @@ Item {
         NoteLine {
             id: searchNote
             anchors.top: parent.top
-            visible: view.downloadNote !== "" && pane.onResults
+            visible: view.downloadNote !== "" && (pane.onResults || pane.searchStatus)
             height: visible ? implicitHeight : 0
         }
 
@@ -187,25 +199,69 @@ Item {
             highlightMoveDuration: 0
             model: view.downloadHits || []
 
-            delegate: Rectangle {
+            delegate: Item {
                 required property int index
                 required property var modelData
                 width: hits.width
-                height: 22
-                radius: 2
-                color: view.downloadHit === index ? Theme.good : "transparent"
+                height: pane.rowH
 
-                Text {
+                readonly property bool selected: view.downloadHit === index
+
+                Rectangle {
                     anchors.fill: parent
-                    anchors.leftMargin: 4
-                    anchors.rightMargin: 4
-                    textFormat: Text.PlainText
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
-                    text: pane.hitLabel(modelData)
-                    color: view.downloadHit === index ? Theme.background : Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeM
+                    radius: 2
+                    color: selected ? Theme.good : "transparent"
+                }
+
+                Row {
+                    anchors.fill: parent
+                    anchors.leftMargin: 2
+                    anchors.rightMargin: 8
+                    spacing: 8
+
+                    Rectangle {
+                        id: cover
+                        width: pane.artSide
+                        height: width
+                        radius: 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: selected ? Theme.background : Theme.mantle
+                        clip: true
+
+                        Image {
+                            anchors.fill: parent
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: true
+                            sourceSize.width: 72
+                            sourceSize.height: 72
+                            source: view.soundcloudArtURL(modelData.artwork)
+                        }
+                    }
+
+                    Text {
+                        textFormat: Text.PlainText
+                        width: Math.max(40, parent.width - cover.width - Math.ceil(metaFont.advanceWidth("000:00")) - 16)
+                        height: pane.rowH
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        text: view.trackLabel(modelData)
+                        color: selected ? Theme.background : Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pointSize: 12
+                    }
+
+                    Text {
+                        textFormat: Text.PlainText
+                        width: Math.ceil(metaFont.advanceWidth("000:00"))
+                        height: pane.rowH
+                        verticalAlignment: Text.AlignVCenter
+                        horizontalAlignment: Text.AlignRight
+                        text: view.trackClock(modelData)
+                        color: selected ? Theme.background : Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pointSize: 9
+                    }
                 }
 
                 MouseArea {
@@ -246,19 +302,14 @@ Item {
         function onDownloadQueryChanged() { queryBox.show(view.downloadQuery) }
     }
 
-    function hitLabel(row) {
-        var artist = String(row && row.artist || "").replace(/^\s+|\s+$/g, "")
-        var title = String(row && row.title || "").replace(/^\s+|\s+$/g, "")
-        var name = artist && title ? artist + " — " + title : (title || artist)
-        var dur = view.clock(row ? row.duration : 0)
-        return dur ? name + "  " + dur : name
-    }
-
     function focusCurrent() {
         if (view.mode !== "download")
             return
         if (view.downloadHit >= 0) {
             queryBox.drop()
+            view.textCapture = false
+            if (view.host && view.host.forceKeyFocus)
+                view.host.forceKeyFocus()
             return
         }
         Qt.callLater(function() { queryBox.grab() })

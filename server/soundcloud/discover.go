@@ -121,11 +121,17 @@ func resolveSeed(client *Client, seed Seed) (*Track, error) {
 }
 
 func artworkThumb(track Track) string {
-	url := strings.TrimSpace(track.ArtworkURL)
-	if url == "" {
-		url = strings.TrimSpace(track.User.AvatarURL)
+	raw := strings.TrimSpace(track.ArtworkURL)
+	if raw == "" {
+		raw = strings.TrimSpace(track.User.AvatarURL)
 	}
-	return strings.NewReplacer("-large", "-t300x300", "-t500x500", "-t300x300", "-original", "-t300x300").Replace(url)
+	raw = strings.NewReplacer("-large", "-t300x300", "-t500x500", "-t300x300", "-original", "-t300x300").Replace(raw)
+	// SoundCloud labels some JPEG artwork with a .png path. Qt then refuses to decode it.
+	lower := strings.ToLower(raw)
+	if strings.Contains(lower, ".sndcdn.com/") && strings.Contains(lower, "/artworks-") && strings.HasSuffix(lower, ".png") {
+		return raw[:len(raw)-4] + ".jpg"
+	}
+	return raw
 }
 
 func similarTrack(track Track) SimilarTrack {
@@ -163,9 +169,10 @@ func (c *Client) Track(id int64) (*Track, error) {
 }
 
 // MatchTrack searches SoundCloud for artist and title. When durationSec is
-// known, the hit must be within a few seconds. A strict uploader match wins;
-// otherwise label and repost uploads that name the artist are accepted, and
-// narrower queries are tried before giving up.
+// known, a hit within a few seconds wins. A strict uploader match wins;
+// otherwise label and repost uploads that name the artist are accepted.
+// Narrower queries run next, and if those still miss, the closest titled
+// upload is used even when its length is off.
 func (c *Client) MatchTrack(artist, title string, durationSec float64) (*Track, error) {
 	artist = strings.TrimSpace(artist)
 	title = strings.TrimSpace(title)
@@ -175,9 +182,16 @@ func (c *Client) MatchTrack(artist, title string, durationSec float64) (*Track, 
 	}
 	tokens := artistTokens(artist)
 	queries := []string{full}
+	if artist != "" && title != "" {
+		queries = append(queries, artist+" - "+title)
+	}
 	if title != "" {
 		if len(tokens) > 0 {
 			queries = append(queries, title+" "+tokens[0])
+		}
+		plain := strings.Join(strings.Fields(strings.ReplaceAll(artist, ".", " ")), " ")
+		if plain != "" && plain != artist {
+			queries = append(queries, strings.TrimSpace(plain+" "+title))
 		}
 		queries = append(queries, title)
 	}
@@ -204,6 +218,9 @@ func (c *Client) MatchTrack(artist, title string, durationSec float64) (*Track, 
 			return best, nil
 		}
 	}
+	if best := pickFallbackMatch(pool, tokens, title, durationSec); best != nil {
+		return best, nil
+	}
 	if len(pool) == 0 && searchErr != nil {
 		return nil, searchErr
 	}
@@ -227,6 +244,68 @@ func artistTokens(artist string) []string {
 		out = append(out, tok)
 	}
 	return out
+}
+
+// pickFallbackMatch chooses a titled upload that names the artist when nothing
+// landed inside the duration window. Cleaner titles win, then the closer length.
+func pickFallbackMatch(tracks []Track, tokens []string, title string, durationSec float64) *Track {
+	wantTitle := tags.Slugify(stripMix(title))
+	if wantTitle == "" || len(tokens) == 0 {
+		return nil
+	}
+	var best *Track
+	bestScore := -1
+	bestDelta := math.MaxFloat64
+	for i := range tracks {
+		track := &tracks[i]
+		if !listable(track) {
+			continue
+		}
+		gotTitle := tags.Slugify(stripMix(track.Title))
+		if !strings.Contains("_"+gotTitle+"_", "_"+wantTitle+"_") {
+			continue
+		}
+		uploader := "_" + tags.Slugify(track.User.Username) + "_"
+		named := "_" + gotTitle + "_"
+		credited := false
+		for _, tok := range tokens {
+			if strings.Contains(uploader, "_"+tok+"_") || strings.Contains(named, "_"+tok+"_") {
+				credited = true
+				break
+			}
+		}
+		if !credited {
+			continue
+		}
+		extra := 0
+		for _, part := range strings.Split(gotTitle, "_") {
+			if part == "" || len(part) < 3 || strings.Contains("_"+wantTitle+"_", "_"+part+"_") {
+				continue
+			}
+			known := false
+			for _, tok := range tokens {
+				if part == tok {
+					known = true
+					break
+				}
+			}
+			if !known {
+				extra++
+			}
+		}
+		score := 20 - extra
+		delta := math.MaxFloat64
+		if durationSec > 1 && track.Duration > 0 {
+			delta = math.Abs(durationSec - float64(track.Duration)/1000)
+		}
+		if score > bestScore || (score == bestScore && delta < bestDelta) {
+			bestScore = score
+			bestDelta = delta
+			cp := *track
+			best = &cp
+		}
+	}
+	return best
 }
 
 func pickLooseMatch(tracks []Track, tokens []string, title string, durationSec float64) *Track {

@@ -451,7 +451,7 @@ Fieldset {
                             cache: true
                             sourceSize.width: 72
                             sourceSize.height: 72
-                            source: view.safeArtURL(modelData.artwork)
+                            source: view.soundcloudArtURL(modelData.artwork)
                         }
                     }
 

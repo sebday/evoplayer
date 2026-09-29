@@ -69,9 +69,19 @@ Fieldset {
                 id: playMark
                 anchors.fill: parent
                 property bool playing: view.playerState() === "playing"
+                property real breath: 0
                 onPlayingChanged: requestPaint()
+                onBreathChanged: if (playing) requestPaint()
                 onWidthChanged: requestPaint()
                 onHeightChanged: requestPaint()
+
+                SequentialAnimation on breath {
+                    running: playMark.playing && view.active
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 0; to: 1; duration: 1400; easing.type: Easing.InOutSine }
+                    NumberAnimation { from: 1; to: 0; duration: 1400; easing.type: Easing.InOutSine }
+                }
+
                 onPaint: {
                     var ctx = getContext("2d")
                     ctx.clearRect(0, 0, width, height)
@@ -84,14 +94,16 @@ Fieldset {
                     ctx.beginPath()
                     ctx.arc(cx, cy, r, 0, Math.PI * 2)
                     ctx.stroke()
-                    ctx.fillStyle = Theme.withOpacity(Theme.foreground, 0.72)
                     if (playing) {
-                        var barW = s * 0.07
-                        var barH = s * 0.28
-                        var gap = s * 0.06
+                        var scale = 0.86 + 0.14 * breath
+                        ctx.fillStyle = Theme.withOpacity(Theme.border, 0.45 + 0.55 * breath)
+                        var barW = s * 0.07 * scale
+                        var barH = s * 0.28 * scale
+                        var gap = s * 0.06 * scale
                         ctx.fillRect(cx - gap - barW, cy - barH / 2, barW, barH)
                         ctx.fillRect(cx + gap, cy - barH / 2, barW, barH)
                     } else {
+                        ctx.fillStyle = Theme.withOpacity(Theme.foreground, 0.72)
                         ctx.beginPath()
                         ctx.moveTo(cx - s * 0.1, cy - s * 0.16)
                         ctx.lineTo(cx - s * 0.1, cy + s * 0.16)
@@ -269,7 +281,7 @@ Fieldset {
                 }
                 Text {
                     textFormat: Text.PlainText
-                    text: "EQ"
+                    text: "VIZ"
                     color: view.vizOn ? Theme.good : Theme.muted
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeS
