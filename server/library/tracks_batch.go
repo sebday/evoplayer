@@ -39,6 +39,14 @@ func TracksForPaths(env Env, paths []string, playlistName string) []Track {
 	for _, p := range paths {
 		if row, ok := byPath[p]; ok {
 			row.Playlist = playlistName
+			if row.Duration <= 0 {
+				if dur := playback.DurationForPath(row.Path); dur > 0 {
+					row.Duration = dur
+					if db != nil {
+						_, _ = db.Exec(`UPDATE tracks SET duration = ? WHERE path = ? AND duration <= 0`, dur, row.Path)
+					}
+				}
+			}
 			row.DurationLabel = playback.FormatTime(row.Duration)
 			out = append(out, row)
 			continue

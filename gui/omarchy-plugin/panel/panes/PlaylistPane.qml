@@ -25,7 +25,8 @@ Fieldset {
         font.pointSize: pane.metaPt
     }
 
-    readonly property int rowH: Math.ceil(term.height) + 4
+    readonly property int artSide: 32
+    readonly property int rowH: artSide + 8
 
     number: 3
     legend: view.playlistLegend()
@@ -162,7 +163,7 @@ Fieldset {
 
                     Rectangle {
                         id: cover
-                        width: pane.rowH - 2
+                        width: pane.artSide
                         height: width
                         radius: 2
                         anchors.verticalCenter: parent.verticalCenter
@@ -195,21 +196,8 @@ Fieldset {
                         anchors.verticalCenter: parent.verticalCenter
 
                         Text {
-                            id: mark
                             textFormat: Text.PlainText
-                            width: Math.ceil(term.advanceWidth(">")) + 2
-                            height: pane.rowH
-                            verticalAlignment: Text.AlignVCenter
-                            text: playing ? ">" : " "
-                            color: selected ? Theme.background : Theme.good
-                            font.family: Theme.fontFamily
-                            font.bold: true
-                            font.pointSize: pane.termPt
-                        }
-
-                        Text {
-                            textFormat: Text.PlainText
-                            width: Math.max(40, titleRow.width - mark.width - titleRow.spacing)
+                            width: titleRow.width
                             height: pane.rowH
                             verticalAlignment: Text.AlignVCenter
                             text: view.trackLabel(modelData)
