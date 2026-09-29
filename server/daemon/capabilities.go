@@ -48,7 +48,7 @@ func capabilities() map[string]any {
 			{"name": "library.favorite.toggle", "params": map[string]string{"path": "string"}},
 			{"name": "library.track.move", "params": map[string]string{"path": "string", "folder": "string"}},
 			{"name": "library.track.tags.get", "params": map[string]string{"path": "string"}},
-			{"name": "library.track.tags.set", "params": map[string]string{"path": "string", "title": "string", "artist": "string", "year": "string", "genre": "string", "label": "string"}},
+			{"name": "library.track.tags.set", "params": map[string]string{"path": "string", "title": "string", "artist": "string", "album": "string", "year": "string", "genre": "string", "label": "string"}},
 			{"name": "library.current.load", "params": nil},
 			{"name": "library.current.save", "params": map[string]string{"paths": "[]string"}},
 			{"name": "library.import", "params": nil},

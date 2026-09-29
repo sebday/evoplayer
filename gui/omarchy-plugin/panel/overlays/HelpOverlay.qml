@@ -48,7 +48,7 @@ Flickable {
                 { key: "a", label: "art" },
                 { key: "v", label: "visualizer on / off" },
                 { key: "esc", label: "back" },
-                { key: "h ?", label: "help" },
+                { key: "h", label: "help" },
                 { key: "q", label: "quit" },
                 { key: "k", label: "keep discover" },
                 { key: "x", label: "dismiss discover" },

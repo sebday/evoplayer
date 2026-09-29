@@ -13,6 +13,7 @@ import (
 type TrackTagsPatch struct {
 	Title  string `json:"title"`
 	Artist string `json:"artist"`
+	Album  string `json:"album"`
 	Year   string `json:"year"`
 	Genre  string `json:"genre"`
 	Label  string `json:"label"`
@@ -21,6 +22,7 @@ type TrackTagsPatch struct {
 type TrackTags struct {
 	Title  string `json:"title"`
 	Artist string `json:"artist"`
+	Album  string `json:"album"`
 	Year   string `json:"year"`
 	Genre  string `json:"genre"`
 	Label  string `json:"label"`
@@ -45,6 +47,7 @@ func ReadTrackTags(path string) (TrackTags, error) {
 	return TrackTags{
 		Title:  strings.TrimSpace(tag.Title),
 		Artist: strings.TrimSpace(tag.Artist),
+		Album:  strings.TrimSpace(tag.Album),
 		Year:   strings.TrimSpace(tag.Year),
 		Genre:  strings.TrimSpace(tag.Genre),
 		Label:  strings.TrimSpace(tag.Label),
@@ -66,6 +69,7 @@ func UpdateTrackTags(env Env, path string, patch TrackTagsPatch) (Track, error) 
 	targets := map[string]string{
 		"title":     strings.TrimSpace(patch.Title),
 		"artist":    strings.TrimSpace(patch.Artist),
+		"album":     strings.TrimSpace(patch.Album),
 		"year":      strings.TrimSpace(patch.Year),
 		"genre":     strings.TrimSpace(patch.Genre),
 		"publisher": strings.TrimSpace(patch.Label),

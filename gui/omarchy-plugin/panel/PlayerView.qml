@@ -102,6 +102,7 @@ Item {
     property int tagFocus: 0
     property string tagTitle: ""
     property string tagArtist: ""
+    property string tagAlbum: ""
     property string tagYear: ""
     property string tagGenre: ""
     property string tagLabel: ""
@@ -210,18 +211,16 @@ Item {
     }
 
     function nowRelease() {
-        var year = String(player.year || "").replace(/^\s+|\s+$/g, "")
+        var album = String(player.album || "").replace(/^\s+|\s+$/g, "")
         var label = String(player.label || "").replace(/^\s+|\s+$/g, "")
-        var cat = String(player.album || "").replace(/^\s+|\s+$/g, "")
-        if (!(cat.length >= 3 && cat.indexOf(" ") < 0 && /\d/.test(cat)))
-            cat = ""
+        var year = String(player.year || "").replace(/^\s+|\s+$/g, "")
         var parts = []
+        if (album)
+            parts.push(album)
+        if (label && label.toLowerCase() !== album.toLowerCase())
+            parts.push(label)
         if (year)
             parts.push(year)
-        if (label)
-            parts.push(label)
-        if (cat && cat.toLowerCase() !== label.toLowerCase())
-            parts.push(cat)
         return parts.join("  ").toUpperCase()
     }
 
@@ -1381,6 +1380,7 @@ Item {
         tagFocus = 0
         tagTitle = ""
         tagArtist = ""
+        tagAlbum = ""
         tagYear = ""
         tagGenre = ""
         tagLabel = ""
@@ -1390,6 +1390,7 @@ Item {
             root.tagBusy = false
             root.tagTitle = String(data.title || "")
             root.tagArtist = String(data.artist || "")
+            root.tagAlbum = String(data.album || "")
             root.tagYear = String(data.year || "")
             root.tagGenre = String(data.genre || "")
             root.tagLabel = String(data.label || "")
@@ -1398,12 +1399,12 @@ Item {
 
     function moveTag(delta) {
         var next = tagFocus + delta
-        if (next >= 5) {
+        if (next >= 6) {
             saveTags()
             return
         }
         if (next < 0)
-            next = 4
+            next = 5
         tagFocus = next
     }
 
@@ -1415,6 +1416,7 @@ Item {
             path: tagPath,
             title: tagTitle,
             artist: tagArtist,
+            album: tagAlbum,
             year: tagYear,
             genre: tagGenre,
             label: tagLabel
@@ -1916,7 +1918,7 @@ Item {
                 host.requestClose()
             return true
         }
-        if (text === "?" || (shift && key === Qt.Key_Slash) || text === "h" || text === "H") { toggleHelp(); return true }
+        if (text === "h" || text === "H") { toggleHelp(); return true }
         if (key === Qt.Key_Escape) { onEsc(); return true }
         if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && shift)) { cycleFocus(-1); return true }
         if (key === Qt.Key_Tab) { cycleFocus(1); return true }

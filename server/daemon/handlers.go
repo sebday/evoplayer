@@ -265,6 +265,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			Path   string `json:"path"`
 			Title  string `json:"title"`
 			Artist string `json:"artist"`
+			Album  string `json:"album"`
 			Year   string `json:"year"`
 			Genre  string `json:"genre"`
 			Label  string `json:"label"`
@@ -276,6 +277,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		row, err := library.UpdateTrackTags(libEnv, p.Path, library.TrackTagsPatch{
 			Title:  p.Title,
 			Artist: p.Artist,
+			Album:  p.Album,
 			Year:   p.Year,
 			Genre:  p.Genre,
 			Label:  p.Label,

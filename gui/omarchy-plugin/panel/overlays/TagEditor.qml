@@ -9,7 +9,7 @@ Column {
     spacing: 2
 
     function focusIndex(i) {
-        var fields = [titleField, artistField, yearField, genreField, labelField]
+        var fields = [titleField, artistField, albumField, yearField, genreField, labelField]
         var n = i
         if (n < 0)
             n = 0
@@ -35,7 +35,7 @@ Column {
             color: view && view.tagFocus === parent.index ? Theme.border : Theme.muted
             font.family: Theme.fontFamily
             font.bold: view && view.tagFocus === parent.index
-            font.pixelSize: Theme.fontSizeS
+            font.pixelSize: Theme.fontSizeM
         }
 
         TextInput {
@@ -43,7 +43,7 @@ Column {
             width: parent.width
             color: Theme.foreground
             font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeM
+            font.pixelSize: Theme.fontSizeL
             clip: true
             selectByMouse: true
             selectionColor: Theme.good
@@ -105,9 +105,17 @@ Column {
         onEdited: function(text) { if (editor.view.tagArtist !== text) editor.view.tagArtist = text }
     }
     TagField {
+        id: albumField
+        label: "album"
+        index: 2
+        view: editor.view
+        value: editor.view.tagAlbum
+        onEdited: function(text) { if (editor.view.tagAlbum !== text) editor.view.tagAlbum = text }
+    }
+    TagField {
         id: yearField
         label: "year"
-        index: 2
+        index: 3
         view: editor.view
         value: editor.view.tagYear
         onEdited: function(text) { if (editor.view.tagYear !== text) editor.view.tagYear = text }
@@ -115,7 +123,7 @@ Column {
     TagField {
         id: genreField
         label: "genre"
-        index: 3
+        index: 4
         view: editor.view
         value: editor.view.tagGenre
         onEdited: function(text) { if (editor.view.tagGenre !== text) editor.view.tagGenre = text }
@@ -123,7 +131,7 @@ Column {
     TagField {
         id: labelField
         label: "label"
-        index: 4
+        index: 5
         view: editor.view
         value: editor.view.tagLabel
         onEdited: function(text) { if (editor.view.tagLabel !== text) editor.view.tagLabel = text }
