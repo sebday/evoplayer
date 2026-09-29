@@ -290,6 +290,29 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			d.broadcastStateFull()
 		}
 		return row, nil
+	case "library.track.tags.set_many":
+		var many struct {
+			Paths []string `json:"paths"`
+			Album string   `json:"album"`
+			Year  string   `json:"year"`
+			Label string   `json:"label"`
+		}
+		if err := ipc.DecodeParams(req.Params, &many); err != nil {
+			return nil, err
+		}
+		libEnv := library.EnvFrom(d.env())
+		n, err := library.UpdateSharedTags(libEnv, many.Paths, many.Album, many.Year, many.Label)
+		if err := wrapJobErr(err); err != nil {
+			return nil, err
+		}
+		playing := d.Actor.Snapshot().Path
+		for _, path := range many.Paths {
+			status.InvalidateMeta(path)
+			if path == playing {
+				d.broadcastStateFull()
+			}
+		}
+		return map[string]any{"updated": n}, nil
 	case "library.current.load":
 		return playlist.LoadCurrent(playlist.EnvFrom(d.env()))
 	case "library.current.save":

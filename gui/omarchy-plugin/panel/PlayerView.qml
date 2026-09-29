@@ -40,6 +40,9 @@ Item {
 
     property var queue: []
     property int playlistIdx: 0
+    property int playlistAnchor: 0
+    property var playlistPicks: []
+    property bool tagMany: false
     property int reorderPending: 0
     property real reorderScroll: -1
     property real playlistScroll: 0
@@ -89,6 +92,11 @@ Item {
     property var artHits: []
     property int artIdx: 0
     property bool artBusy: false
+    property string artTarget: ""
+    property string artQuery: ""
+    property bool artQueryFocus: false
+    property bool artRestart: false
+    property string artNextQuery: ""
     property bool artFromDrop: false
     property string artPreview: ""
 
@@ -260,6 +268,8 @@ Item {
         var url = ""
         if (mode === "art" && artPreview)
             url = artPreview
+        else if (mode === "art" && artTarget && artTarget !== trackPath)
+            url = Util.fileUrl(rowArt(artTarget))
         else if (artOverride && artOverridePath === trackPath)
             url = Util.fileUrl(artOverride)
         else
@@ -267,6 +277,18 @@ Item {
         if (url && artEpoch)
             url += "#" + artEpoch
         return url
+    }
+
+    function rowArt(path) {
+        var lists = [queue, shownTracks, searchHits]
+        for (var n = 0; n < lists.length; n++) {
+            var rows = lists[n] || []
+            for (var i = 0; i < rows.length; i++) {
+                if (rows[i] && String(rows[i].path || "") === path)
+                    return String(rows[i].thumb || rows[i].art || "")
+            }
+        }
+        return ""
     }
 
     function artHitLabel(hit) {
@@ -290,7 +312,7 @@ Item {
 
     function playlistLegend() {
         if (mode === "tags")
-            return "edit tags"
+            return tagMany ? ("edit " + pickedPaths().length + " tracks") : "edit tags"
         if (mode === "move")
             return "move"
         if (mode === "art")
@@ -312,8 +334,11 @@ Item {
     function playlistHints() {
         if (mode === "move")
             return [{ key: "⏎", label: "move" }]
-        if (mode === "art")
-            return [{ key: "⏎", label: "set" }]
+        if (mode === "art") {
+            if (textCapture)
+                return [{ key: "⏎", label: "search" }, { key: "↓", label: "results" }]
+            return [{ key: "⏎", label: "album" }, { key: "t", label: "this track" }, { key: "↑", label: "search" }]
+        }
         if (mode === "download") {
             var hints = []
             if (downloadHit >= 0)
@@ -344,9 +369,8 @@ Item {
             { key: "m", label: "move" },
             { key: "e", label: "edit" }
         ]
-        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
-        if (!q && !shuffle && pane === "playlist" && !shownPlaylist)
-            hints.push({ key: "⇧↑↓", label: "reorder" })
+        if (mode === "queue")
+            hints.push({ key: "⇧↑↓", label: "select" })
         return hints
     }
 
@@ -836,6 +860,8 @@ Item {
         if (shownPlaylist)
             return
         playlistIdx = idx
+        playlistAnchor = idx
+        playlistPicks = queue[idx] && queue[idx].path ? [String(queue[idx].path)] : []
         revealPlaying()
     }
 
@@ -904,12 +930,16 @@ Item {
     function moveActive(delta) {
         if (mode === "move")
             stepIndex("move", (moveFolders || []).length, delta)
-        else if (mode === "art")
+        else if (mode === "art") {
+            if (delta < 0 && artIdx <= 0) {
+                artQueryFocus = true
+                return
+            }
             stepIndex("art", (artHits || []).length, delta)
+        }
         else if (pane === "playlist" && mode === "queue") {
-            var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
-            var rows = q ? (searchHits || []) : (shownPlaylist ? shownTracks : queue)
-            stepIndex("playlist", rows.length, delta)
+            stepIndex("playlist", playlistRows().length, delta)
+            selectOnly(playlistIdx)
         }
         else
             stepBrowse(delta)
@@ -1231,6 +1261,144 @@ Item {
         return next
     }
 
+    function playlistArtPath() {
+        var row = selectedListTrack()
+        var path = row && String(row.path || "")
+        if (path)
+            return path
+        return trackPath
+    }
+
+    function artEditPath() {
+        if (mode === "art" && artTarget)
+            return artTarget
+        return trackPath
+    }
+
+    function patchListArt(rows, path, artPath) {
+        return patchListArtPaths(rows, [path], artPath)
+    }
+
+    function patchListArtPaths(rows, paths, artPath) {
+        var want = {}
+        var listPaths = paths || []
+        for (var n = 0; n < listPaths.length; n++)
+            if (listPaths[n])
+                want[String(listPaths[n])] = true
+        var list = rows || []
+        var next = []
+        var changed = false
+        for (var i = 0; i < list.length; i++) {
+            var row = list[i]
+            if (row && want[String(row.path || "")]) {
+                next.push(Object.assign({}, row, { art: artPath, thumb: "" }))
+                changed = true
+            } else
+                next.push(row)
+        }
+        return changed ? next : rows
+    }
+
+    function playlistRows() {
+        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
+        if (q)
+            return searchHits || []
+        if (shownPlaylist)
+            return shownTracks || []
+        return queue || []
+    }
+
+    function selectOnly(index) {
+        var rows = playlistRows()
+        if (index < 0)
+            index = 0
+        if (rows.length && index >= rows.length)
+            index = rows.length - 1
+        playlistIdx = index
+        playlistAnchor = index
+        var row = rows[index]
+        playlistPicks = row && row.path ? [String(row.path)] : []
+    }
+
+    function extendPlaylist(index) {
+        var rows = playlistRows()
+        if (!rows.length)
+            return
+        if (index < 0)
+            index = 0
+        if (index >= rows.length)
+            index = rows.length - 1
+        var anchor = playlistAnchor
+        if (anchor < 0 || anchor >= rows.length)
+            anchor = playlistIdx
+        var lo = Math.min(anchor, index)
+        var hi = Math.max(anchor, index)
+        var picks = []
+        for (var i = lo; i <= hi; i++) {
+            if (rows[i] && rows[i].path)
+                picks.push(String(rows[i].path))
+        }
+        playlistIdx = index
+        playlistPicks = picks
+    }
+
+    function trackPicked(path) {
+        var picks = playlistPicks || []
+        path = String(path || "")
+        for (var i = 0; i < picks.length; i++) {
+            if (picks[i] === path)
+                return true
+        }
+        return false
+    }
+
+    function pickedPaths() {
+        var rows = playlistRows()
+        var want = {}
+        var picks = playlistPicks || []
+        for (var i = 0; i < picks.length; i++)
+            want[picks[i]] = true
+        var out = []
+        for (var j = 0; j < rows.length; j++) {
+            var path = rows[j] && String(rows[j].path || "")
+            if (path && want[path])
+                out.push(path)
+        }
+        if (!out.length) {
+            var one = selectedListTrack()
+            if (one && one.path)
+                out.push(String(one.path))
+        }
+        return out
+    }
+
+    function patchSharedTags(paths) {
+        var want = {}
+        for (var i = 0; i < paths.length; i++)
+            want[paths[i]] = true
+        function patch(rows) {
+            var list = rows || []
+            var next = []
+            var changed = false
+            for (var n = 0; n < list.length; n++) {
+                var row = list[n]
+                if (row && want[row.path]) {
+                    next.push(Object.assign({}, row, {
+                        album: root.tagAlbum,
+                        year: root.tagYear,
+                        label: root.tagLabel
+                    }))
+                    changed = true
+                } else
+                    next.push(row)
+            }
+            return changed ? next : rows
+        }
+        queue = patch(queue)
+        shownTracks = patch(shownTracks)
+        searchHits = patch(searchHits)
+    }
+
     function selectedListTrack() {
         var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
         var rows = q ? (searchHits || []) : (shownPlaylist ? shownTracks : queue)
@@ -1265,6 +1433,9 @@ Item {
         artPreview = ""
         artHits = []
         artBusy = false
+        artRestart = false
+        artQueryFocus = false
+        tagMany = false
         moveBusy = false
         tagBusy = false
         playlistIdx = savedPlaylistIdx
@@ -1320,7 +1491,7 @@ Item {
             if (items.length > 400)
                 items = items.slice(0, 400)
             root.searchHits = items
-            root.playlistIdx = 0
+            root.selectOnly(0)
         })
     }
 
@@ -1367,12 +1538,14 @@ Item {
     }
 
     function openTags() {
-        if (pane !== "playlist" || mode !== "queue")
+        if ((pane !== "playlist" && pane !== "search") || mode !== "queue")
+            return
+        var paths = pickedPaths()
+        if (!paths.length)
             return
         var track = selectedListTrack()
-        if (!track || !track.path)
-            return
-        tagPath = track.path
+        tagMany = paths.length > 1
+        tagPath = String((track && track.path) || paths[0])
         tagBusy = true
         tagFocus = 0
         tagTitle = ""
@@ -1395,18 +1568,40 @@ Item {
     }
 
     function moveTag(delta) {
+        var limit = tagMany ? 3 : 6
         var next = tagFocus + delta
-        if (next >= 6) {
+        if (next >= limit) {
             saveTags()
             return
         }
         if (next < 0)
-            next = 5
+            next = limit - 1
         tagFocus = next
     }
 
     function saveTags() {
-        if (!tagPath || tagBusy)
+        if (tagBusy)
+            return
+        if (tagMany) {
+            var paths = pickedPaths()
+            if (!paths.length)
+                return
+            tagBusy = true
+            ipc("library.track.tags.set_many", {
+                paths: paths,
+                album: tagAlbum,
+                year: tagYear,
+                label: tagLabel
+            }, function() {
+                root.tagBusy = false
+                root.err = ""
+                root.patchSharedTags(paths)
+                root.closeMode()
+                root.loadQueue()
+            })
+            return
+        }
+        if (!tagPath)
             return
         tagBusy = true
         ipc("library.track.tags.set", {
@@ -1425,19 +1620,54 @@ Item {
         })
     }
 
-    function openArt() {
-        if (mode === "help" || !trackPath)
+    function openArt(path) {
+        if (mode === "help")
             return
-        if (artSearchProc.running)
+        var target = String(path || "")
+        if (!target)
+            target = mode === "queue" ? playlistArtPath() : trackPath
+        if (!target)
             return
+        artTarget = target
+        artQuery = ""
+        artQueryFocus = false
+        pushOverlay("art")
+        runArtSearch("")
+    }
+
+    function searchDiscogs() {
+        runArtSearch(String(artQuery || "").replace(/^\s+|\s+$/g, ""))
+    }
+
+    function runArtSearch(query) {
+        var q = String(query || "").replace(/^\s+|\s+$/g, "")
+        artBusy = true
+        err = ""
+        if (artSearchProc.running) {
+            artRestart = true
+            artNextQuery = q
+            artSearchProc.signal(15)
+            return
+        }
+        launchArtSearch(q)
+    }
+
+    function launchArtSearch(query) {
+        var q = String(query || "").replace(/^\s+|\s+$/g, "")
         artHits = []
         artIdx = 0
         artPreview = ""
-        artBusy = true
-        pushOverlay("art")
         _artBuf = ""
         _artOverflow = false
-        artSearchProc.command = [Util.evoplayerBinPath(service ? service.home : ""), "art", "search", trackPath, "--json"]
+        var bin = Util.evoplayerBinPath(service ? service.home : "")
+        if (q)
+            artSearchProc.command = [bin, "art", "search", "--query", q, "--json"]
+        else if (artTarget)
+            artSearchProc.command = [bin, "art", "search", artTarget, "--json"]
+        else {
+            artBusy = false
+            return
+        }
         artSearchProc.running = true
     }
 
@@ -1447,7 +1677,7 @@ Item {
             artPreview = ""
             return
         }
-        artPreview = safeArtURL(hit.thumb) || safeArtURL(hit.url)
+        artPreview = safeArtURL(hit.url) || safeArtURL(hit.thumb)
     }
 
     function applyArt(scope) {
@@ -1455,11 +1685,12 @@ Item {
             return
         var hit = artHits[artIdx]
         var url = hit ? safeArtURL(hit.url) || safeArtURL(hit.thumb) : ""
-        if (!url || !trackPath || artApplyProc.running)
+        var target = artEditPath()
+        if (!url || !target || artApplyProc.running)
             return
         artBusy = true
         artFromDrop = false
-        var cmd = [Util.evoplayerBinPath(service ? service.home : ""), "art", "apply", trackPath, url, "--json"]
+        var cmd = [Util.evoplayerBinPath(service ? service.home : ""), "art", "apply", target, url, "--json"]
         if (scope === "album")
             cmd.splice(cmd.length - 1, 0, "--album")
         _applyBuf = ""
@@ -1469,7 +1700,8 @@ Item {
     }
 
     function dropArt(raw) {
-        if (!trackPath) {
+        var target = artEditPath()
+        if (!target) {
             err = "nothing playing"
             return false
         }
@@ -1491,9 +1723,9 @@ Item {
         var cmd
         var bin = Util.evoplayerBinPath(service ? service.home : "")
         if (local)
-            cmd = [bin, "art", "set", trackPath, local, "--json"]
+            cmd = [bin, "art", "set", target, local, "--json"]
         else if (safeArtURL(value))
-            cmd = [bin, "art", "apply", trackPath, value, "--json"]
+            cmd = [bin, "art", "apply", target, value, "--json"]
         else {
             err = "not an image"
             return false
@@ -1508,7 +1740,7 @@ Item {
         return true
     }
 
-    function finishArt(ok, artPath) {
+    function finishArt(ok, artPath, paths) {
         var fromDrop = artFromDrop
         artFromDrop = false
         artBusy = false
@@ -1516,16 +1748,27 @@ Item {
             err = "art apply failed"
             return
         }
-        if (artPath) {
-            artOverride = artPath
-            artOverridePath = trackPath
+        var target = artEditPath()
+        var targets = (paths && paths.length) ? paths : (target ? [target] : [])
+        if (artPath && targets.length) {
             artEpoch++
+            for (var i = 0; i < targets.length; i++) {
+                if (targets[i] === trackPath) {
+                    artOverride = artPath
+                    artOverridePath = trackPath
+                    break
+                }
+            }
+            reorderScroll = playlistScroll
+            queue = patchListArtPaths(queue, targets, artPath)
+            shownTracks = patchListArtPaths(shownTracks, targets, artPath)
+            searchHits = patchListArtPaths(searchHits, targets, artPath)
         }
         err = ""
         if (!fromDrop)
             closeMode()
         if (service && service.requestEnrich)
-            service.requestEnrich(trackPath)
+            service.requestEnrich(target)
     }
 
     function applyLibrary(path) {
@@ -1775,8 +2018,11 @@ Item {
             host.forceKeyFocus()
     }
 
-    function clickPlaylist(index) {
-        playlistIdx = index
+    function clickPlaylist(index, extend) {
+        if (extend)
+            extendPlaylist(index)
+        else
+            selectOnly(index)
         focusPane("playlist")
     }
 
@@ -1787,6 +2033,7 @@ Item {
 
     function clickArt(index) {
         artIdx = index
+        artQueryFocus = false
         focusPane("playlist")
         showArtPreview()
     }
@@ -1832,6 +2079,19 @@ Item {
             if (key === Qt.Key_Up || key === Qt.Key_Backtab || (key === Qt.Key_Tab && shift)) { moveTag(-1); return true }
             if (key === Qt.Key_Down || (key === Qt.Key_Tab && !shift)) { moveTag(1); return true }
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { moveTag(1); return true }
+            return false
+        }
+        if (mode === "art" && textCapture) {
+            if (key === Qt.Key_Escape) { onEsc(); return true }
+            if (key === Qt.Key_Return || key === Qt.Key_Enter) { searchDiscogs(); return true }
+            if (key === Qt.Key_Down) {
+                artQueryFocus = false
+                textCapture = false
+                if (host && host.forceKeyFocus)
+                    host.forceKeyFocus()
+                return true
+            }
+            if (key === Qt.Key_Up) { return true }
             return false
         }
         if (mode === "download" && textCapture) {
@@ -1892,10 +2152,18 @@ Item {
         if (pane === "search" && textCapture) {
             if (key === Qt.Key_Escape) { clearSearch(); return true }
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { playSelected(); return true }
-            if (key === Qt.Key_Up) { stepIndex("playlist", (searchHits || []).length, -1); return true }
-            if (key === Qt.Key_Down) { stepIndex("playlist", (searchHits || []).length, 1); return true }
-            if (key === Qt.Key_PageUp) { stepIndex("playlist", (searchHits || []).length, -playlistPage); return true }
-            if (key === Qt.Key_PageDown) { stepIndex("playlist", (searchHits || []).length, playlistPage); return true }
+            if (key === Qt.Key_Up) {
+                if (shift) extendPlaylist(playlistIdx - 1)
+                else { stepIndex("playlist", (searchHits || []).length, -1); selectOnly(playlistIdx) }
+                return true
+            }
+            if (key === Qt.Key_Down) {
+                if (shift) extendPlaylist(playlistIdx + 1)
+                else { stepIndex("playlist", (searchHits || []).length, 1); selectOnly(playlistIdx) }
+                return true
+            }
+            if (key === Qt.Key_PageUp) { stepIndex("playlist", (searchHits || []).length, -playlistPage); selectOnly(playlistIdx); return true }
+            if (key === Qt.Key_PageDown) { stepIndex("playlist", (searchHits || []).length, playlistPage); selectOnly(playlistIdx); return true }
             return false
         }
 
@@ -1934,7 +2202,16 @@ Item {
         if (text === "l") { likePlaying(); return true }
         if (text === "m" || text === "M") { openMove(); return true }
         if (text === "e" || text === "E") { openTags(); return true }
-        if (text === "a" || text === "A") { openArt(); return true }
+        if (mode === "art" && (text === "t" || text === "T")) { applyArt("track"); return true }
+        if (text === "a" || text === "A") {
+            if (mode === "art")
+                openArt(artTarget || playlistArtPath())
+            else if (mode === "queue")
+                openArt(playlistArtPath())
+            else
+                openArt(trackPath)
+            return true
+        }
         if (text === "v" || text === "V") { toggleViz(); return true }
         if (key === Qt.Key_Backspace) { leaveFolder(); return true }
         if (key === Qt.Key_Left) {
@@ -1949,8 +2226,10 @@ Item {
             return true
         }
         if (key === Qt.Key_Return || key === Qt.Key_Enter) { playSelected(); return true }
-        if (shift && key === Qt.Key_Up) { reorder(-1); return true }
-        if (shift && key === Qt.Key_Down) { reorder(1); return true }
+        if (shift && (key === Qt.Key_Up || key === Qt.Key_Down) && mode === "queue" && (pane === "playlist" || pane === "search")) {
+            extendPlaylist(playlistIdx + (key === Qt.Key_Up ? -1 : 1))
+            return true
+        }
         if (key === Qt.Key_Up) { moveActive(-1); return true }
         if (key === Qt.Key_Down) { moveActive(1); return true }
         if (key === Qt.Key_PageUp) { moveActive(pane === "playlist" ? -playlistPage : -browsePage); return true }
@@ -2079,7 +2358,18 @@ Item {
             }
         }
         onExited: function(code) {
+            if (root.artRestart && root.mode === "art") {
+                root.artRestart = false
+                var next = root.artNextQuery
+                Qt.callLater(function() { root.launchArtSearch(next) })
+                return
+            }
+            root.artRestart = false
             root.artBusy = false
+            if (root.mode !== "art") {
+                root._artBuf = ""
+                return
+            }
             if (root._artOverflow || code !== 0) {
                 root.err = "art search failed"
                 root._artBuf = ""
@@ -2118,16 +2408,18 @@ Item {
         }
         onExited: function(code) {
             var artPath = ""
+            var paths = []
             if (code === 0 && !root._applyOverflow) {
                 try {
                     var parsed = JSON.parse(root._applyBuf || "{}")
                     artPath = String(parsed.art || "")
+                    paths = parsed.paths || []
                 } catch (e) {
                     artPath = ""
                 }
             }
             root._applyBuf = ""
-            root.finishArt(code === 0 && !root._applyOverflow, artPath)
+            root.finishArt(code === 0 && !root._applyOverflow, artPath, paths)
         }
     }
 

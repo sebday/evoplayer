@@ -46,7 +46,11 @@ func SearchTrack(env paths.Env, trackPath string) (SearchResponse, error) {
 	if err != nil {
 		return SearchResponse{}, err
 	}
-	primary := discogsJoinQuery(meta.Catno, meta.Title, meta.Artist)
+	album := strings.TrimSpace(meta.Album)
+	if strings.EqualFold(album, strings.TrimSpace(meta.Catno)) || strings.EqualFold(album, strings.TrimSpace(meta.Title)) {
+		album = ""
+	}
+	primary := discogsJoinQuery(meta.Catno, album, meta.Title, meta.Artist)
 	if primary == "" {
 		primary = strings.TrimSuffix(filepath.Base(trackPath), filepath.Ext(trackPath))
 	}
@@ -69,12 +73,16 @@ func SearchTrack(env paths.Env, trackPath string) (SearchResponse, error) {
 func SearchQuery(query string) SearchResponse {
 	secrets.Load()
 	q := strings.TrimSpace(query)
-	return SearchResponse{Query: q, Results: dedupe(searchDiscogsQuery(q))}
+	return SearchResponse{Query: q, Results: dedupeMax(searchDiscogsAll(q), 100)}
 }
 
 func dedupe(rows []Result) []Result {
+	return dedupeMax(rows, maxResults)
+}
+
+func dedupeMax(rows []Result, limit int) []Result {
 	seen := map[string]struct{}{}
-	out := make([]Result, 0, maxResults)
+	out := make([]Result, 0, limit)
 	for _, r := range rows {
 		if r.URL == "" {
 			continue
@@ -84,7 +92,7 @@ func dedupe(rows []Result) []Result {
 		}
 		seen[r.URL] = struct{}{}
 		out = append(out, r)
-		if len(out) >= maxResults {
+		if len(out) >= limit {
 			break
 		}
 	}

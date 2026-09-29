@@ -17,9 +17,13 @@ func artCacheFind(env Env, path string) string {
 	if path == "" {
 		return ""
 	}
-	track := filepath.Join(env.ArtDir, CacheKey(env.MusicRoot, path)+".jpg")
+	track := artPathTrack(env, path)
 	if nonEmptyFile(track) {
 		return track
+	}
+	folder := artPathFolder(env, path)
+	if folder != track && nonEmptyFile(folder) {
+		return folder
 	}
 	return ""
 }

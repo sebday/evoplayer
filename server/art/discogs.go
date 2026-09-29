@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const PreviewSize = 600
@@ -63,6 +64,137 @@ func discogsReleaseIDFromQuery(q string) string {
 		}
 	}
 	return ""
+}
+
+func searchDiscogsAll(query string) []Result {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil
+	}
+	if id := discogsReleaseIDFromQuery(query); id != "" {
+		return searchDiscogsReleaseID(id)
+	}
+	if id := discogsArtistIDFromQuery(query); id != "" {
+		return searchDiscogsArtistID(id)
+	}
+	params := url.Values{}
+	params.Set("q", query)
+	params.Set("per_page", "100")
+	body, err := discogsGet("https://api.discogs.com/database/search?" + params.Encode())
+	if err != nil {
+		return nil
+	}
+	var payload struct {
+		Results []struct {
+			Title       string `json:"title"`
+			Year        any    `json:"year"`
+			Catno       any    `json:"catno"`
+			Thumb       string `json:"thumb"`
+			CoverImage  string `json:"cover_image"`
+			ResourceURL string `json:"resource_url"`
+			Type        string `json:"type"`
+		} `json:"results"`
+	}
+	if json.Unmarshal(body, &payload) != nil {
+		return nil
+	}
+	direct := make([]Result, 0, len(payload.Results))
+	follow := make([]discogsSearchRow, 0)
+	for _, r := range payload.Results {
+		row := discogsSearchRow{
+			Title:       strings.TrimSpace(r.Title),
+			Year:        discogsText(r.Year),
+			Catno:       discogsText(r.Catno),
+			Thumb:       strings.TrimSpace(r.Thumb),
+			ResourceURL: strings.TrimSpace(r.ResourceURL),
+		}
+		if row.Title == "" {
+			row.Title = strings.TrimSpace(r.Type)
+		}
+		artURL := usableArtURL(r.CoverImage)
+		if artURL == "" {
+			artURL = usableArtURL(r.Thumb)
+		}
+		if artURL != "" {
+			thumb := usableArtURL(r.Thumb)
+			if thumb == "" {
+				thumb = artURL
+			}
+			direct = append(direct, Result{
+				URL:    artURL,
+				Thumb:  thumb,
+				Label:  row.Title,
+				Source: "discogs",
+				Year:   row.Year,
+				Catno:  row.Catno,
+			})
+			continue
+		}
+		if row.ResourceURL != "" {
+			follow = append(follow, row)
+		}
+	}
+	if len(direct) > 0 {
+		return append(direct, fetchDiscogsImages(follow)...)
+	}
+	return fetchDiscogsImages(follow)
+}
+
+// Discogs hides images on an unauthenticated search, so those hits are loaded
+// from the result page. The cap stays inside the public 25 requests/minute limit.
+const openSearchFetch = 16
+
+func fetchDiscogsImages(rows []discogsSearchRow) []Result {
+	if len(rows) > openSearchFetch {
+		rows = rows[:openSearchFetch]
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	parts := make([][]Result, len(rows))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, row := range rows {
+		wg.Add(1)
+		go func(i int, row discogsSearchRow) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			parts[i] = discogsReleaseImages(row.ResourceURL, row)
+		}(i, row)
+	}
+	wg.Wait()
+	out := make([]Result, 0, len(rows))
+	for _, part := range parts {
+		out = append(out, part...)
+	}
+	return out
+}
+
+func usableArtURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" || strings.Contains(raw, "spacer.gif") {
+		return ""
+	}
+	return raw
+}
+
+func discogsText(v any) string {
+	switch t := v.(type) {
+	case string:
+		s := strings.TrimSpace(t)
+		if s == "" || s == "null" || s == "<nil>" {
+			return ""
+		}
+		return s
+	case float64:
+		if t == 0 {
+			return ""
+		}
+		return strconv.Itoa(int(t))
+	default:
+		return ""
+	}
 }
 
 func searchDiscogsQuery(query string) []Result {

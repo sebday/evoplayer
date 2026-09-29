@@ -27,7 +27,7 @@ Flickable {
         Repeater {
             model: [
                 { key: "↑↓", label: "move selection" },
-                { key: "shift+↑↓", label: "reorder playlist" },
+                { key: "shift+↑↓", label: "select tracks" },
                 { key: "pgup dn", label: "page scroll" },
                 { key: "tab", label: "files / playlist" },
                 { key: "shift+tab", label: "playlist / files" },
@@ -45,7 +45,8 @@ Flickable {
                 { key: "m", label: "move" },
                 { key: "e", label: "edit tags" },
                 { key: "tab", label: "next tag field (in editor)" },
-                { key: "a", label: "art" },
+                { key: "a", label: "art for the highlighted track" },
+                { key: "t", label: "set art on this track" },
                 { key: "v", label: "visualizer on / off" },
                 { key: "esc", label: "back" },
                 { key: "h", label: "help" },

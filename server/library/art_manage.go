@@ -30,11 +30,12 @@ func ResolveArtPath(env Env, path string) string {
 }
 
 type InstallResult struct {
-	Art     string `json:"art"`
-	Track   string `json:"track,omitempty"`
-	Folder  string `json:"folder,omitempty"`
-	Content string `json:"content,omitempty"`
-	Scope   string `json:"scope"`
+	Art     string   `json:"art"`
+	Track   string   `json:"track,omitempty"`
+	Folder  string   `json:"folder,omitempty"`
+	Content string   `json:"content,omitempty"`
+	Scope   string   `json:"scope"`
+	Paths   []string `json:"paths,omitempty"`
 }
 
 func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, error) {
@@ -75,6 +76,17 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 	if err := artLinkFolderAlias(destArt, content); err != nil {
 		return InstallResult{}, err
 	}
+	paths := []string{trackPath}
+	if scope == "album" {
+		paths = albumAudioPaths(trackPath)
+	}
+	for _, p := range paths {
+		trackArt := artPathTrack(env, p)
+		if trackArt != destArt {
+			_ = artLinkFolderAlias(trackArt, content)
+		}
+		rememberTrackArt(env, p, trackArt)
+	}
 	markArtDirty(env, trackPath, scope)
 	return InstallResult{
 		Art:     destArt,
@@ -82,7 +94,38 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 		Folder:  artPathFolder(env, trackPath),
 		Content: content,
 		Scope:   scope,
+		Paths:   paths,
 	}, nil
+}
+
+func albumAudioPaths(trackPath string) []string {
+	dir := filepath.Dir(trackPath)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []string{trackPath}
+	}
+	out := make([]string, 0)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		if playback.IsSupportedPath(p) {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return []string{trackPath}
+	}
+	return out
+}
+
+func rememberTrackArt(env Env, path, art string) {
+	db, err := EnsureDB(env)
+	if err != nil || db == nil || path == "" || art == "" {
+		return
+	}
+	_, _ = db.Exec(`UPDATE tracks SET art=? WHERE path=?`, art, path)
 }
 
 func ApplyImageURL(env Env, trackPath, imageURL, scope string) (InstallResult, error) {

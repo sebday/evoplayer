@@ -55,6 +55,46 @@ func ReadTrackTags(path string) (TrackTags, error) {
 }
 
 func UpdateTrackTags(env Env, path string, patch TrackTagsPatch) (Track, error) {
+	return writeTagFields(env, path, map[string]string{
+		"title":     strings.TrimSpace(patch.Title),
+		"artist":    strings.TrimSpace(patch.Artist),
+		"album":     strings.TrimSpace(patch.Album),
+		"year":      strings.TrimSpace(patch.Year),
+		"genre":     strings.TrimSpace(patch.Genre),
+		"publisher": strings.TrimSpace(patch.Label),
+	})
+}
+
+// UpdateSharedTags writes album, year, and label on each path and leaves the other tags alone.
+func UpdateSharedTags(env Env, paths []string, album, year, label string) (int, error) {
+	fields := map[string]string{
+		"album":     strings.TrimSpace(album),
+		"year":      strings.TrimSpace(year),
+		"publisher": strings.TrimSpace(label),
+	}
+	n := 0
+	seen := map[string]struct{}{}
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		if _, err := writeTagFields(env, path, fields); err != nil {
+			return n, err
+		}
+		n++
+	}
+	if n == 0 {
+		return 0, fmt.Errorf("path required")
+	}
+	return n, nil
+}
+
+func writeTagFields(env Env, path string, targets map[string]string) (Track, error) {
 	path = filepath.Clean(path)
 	if path == "" {
 		return Track{}, fmt.Errorf("path required")
@@ -65,14 +105,6 @@ func UpdateTrackTags(env Env, path string, patch TrackTagsPatch) (Track, error) 
 	}
 	if !playback.IsSupportedPath(path) {
 		return Track{}, fmt.Errorf("unsupported file: %s", path)
-	}
-	targets := map[string]string{
-		"title":     strings.TrimSpace(patch.Title),
-		"artist":    strings.TrimSpace(patch.Artist),
-		"album":     strings.TrimSpace(patch.Album),
-		"year":      strings.TrimSpace(patch.Year),
-		"genre":     strings.TrimSpace(patch.Genre),
-		"publisher": strings.TrimSpace(patch.Label),
 	}
 	if err := tags.Write(path, targets); err != nil {
 		return Track{}, err

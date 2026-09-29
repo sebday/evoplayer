@@ -129,16 +129,20 @@ Fieldset {
 
             Connections {
                 target: view
-                function onQueueChanged() {
-                    if (view.reorderScroll < 0)
-                        return
-                    var y = view.reorderScroll
-                    Qt.callLater(function() {
-                        list.contentY = y
-                        if (view.reorderPending === 0)
-                            view.reorderScroll = -1
-                    })
-                }
+                function onQueueChanged() { list.restoreScroll() }
+                function onShownTracksChanged() { list.restoreScroll() }
+                function onSearchHitsChanged() { list.restoreScroll() }
+            }
+
+            function restoreScroll() {
+                if (view.reorderScroll < 0)
+                    return
+                var y = view.reorderScroll
+                Qt.callLater(function() {
+                    list.contentY = y
+                    if (view.reorderPending === 0)
+                        view.reorderScroll = -1
+                })
             }
 
             Text {
@@ -170,7 +174,8 @@ Fieldset {
                 z: list.dragFrom === index ? 2 : 0
 
                 readonly property bool playing: String(modelData.path || "") !== "" && String(modelData.path) === view.trackPath
-                readonly property bool selected: view.mode === "queue" && index === view.playlistIdx && (view.pane === "playlist" || (String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") !== "" && view.pane === "search"))
+                readonly property bool inPlaylist: view.mode === "queue" && (view.pane === "playlist" || (String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") !== "" && view.pane === "search"))
+                readonly property bool selected: inPlaylist && (view.trackPicked(String(modelData.path || "")) || (!(view.playlistPicks && view.playlistPicks.length) && index === view.playlistIdx))
 
                 Item {
                     id: body
@@ -225,7 +230,12 @@ Fieldset {
                                         return live
                                 }
                                 var path = String(modelData.thumb || modelData.art || "")
-                                return path ? Util.fileUrl(path) : ""
+                                if (!path)
+                                    return ""
+                                var url = Util.fileUrl(path)
+                                if (view.artEpoch)
+                                    url += "#" + view.artEpoch
+                                return url
                             }
                         }
                     }
@@ -306,14 +316,16 @@ Fieldset {
                         wheel.accepted = true
                     }
                     property bool dragged: false
+                    property bool rangePress: false
                     property real grabY: 0
                     onPressed: function(mouse) {
                         dragged = false
+                        rangePress = (mouse.modifiers & Qt.ShiftModifier) !== 0
                         grabY = mouse.y
-                        view.clickPlaylist(index)
+                        view.clickPlaylist(index, rangePress)
                     }
                     onPositionChanged: function(mouse) {
-                        if (!list.canReorder || pane.rowH < 1)
+                        if (rangePress || !list.canReorder || pane.rowH < 1)
                             return
                         if (!dragged) {
                             if (Math.abs(mouse.y - grabY) < 8)
@@ -350,10 +362,10 @@ Fieldset {
                         list.dragTo = -1
                         list.dragOffset = 0
                     }
-                    onClicked: {
+                    onClicked: function(mouse) {
                         if (dragged)
                             return
-                        view.clickPlaylist(index)
+                        view.clickPlaylist(index, (mouse.modifiers & Qt.ShiftModifier) !== 0)
                     }
                     onDoubleClicked: {
                         if (dragged)

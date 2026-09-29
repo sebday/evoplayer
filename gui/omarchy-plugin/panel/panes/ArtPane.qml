@@ -19,8 +19,6 @@ Fieldset {
         fillMode: Image.PreserveAspectFit
         asynchronous: true
         cache: false
-        sourceSize.width: 512
-        sourceSize.height: 512
         source: view.artSource()
         visible: source !== ""
     }
@@ -64,5 +62,15 @@ Fieldset {
         color: Theme.muted
         font.family: Theme.fontFamily
         font.pixelSize: Theme.fontSizeM
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onClicked: {
+            if (view.mode === "art")
+                return
+            view.openArt(view.trackPath)
+        }
     }
 }

@@ -9,7 +9,9 @@ Column {
     spacing: 2
 
     function focusIndex(i) {
-        var fields = [titleField, artistField, albumField, yearField, genreField, labelField]
+        var fields = editor.view.tagMany
+                ? [albumField, yearField, labelField]
+                : [titleField, artistField, albumField, yearField, genreField, labelField]
         var n = i
         if (n < 0)
             n = 0
@@ -90,6 +92,7 @@ Column {
 
     TagField {
         id: titleField
+        visible: !editor.view.tagMany
         label: "title"
         index: 0
         view: editor.view
@@ -98,6 +101,7 @@ Column {
     }
     TagField {
         id: artistField
+        visible: !editor.view.tagMany
         label: "artist"
         index: 1
         view: editor.view
@@ -107,7 +111,7 @@ Column {
     TagField {
         id: albumField
         label: "album"
-        index: 2
+        index: editor.view.tagMany ? 0 : 2
         view: editor.view
         value: editor.view.tagAlbum
         onEdited: function(text) { if (editor.view.tagAlbum !== text) editor.view.tagAlbum = text }
@@ -115,13 +119,14 @@ Column {
     TagField {
         id: yearField
         label: "year"
-        index: 3
+        index: editor.view.tagMany ? 1 : 3
         view: editor.view
         value: editor.view.tagYear
         onEdited: function(text) { if (editor.view.tagYear !== text) editor.view.tagYear = text }
     }
     TagField {
         id: genreField
+        visible: !editor.view.tagMany
         label: "genre"
         index: 4
         view: editor.view
@@ -131,7 +136,7 @@ Column {
     TagField {
         id: labelField
         label: "label"
-        index: 5
+        index: editor.view.tagMany ? 2 : 5
         view: editor.view
         value: editor.view.tagLabel
         onEdited: function(text) { if (editor.view.tagLabel !== text) editor.view.tagLabel = text }
