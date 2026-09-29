@@ -343,10 +343,8 @@ Item {
             var hints = []
             if (downloadHit >= 0)
                 hints = [{ key: "⏎", label: "play" }, { key: "d", label: "download" }, { key: "l", label: "like" }, { key: "↑", label: "search" }]
-            else if (downloadIdx === 1)
-                hints = [{ key: "⏎", label: "search" }, { key: "↓", label: "results" }]
             else
-                return [{ key: "⏎", label: "download" }, { key: "s", label: "sync" }]
+                hints = [{ key: "⏎", label: "search" }, { key: "↓", label: "results" }]
             var withSync = []
             for (var i = 0; i < hints.length; i++) {
                 withSync.push(hints[i])
@@ -364,14 +362,12 @@ Item {
                 { key: "x", label: "dismiss" },
                 { key: "n", label: "more" }
             ]
-        var hints = [
+        return [
             { key: "l", label: "like playing" },
             { key: "m", label: "move" },
-            { key: "e", label: "edit" }
+            { key: "e", label: "edit" },
+            { key: "o", label: "open" }
         ]
-        if (mode === "queue")
-            hints.push({ key: "⇧↑↓", label: "select" })
-        return hints
     }
 
     function playlistLabel(name) {
@@ -487,11 +483,32 @@ Item {
         downloadNote = "downloading…"
         ipc("library.download", { url: url, import: true }, function() {
             root.err = ""
-            if (fromBox)
+            if (fromBox) {
                 root.downloadUrl = ""
+                root.downloadQuery = ""
+            }
         }, function() {
             root.downloadNote = ""
         })
+    }
+
+    function isDownloadLink(text) {
+        var t = String(text || "").toLowerCase()
+        return t.indexOf("://") >= 0 || t.indexOf("www.") === 0 || t.indexOf("youtu.be/") >= 0 || t.indexOf("youtube.com/") >= 0 || t.indexOf("soundcloud.com/") >= 0
+    }
+
+    function runDownloadBox() {
+        var text = String(downloadQuery || "").replace(/^\s+|\s+$/g, "")
+        if (!text) {
+            err = "type a search or paste a link"
+            return
+        }
+        if (isDownloadLink(text)) {
+            downloadUrl = text
+            submitDownload()
+            return
+        }
+        searchSoundCloud()
     }
 
     function searchSoundCloud() {
@@ -1115,10 +1132,8 @@ Item {
         if (mode === "download") {
             if (downloadHit >= 0)
                 playSoundCloudHit()
-            else if (downloadIdx === 1)
-                searchSoundCloud()
             else
-                submitDownload()
+                runDownloadBox()
             return
         }
         if (mode === "help" || mode === "tags")
@@ -1229,6 +1244,26 @@ Item {
         openProc.running = true
     }
 
+    function pluginFile(rel) {
+        var u = Qt.resolvedUrl(rel).toString()
+        if (u.indexOf("file://") !== 0)
+            return ""
+        var path = decodeURIComponent(u.slice("file://".length))
+        if (!path || path.charAt(0) !== "/" || path.indexOf("\n") >= 0 || path.indexOf("\r") >= 0)
+            return ""
+        return path
+    }
+
+    function openInFlea() {
+        var path = String(playlistArtPath() || "").replace(/^\s+|\s+$/g, "")
+        if (!path || path.charAt(0) !== "/" || path.indexOf("\n") >= 0 || path.indexOf("\r") >= 0)
+            return
+        var script = pluginFile("bin/open-flea")
+        if (!script)
+            return
+        Quickshell.execDetached(["/usr/bin/python3", "-I", script, path])
+    }
+
     function patchLiked(path, likedNow) {
         if (reorderPending === 0)
             reorderScroll = playlistScroll
@@ -1318,6 +1353,34 @@ Item {
         playlistAnchor = index
         var row = rows[index]
         playlistPicks = row && row.path ? [String(row.path)] : []
+    }
+
+    function togglePlaylist(index) {
+        var rows = playlistRows()
+        if (!rows.length || index < 0 || index >= rows.length)
+            return
+        var path = rows[index] && String(rows[index].path || "")
+        if (!path)
+            return
+        var picks = (playlistPicks || []).slice()
+        if (!picks.length) {
+            var cur = rows[playlistIdx]
+            if (cur && cur.path)
+                picks = [String(cur.path)]
+        }
+        var next = []
+        var found = false
+        for (var i = 0; i < picks.length; i++) {
+            if (picks[i] === path)
+                found = true
+            else
+                next.push(picks[i])
+        }
+        if (!found)
+            next.push(path)
+        playlistIdx = index
+        playlistAnchor = index
+        playlistPicks = next
     }
 
     function extendPlaylist(index) {
@@ -2018,8 +2081,10 @@ Item {
             host.forceKeyFocus()
     }
 
-    function clickPlaylist(index, extend) {
-        if (extend)
+    function clickPlaylist(index, extend, toggle) {
+        if (toggle)
+            togglePlaylist(index)
+        else if (extend)
             extendPlaylist(index)
         else
             selectOnly(index)
@@ -2096,18 +2161,8 @@ Item {
         }
         if (mode === "download" && textCapture) {
             if (key === Qt.Key_Escape) { onEsc(); return true }
-            if (key === Qt.Key_Return || key === Qt.Key_Enter) {
-                if (downloadIdx === 1)
-                    searchSoundCloud()
-                else
-                    submitDownload()
-                return true
-            }
+            if (key === Qt.Key_Return || key === Qt.Key_Enter) { runDownloadBox(); return true }
             if (key === Qt.Key_Down) {
-                if (downloadIdx === 0) {
-                    downloadIdx = 1
-                    return true
-                }
                 if ((downloadHits || []).length) {
                     downloadHit = 0
                     return true
@@ -2115,10 +2170,6 @@ Item {
                 return true
             }
             if (key === Qt.Key_Up || key === Qt.Key_Backtab) {
-                if (downloadIdx === 1) {
-                    downloadIdx = 0
-                    return true
-                }
                 focusPane("browse")
                 return true
             }
@@ -2199,6 +2250,7 @@ Item {
         if (text === "=" || text === "+") { volumeDelta(5); return true }
         if (text === "d" || text === "D") { addDir(); return true }
         if (text === "f" || text === "F") { openFolder(); return true }
+        if (text === "o" || text === "O") { openInFlea(); return true }
         if (text === "l") { likePlaying(); return true }
         if (text === "m" || text === "M") { openMove(); return true }
         if (text === "e" || text === "E") { openTags(); return true }

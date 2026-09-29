@@ -31,8 +31,6 @@ func main() {
 	switch cmd {
 	case "serve":
 		err = daemon.New(env).Run()
-	case "gui":
-		err = cli.CmdGUI(env, exe)
 	case "start":
 		err = cli.CmdStart(env, exe)
 	case "restart":

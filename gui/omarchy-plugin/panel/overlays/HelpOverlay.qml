@@ -41,6 +41,7 @@ Flickable {
                 { key: "/", label: "find" },
                 { key: "d", label: "add dir" },
                 { key: "f", label: "folder" },
+                { key: "o", label: "open" },
                 { key: "l", label: "like playing" },
                 { key: "m", label: "move" },
                 { key: "e", label: "edit tags" },

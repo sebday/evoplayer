@@ -409,7 +409,7 @@ Item {
         if (playerSocket.connected)
             return
         playerSocket.connected = true
-        if (!playerSocket.connected && !connectRetryTimer.running)
+        if (!connectRetryTimer.running)
             connectRetryTimer.start()
     }
 

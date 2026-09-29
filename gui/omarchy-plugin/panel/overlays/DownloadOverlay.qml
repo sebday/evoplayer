@@ -6,7 +6,7 @@ Item {
 
     required property var view
 
-    readonly property bool onSearch: view.downloadIdx === 1 || view.downloadHit >= 0
+    readonly property bool onResults: view.downloadHit >= 0
     readonly property bool focused: view.pane === "playlist"
 
     component FieldInput: Item {
@@ -92,8 +92,8 @@ Item {
         height: downloadCol.implicitHeight + 16 + (hints.length > 0 ? 16 : 10)
         number: 3
         legend: "download"
-        active: pane.focused && !pane.onSearch
-        hints: pane.onSearch ? [] : view.playlistHints()
+        active: pane.focused && !pane.onResults
+        hints: pane.onResults ? [] : view.playlistHints()
 
         Column {
             id: downloadCol
@@ -101,18 +101,18 @@ Item {
             spacing: 4
 
             FieldInput {
-                id: urlBox
+                id: queryBox
                 index: 0
-                placeholder: "youtube or soundcloud link"
+                placeholder: "Search youtube, soundcloud or download a link"
                 onEdited: function(text) {
-                    if (view.downloadUrl !== text)
-                        view.downloadUrl = text
+                    if (view.downloadQuery !== text)
+                        view.downloadQuery = text
                 }
-                onAccepted: view.submitDownload()
+                onAccepted: view.runDownloadBox()
             }
 
             NoteLine {
-                visible: view.downloadNote !== "" && !pane.onSearch
+                visible: view.downloadNote !== "" && !pane.onResults
             }
 
             Flickable {
@@ -165,33 +165,21 @@ Item {
         anchors.top: downloadSet.bottom
         anchors.topMargin: view.paneGap
         anchors.bottom: parent.bottom
-        legend: "soundcloud"
-        active: pane.focused && pane.onSearch
-        hints: pane.onSearch ? view.playlistHints() : []
-
-        FieldInput {
-            id: searchBox
-            index: 1
-            placeholder: "search, enter plays a result"
-            onEdited: function(text) {
-                if (view.downloadQuery !== text)
-                    view.downloadQuery = text
-            }
-            onAccepted: view.searchSoundCloud()
-        }
+        legend: "results"
+        active: pane.focused && pane.onResults
+        hints: pane.onResults ? view.playlistHints() : []
 
         NoteLine {
             id: searchNote
-            anchors.top: searchBox.bottom
-            anchors.topMargin: 4
-            visible: view.downloadNote !== "" && pane.onSearch
+            anchors.top: parent.top
+            visible: view.downloadNote !== "" && pane.onResults
             height: visible ? implicitHeight : 0
         }
 
         ListView {
             id: hits
             anchors.top: searchNote.bottom
-            anchors.topMargin: 4
+            anchors.topMargin: searchNote.visible ? 4 : 0
             anchors.bottom: parent.bottom
             width: parent.width
             clip: true
@@ -255,8 +243,7 @@ Item {
             if (view.pane === "playlist")
                 pane.focusCurrent()
         }
-        function onDownloadUrlChanged() { urlBox.show(view.downloadUrl) }
-        function onDownloadQueryChanged() { searchBox.show(view.downloadQuery) }
+        function onDownloadQueryChanged() { queryBox.show(view.downloadQuery) }
     }
 
     function hitLabel(row) {
@@ -271,21 +258,14 @@ Item {
         if (view.mode !== "download")
             return
         if (view.downloadHit >= 0) {
-            urlBox.drop()
-            searchBox.drop()
+            queryBox.drop()
             return
         }
-        Qt.callLater(function() {
-            if (view.downloadIdx === 1)
-                searchBox.grab()
-            else
-                urlBox.grab()
-        })
+        Qt.callLater(function() { queryBox.grab() })
     }
 
     Component.onCompleted: {
-        urlBox.show(view.downloadUrl)
-        searchBox.show(view.downloadQuery)
+        queryBox.show(view.downloadQuery)
         if (view.mode === "download")
             focusCurrent()
     }

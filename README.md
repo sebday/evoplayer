@@ -9,7 +9,7 @@ I used Soundcloud for years and ignored my mp3 collection. This is so I listen t
 ## Layout
 
 ```
-cmd/evoplayer/     thin main (serve, gui, CLI)
+cmd/evoplayer/     thin main (serve, CLI)
 server/            daemon, playback, library, ipc, cli
 gui/               quickshell panel (omarchy plugin)
 scripts/           install (binary, desktop entry, plugin link)
@@ -25,13 +25,12 @@ Puts `evoplayer` on `PATH` (`~/.local/bin/evoplayer` → `.build/evoplayer`).
 
 ## Usage
 
-With no arguments, `evoplayer` opens the Quickshell panel and starts `serve` if the socket is missing. `evoplayer gui` is the same. Install links the Omarchy plugin and adds it to the bar. Reload plugins with `omarchy-shell shell rescanPlugins` after install.
+With no arguments, `evoplayer` opens the Quickshell panel and starts `serve` if the socket is missing. Install links the Omarchy plugin and adds it to the bar. Reload plugins with `omarchy-shell shell rescanPlugins` after install.
 
 ### Player and daemon
 
 ```bash
 evoplayer                    # open the panel (default)
-evoplayer gui
 evoplayer serve              # daemon only (playback, IPC, MPRIS, jobs)
 evoplayer start              # start daemon if needed
 evoplayer restart
