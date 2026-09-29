@@ -1,5 +1,4 @@
 module evoPlayer.widgets
 ArtPickerOverlay 1.0 ArtPickerOverlay.qml
 PlayerCavaBars 1.0 PlayerCavaBars.qml
-PixelClock 1.0 PixelClock.qml
 WaveformViz 1.0 WaveformViz.qml

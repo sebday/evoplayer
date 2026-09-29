@@ -6,12 +6,12 @@ import Quickshell.Io
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
+import "../panel/compat" as Compat
 
 Panel {
   id: root
   moduleName: "evo.player"
   ipcTarget: "evo.media"
-  manageIpc: false
 
   property var anchorItem: null
   property var hostWidget: null
@@ -44,8 +44,12 @@ Panel {
   property string artDir: ""
   property var dash: ({})
   property real positionTick: 0
-  property real trackDuration: 0
-  property real durationAskedAt: 0
+  readonly property real trackDuration: {
+    if (!Model.isEvoplayer(activePlayer) || !mediaService || !mediaService.player)
+      return 0
+    var d = Number(mediaService.player.duration) || 0
+    return d > 0 && d < 86400 ? d : 0
+  }
 
   property bool cursorActive: false
   property string focusSection: "history"
@@ -89,14 +93,6 @@ Panel {
   onHistoryChanged: {
     if (selectedIndex >= history.length)
       selectedIndex = Math.max(0, history.length - 1)
-  }
-
-  function evoplayerBin() {
-    var override = Quickshell.env("EVOPLAYER_BIN") || ""
-    if (override)
-      return override
-    var home = Quickshell.env("HOME") || ""
-    return home ? home + "/.local/bin/evoplayer" : "evoplayer"
   }
 
   function filePathFromUrl(url) {
@@ -216,7 +212,7 @@ Panel {
     var path = row && row.path ? String(row.path) : ""
     if (!path || path.charAt(0) !== "/" || path.indexOf("\n") >= 0 || path.indexOf("\r") >= 0)
       return
-    Quickshell.execDetached([evoplayerBin(), "queue", "play", path, path])
+    Quickshell.execDetached([Compat.Util.evoplayerBinPath(""), "queue", "play", path, path])
   }
 
   function ensureCursor() {
@@ -269,31 +265,11 @@ Panel {
       return
     }
     if (Model.isEvoplayer(activePlayer))
-      Quickshell.execDetached(["xdg-terminal-exec", "evoplayer"])
+      Quickshell.execDetached(["xdg-terminal-exec", "--", Compat.Util.evoplayerBinPath("")])
   }
 
   function refresh() {
     loadHistory()
-    refreshTrackDuration(true)
-  }
-
-  function refreshTrackDuration(force) {
-    if (!Model.isEvoplayer(activePlayer))
-      return
-    if (activePlayer.lengthSupported && Number(activePlayer.length) > 0)
-      return
-    if (durationProc.running)
-      return
-    var now = Date.now()
-    if (!force && trackDuration > 0 && now - durationAskedAt < 30000)
-      return
-    if (!force && now - durationAskedAt < 2000)
-      return
-    durationAskedAt = now
-    durationProc.stdoutBuf = ""
-    durationProc.overflow = false
-    durationProc.command = [evoplayerBin(), "status", "--json"]
-    durationProc.running = true
   }
 
   function openFromHotkey() {
@@ -308,12 +284,6 @@ Panel {
 
   function openWithPayload(payloadJson) {
     openFromHotkey()
-  }
-
-  onPlayingPathChanged: {
-    trackDuration = 0
-    durationAskedAt = 0
-    refreshTrackDuration(true)
   }
 
   Component.onCompleted: refresh()
@@ -368,64 +338,15 @@ Panel {
     }
   }
 
-  Process {
-    id: durationProc
-    property string stdoutBuf: ""
-    property bool overflow: false
-    stdout: SplitParser {
-      splitMarker: ""
-      onRead: function(chunk) {
-        if (durationProc.overflow)
-          return
-        durationProc.stdoutBuf += String(chunk || "")
-        if (durationProc.stdoutBuf.length > 65536) {
-          durationProc.overflow = true
-          durationProc.stdoutBuf = ""
-          durationProc.signal(15)
-        }
-      }
-    }
-    onExited: {
-      var dur = 0
-      if (!durationProc.overflow) {
-        try {
-          var data = JSON.parse(durationProc.stdoutBuf || "{}")
-          dur = Number(data.duration) || 0
-        } catch (e) {
-          dur = 0
-        }
-      }
-      durationProc.stdoutBuf = ""
-      durationProc.overflow = false
-      if (dur > 0 && dur < 86400)
-        root.trackDuration = dur
-    }
-  }
-
-
   Timer {
-    interval: 250
+    interval: 1000
     running: root.opened && root.playerPlaying
     repeat: true
     onTriggered: {
       if (root.activePlayer && root.activePlayer.isPlaying)
         root.activePlayer.positionChanged()
       root.positionTick = Date.now()
-      root.refreshTrackDuration(false)
     }
-  }
-
-
-
-  IpcHandler {
-    target: root.ipcTarget
-
-    function open(): void { root.openFromHotkey() }
-    function close(): void { root.close() }
-    function show(): void { root.openFromHotkey() }
-    function hide(): void { root.close() }
-    function toggle(): void { root.toggle() }
-    function refresh(): string { root.refresh(); return "ok" }
   }
 
   KeyboardPanel {

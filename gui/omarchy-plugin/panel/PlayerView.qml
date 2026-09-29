@@ -60,9 +60,7 @@ Item {
     property string downloadNote: ""
     property string downloadLog: ""
     property var downloadFiles: []
-    property string _scBuf: ""
-    property string _scErr: ""
-    property bool _scOverflow: false
+    property bool scSearchBusy: false
     property int playlistPage: 16
     property int savedPlaylistIdx: 0
     property string savedFocus: "browse"
@@ -115,6 +113,8 @@ Item {
     property bool _waveOverflow: false
     property string _artBuf: ""
     property bool _artOverflow: false
+    property string _applyBuf: ""
+    property bool _applyOverflow: false
 
     onQueueRevisionChanged: {
         if (active && reorderPending === 0)
@@ -157,12 +157,18 @@ Item {
         syncViz()
     }
 
-    function ipc(method, params, done) {
-        if (!service || !service.ipcCall)
+    function ipc(method, params, done, failed) {
+        if (!service || !service.ipcCall) {
+            err = "not connected"
+            if (failed)
+                failed()
             return
+        }
         service.ipcCall(method, params === null ? undefined : params, function(ok, msg) {
             if (!ok) {
                 root.err = msg && msg.error ? String(msg.error) : "request failed"
+                if (failed)
+                    failed()
                 return
             }
             if (done)
@@ -481,20 +487,12 @@ Item {
         }
         err = ""
         downloadNote = "downloading…"
-        if (!service || !service.ipcCall) {
-            downloadNote = ""
-            err = "not connected"
-            return
-        }
-        service.ipcCall("library.download", { url: url, import: true }, function(ok, msg) {
-            if (!ok) {
-                root.downloadNote = ""
-                root.err = msg && msg.error ? String(msg.error) : "request failed"
-                return
-            }
+        ipc("library.download", { url: url, import: true }, function() {
             root.err = ""
             if (fromBox)
                 root.downloadUrl = ""
+        }, function() {
+            root.downloadNote = ""
         })
     }
 
@@ -504,38 +502,24 @@ Item {
             err = "type a search"
             return
         }
-        if (scSearchProc.running)
+        if (scSearchBusy)
             return
         err = ""
         downloadNote = "searching…"
-        _scBuf = ""
-        _scErr = ""
-        _scOverflow = false
-        scSearchProc.command = [Util.evoplayerBinPath(service ? service.home : ""), "soundcloud", "search", "--json", q]
-        scSearchProc.running = true
+        scSearchBusy = true
+        ipc("library.soundcloud.search", { query: q, limit: 12 }, function(data) {
+            root.scSearchBusy = false
+            root.applySoundCloudSearch(data)
+        }, function() {
+            root.scSearchBusy = false
+            root.downloadNote = ""
+        })
     }
 
-    function applySoundCloudSearch(code) {
+    function applySoundCloudSearch(data) {
         downloadNote = ""
-        if (_scOverflow || code !== 0) {
-            var msg = String(_scErr || "").replace(/^\s+|\s+$/g, "")
-            err = msg || "soundcloud search failed"
-            _scBuf = ""
-            _scErr = ""
-            return
-        }
-        var parsed
-        try {
-            parsed = JSON.parse(_scBuf || "{}")
-        } catch (e) {
-            err = "soundcloud search failed"
-            _scBuf = ""
-            return
-        }
-        _scBuf = ""
-        _scErr = ""
         err = ""
-        downloadHits = parsed.tracks || []
+        downloadHits = (data && Array.isArray(data.tracks)) ? data.tracks : []
         if (downloadHits.length) {
             downloadHit = 0
             downloadNote = ""
@@ -558,23 +542,15 @@ Item {
             err = "nothing to play"
             return
         }
-        if (!service || !service.ipcCall) {
-            err = "not connected"
-            return
-        }
         err = ""
         downloadNote = "playing…"
         downloadPreviewId = String(row.id)
         downloadPreviewURL = String(row.permalink || "")
-        service.ipcCall("discover.preview", { id: Number(downloadPreviewId) }, function(ok, msg) {
-            if (!ok) {
-                root.downloadNote = ""
-                root.err = msg && msg.error ? String(msg.error) : "request failed"
-                return
-            }
-            var data = msg ? msg.data : null
+        ipc("discover.preview", { id: Number(downloadPreviewId) }, function(data) {
             if (data && data.path)
                 root.downloadNote = ""
+        }, function() {
+            root.downloadNote = ""
         })
     }
 
@@ -595,16 +571,8 @@ Item {
     function syncLikes() {
         err = ""
         downloadNote = "syncing likes…"
-        if (!service || !service.ipcCall) {
-            downloadNote = ""
-            err = "not connected"
-            return
-        }
-        service.ipcCall("library.soundcloud.download", { import: false }, function(ok, msg) {
-            if (!ok) {
-                root.downloadNote = ""
-                root.err = msg && msg.error ? String(msg.error) : "request failed"
-            }
+        ipc("library.soundcloud.download", { import: false }, null, function() {
+            root.downloadNote = ""
         })
     }
 
@@ -664,9 +632,9 @@ Item {
         return out.join("\n")
     }
 
-    function closeDownload() {
+    function closeTool() {
         var rows = sidebar || []
-        if (rows[browseIdx] && rows[browseIdx].kind === "tool" && rows[browseIdx].id === "download") {
+        if (rows[browseIdx] && rows[browseIdx].kind === "tool") {
             var n = browseIdx - 1
             while (n >= 0 && rows[n] && rows[n].kind === "rule")
                 n--
@@ -676,9 +644,13 @@ Item {
         mode = "queue"
         pane = "browse"
         syncShownPlaylist()
+        err = ""
+    }
+
+    function closeDownload() {
+        closeTool()
         downloadIdx = 0
         textCapture = false
-        err = ""
     }
 
     function loadDiscover(id) {
@@ -722,20 +694,12 @@ Item {
     }
 
     function discoverCall(method, params, done) {
-        if (!service || !service.ipcCall) {
-            discoverNote = ""
-            err = "not connected"
-            return
-        }
-        service.ipcCall(method, params, function(ok, msg) {
-            if (!ok) {
-                root.discoverNote = ""
-                root.err = msg && msg.error ? String(msg.error) : "request failed"
-                return
-            }
+        ipc(method, params, function(data) {
             root.err = ""
             if (done)
-                done(msg ? msg.data : null)
+                done(data)
+        }, function() {
+            root.discoverNote = ""
         })
     }
 
@@ -847,19 +811,8 @@ Item {
     }
 
     function closeDiscover() {
-        var rows = sidebar || []
-        if (rows[browseIdx] && rows[browseIdx].kind === "tool") {
-            var n = browseIdx - 1
-            while (n >= 0 && rows[n] && rows[n].kind === "rule")
-                n--
-            if (n >= 0)
-                browseIdx = n
-        }
-        mode = "queue"
-        pane = "browse"
-        syncShownPlaylist()
+        closeTool()
         discoverNote = ""
-        err = ""
     }
 
     function clickDiscover(index) {
@@ -914,16 +867,7 @@ Item {
 
     function loadQueue() {
         var keep = queue[playlistIdx] ? String(queue[playlistIdx].path || "") : ""
-        ipc("library.playlist.tracks", { name: "current", offset: 0, limit: 500 }, function(data) {
-            data = data || {}
-            var items = data.items || []
-            var total = Number(data.total) || items.length
-            if (total > items.length && total <= 8000) {
-                ipc("library.playlist.tracks", { name: "current", offset: 0, limit: total }, function(full) {
-                    root.applyQueue((full && full.items) || [], keep)
-                })
-                return
-            }
+        loadPlaylistItems("current", function(items) {
             root.applyQueue(items, keep)
         })
     }
@@ -1085,14 +1029,15 @@ Item {
     function loadPlaylistItems(name, done) {
         ipc("library.playlist.tracks", { name: name, offset: 0, limit: 500 }, function(data) {
             data = data || {}
-            var total = Number(data.total) || (data.items || []).length
-            if (total > (data.items || []).length && total <= 8000) {
+            var items = data.items || []
+            var total = Number(data.total) || items.length
+            if (total > items.length && total <= 8000) {
                 root.ipc("library.playlist.tracks", { name: name, offset: 0, limit: total }, function(full) {
                     done((full && full.items) || [])
                 })
                 return
             }
-            done(data.items || [])
+            done(items)
         })
     }
 
@@ -1137,16 +1082,8 @@ Item {
     function playPlaylist(name) {
         if (!name)
             return
-        ipc("library.playlist.tracks", { name: name, offset: 0, limit: 500 }, function(data) {
-            data = data || {}
-            var total = Number(data.total) || (data.items || []).length
-            if (total > (data.items || []).length && total <= 8000) {
-                root.ipc("library.playlist.tracks", { name: name, offset: 0, limit: total }, function(full) {
-                    root.playTrackList((full && full.items) || [], "")
-                })
-                return
-            }
-            root.playTrackList(data.items || [], "")
+        loadPlaylistItems(name, function(items) {
+            root.playTrackList(items, "")
         })
     }
 
@@ -1539,8 +1476,8 @@ Item {
         var cmd = [Util.evoplayerBinPath(service ? service.home : ""), "art", "apply", trackPath, url, "--json"]
         if (scope === "album")
             cmd.splice(cmd.length - 1, 0, "--album")
-        _artBuf = ""
-        _artOverflow = false
+        _applyBuf = ""
+        _applyOverflow = false
         artApplyProc.command = cmd
         artApplyProc.running = true
     }
@@ -1550,7 +1487,7 @@ Item {
             err = "nothing playing"
             return false
         }
-        if (artApplyProc.running)
+        if (artBusy || artApplyProc.running)
             return false
         var value = String(raw || "").replace(/\r/g, "").split("\n")[0].replace(/^\s+|\s+$/g, "")
         if (!value)
@@ -1578,8 +1515,8 @@ Item {
         artFromDrop = true
         artBusy = true
         err = ""
-        _artBuf = ""
-        _artOverflow = false
+        _applyBuf = ""
+        _applyOverflow = false
         artApplyProc.command = cmd
         artApplyProc.running = true
         return true
@@ -1634,16 +1571,8 @@ Item {
     }
 
     function transport(action) {
-        if (!service || !service.ipcCall)
-            return
-        if (action === "toggle")
-            service.ipcCall("playback.toggle", undefined, null)
-        else if (action === "next")
-            service.ipcCall("playback.next", undefined, null)
-        else if (action === "prev")
-            service.ipcCall("playback.prev", undefined, null)
-        else if (action === "stop")
-            service.ipcCall("playback.stop", undefined, null)
+        if (service && service.runTransport)
+            service.runTransport(action)
     }
 
     function togglePlay() { transport("toggle") }
@@ -1680,7 +1609,7 @@ Item {
         ipc("playback.volume.delta", { delta: delta }, null)
     }
 
-    function cycleViz(dir) {
+    function toggleViz() {
         vizOn = !vizOn
         syncViz()
     }
@@ -1688,6 +1617,10 @@ Item {
     function syncViz() {
         if (!service || !service.ipcCall)
             return
+        if (!service.ipcReady) {
+            vizSubscribed = false
+            return
+        }
         var want = active && vizOn && playing
         if (want && !vizSubscribed) {
             vizSubscribed = true
@@ -1703,11 +1636,16 @@ Item {
             channels = 0
             return
         }
-        if (channelProc.running && channelProc.forPath === trackPath)
+        if (!active)
             return
+        if (channelProc.running) {
+            if (channelProc.forPath !== trackPath) {
+                channels = 0
+                channelProc.signal(15)
+            }
+            return
+        }
         channels = 0
-        if (channelProc.running)
-            channelProc.signal(15)
         channelProc.forPath = trackPath
         channelProc.stdoutBuf = ""
         channelProc.command = ["ffprobe", "-v", "quiet", "-select_streams", "a:0", "-show_entries", "stream=channels", "-of", "csv=p=0", trackPath]
@@ -1801,18 +1739,7 @@ Item {
         playlistIdx = dest
         queue = items
         function stepOnce() {
-            if (!service || !service.ipcCall) {
-                root.reorderPending = 0
-                root.loadQueue()
-                return
-            }
-            service.ipcCall("queue.move", { index: at, delta: step }, function(ok, msg) {
-                if (!ok) {
-                    root.err = msg && msg.error ? String(msg.error) : "request failed"
-                    root.reorderPending = 0
-                    root.loadQueue()
-                    return
-                }
+            root.ipc("queue.move", { index: at, delta: step }, function() {
                 at += step
                 left--
                 root.reorderPending--
@@ -1820,6 +1747,9 @@ Item {
                     stepOnce()
                 else if (root.reorderPending === 0)
                     root.loadQueue()
+            }, function() {
+                root.reorderPending = 0
+                root.loadQueue()
             })
         }
         stepOnce()
@@ -1970,7 +1900,6 @@ Item {
             if (text === "s" || text === "S") { syncLikes(); return true }
             if ((text === "l" || text === "L") && importPlayingPreview())
                 return true
-            return true
         }
         if (pane === "search" && textCapture) {
             if (key === Qt.Key_Escape) { clearSearch(); return true }
@@ -2018,7 +1947,7 @@ Item {
         if (text === "m" || text === "M") { openMove(); return true }
         if (text === "e" || text === "E") { openTags(); return true }
         if (text === "a" || text === "A") { openArt(); return true }
-        if (text === "v" || text === "V") { cycleViz(text === "V" ? -1 : 1); return true }
+        if (text === "v" || text === "V") { toggleViz(); return true }
         if (key === Qt.Key_Backspace) { leaveFolder(); return true }
         if (key === Qt.Key_Left) {
             leaveFolder()
@@ -2125,32 +2054,6 @@ Item {
     Process { id: openProc }
 
     Process {
-        id: scSearchProc
-        stdout: SplitParser {
-            splitMarker: ""
-            onRead: function(chunk) {
-                if (root._scOverflow)
-                    return
-                root._scBuf += String(chunk || "")
-                if (root._scBuf.length > 262144) {
-                    root._scOverflow = true
-                    root._scBuf = ""
-                    scSearchProc.signal(15)
-                }
-            }
-        }
-        stderr: SplitParser {
-            splitMarker: ""
-            onRead: function(chunk) {
-                root._scErr += String(chunk || "")
-            }
-        }
-        onExited: function(code) {
-            root.applySoundCloudSearch(code)
-        }
-    }
-
-    Process {
         id: waveProc
         stdout: SplitParser {
             splitMarker: ""
@@ -2215,28 +2118,28 @@ Item {
         stdout: SplitParser {
             splitMarker: ""
             onRead: function(chunk) {
-                if (root._artOverflow)
+                if (root._applyOverflow)
                     return
-                root._artBuf += String(chunk || "")
-                if (root._artBuf.length > 65536) {
-                    root._artOverflow = true
-                    root._artBuf = ""
+                root._applyBuf += String(chunk || "")
+                if (root._applyBuf.length > 65536) {
+                    root._applyOverflow = true
+                    root._applyBuf = ""
                     artApplyProc.signal(15)
                 }
             }
         }
         onExited: function(code) {
             var artPath = ""
-            if (code === 0 && !root._artOverflow) {
+            if (code === 0 && !root._applyOverflow) {
                 try {
-                    var parsed = JSON.parse(root._artBuf || "{}")
+                    var parsed = JSON.parse(root._applyBuf || "{}")
                     artPath = String(parsed.art || "")
                 } catch (e) {
                     artPath = ""
                 }
             }
-            root._artBuf = ""
-            root.finishArt(code === 0 && !root._artOverflow, artPath)
+            root._applyBuf = ""
+            root.finishArt(code === 0 && !root._applyOverflow, artPath)
         }
     }
 
@@ -2257,7 +2160,11 @@ Item {
         onExited: function(code) {
             var raw = String(channelProc.stdoutBuf || "").replace(/^\s+|\s+$/g, "")
             channelProc.stdoutBuf = ""
-            if (code !== 0 || !raw || channelProc.forPath !== root.trackPath)
+            if (channelProc.forPath !== root.trackPath) {
+                Qt.callLater(root.loadChannels)
+                return
+            }
+            if (code !== 0 || !raw)
                 return
             var n = parseInt(raw, 10)
             root.channels = n === 1 ? 1 : (n >= 2 ? n : 0)

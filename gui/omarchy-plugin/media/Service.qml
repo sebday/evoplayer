@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.Mpris
 import Quickshell.Services.Pipewire
 import "MediaModel.js" as MediaModel
+import "Model.js" as Model
 
 Item {
   id: root
@@ -254,7 +255,7 @@ Item {
     if (!shell) return
     var p = player || activePlayer
     // evoplayer sends omarchy notifications from its daemon; skip the media OSD.
-    if (MediaModel.isEvoplayer(p)) return
+    if (Model.isEvoplayer(p)) return
     shell.summon("omarchy.osd", JSON.stringify({
       icon: iconName || "media",
       message: osdMessage(p, actionLabel)
@@ -263,7 +264,7 @@ Item {
 
   function scheduleOsd(actionLabel, iconName, player, waitForTrackChange, beforeTrackSignature) {
     var p = player || activePlayer
-    if (MediaModel.isEvoplayer(p)) return
+    if (Model.isEvoplayer(p)) return
     if (waitForTrackChange) {
       pendingTrackOsd = {
         actionLabel: actionLabel,
@@ -362,7 +363,7 @@ Item {
 
   function evoplayer() {
     for (var i = 0; i < players.length; i++) {
-      if (MediaModel.isEvoplayer(players[i])) return players[i]
+      if (Model.isEvoplayer(players[i])) return players[i]
     }
     return null
   }
@@ -502,11 +503,11 @@ Item {
       hasPlayer: p !== null,
       hasMedia: root.hasMedia,
       playing: p ? !!p.isPlaying : false,
-      identity: p ? MediaModel.plain(p.identity || "", 80) : "",
-      desktopEntry: p ? MediaModel.plain(p.desktopEntry || "", 80) : "",
-      title: p ? MediaModel.plain(p.trackTitle || "", 120) : "",
-      artist: p ? MediaModel.plain(p.trackArtist || "", 120) : "",
-      album: p ? MediaModel.plain(p.trackAlbum || "", 120) : "",
+      identity: p ? Model.plain(p.identity || "", 80) : "",
+      desktopEntry: p ? Model.plain(p.desktopEntry || "", 80) : "",
+      title: p ? Model.plain(p.trackTitle || "", 120) : "",
+      artist: p ? Model.plain(p.trackArtist || "", 120) : "",
+      album: p ? Model.plain(p.trackAlbum || "", 120) : "",
       canGoNext: p ? !!p.canGoNext : false,
       canGoPrevious: p ? !!p.canGoPrevious : false,
       canTogglePlaying: p ? !!p.canTogglePlaying : false

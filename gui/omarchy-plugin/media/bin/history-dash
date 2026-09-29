@@ -194,11 +194,10 @@ def tally_and_recent(raw, root, art_fd):
     albums = set()
     tracks = set()
     scrobbles = 0
-    lines = []
+    rows = []
     for line in raw.splitlines():
         if not line or len(line) > 8192:
             continue
-        lines.append(line)
         try:
             row = json.loads(line)
         except json.JSONDecodeError:
@@ -208,6 +207,7 @@ def tally_and_recent(raw, root, art_fd):
         event = row.get("event")
         if event not in ("submit", "scrobble"):
             continue
+        rows.append(row)
         artist = clean_text(row.get("artist"))
         title = clean_text(row.get("title"))
         album = clean_text(row.get("album"))
@@ -221,13 +221,7 @@ def tally_and_recent(raw, root, art_fd):
 
     seen = set()
     recent = []
-    for line in reversed(lines):
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(row, dict):
-            continue
+    for row in reversed(rows):
         path = clean_path(row.get("path"))
         artist = clean_text(row.get("artist"))
         title = clean_text(row.get("title"))

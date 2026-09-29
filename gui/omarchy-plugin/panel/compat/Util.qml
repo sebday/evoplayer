@@ -2,30 +2,11 @@ pragma Singleton
 
 import Quickshell
 import QtQuick
+import "../../media/Model.js" as Model
 
 QtObject {
     function fileUrl(path) {
-        var value = String(path || "").trim()
-        if (!value)
-            return ""
-        if (value.indexOf("file://") === 0)
-            return value
-        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value))
-            return value
-        var parts = value.split("/")
-        var encoded = []
-        for (var i = 0; i < parts.length; i++) {
-            if (parts[i] === "" && i === 0)
-                encoded.push("")
-            else if (parts[i] !== "")
-                encoded.push(encodeURIComponent(parts[i]))
-        }
-        return "file://" + encoded.join("/")
-    }
-
-    function shellQuote(value) {
-        var s = String(value || "")
-        return "'" + s.replace(/'/g, "'\\''") + "'"
+        return Model.fileUrl(path)
     }
 
     function evoplayerBinPath(home) {

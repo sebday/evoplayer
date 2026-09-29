@@ -238,6 +238,10 @@ Column {
         }
         function onDownloadIdxChanged() { pane.focusCurrent() }
         function onDownloadHitChanged() { pane.focusCurrent() }
+        function onPaneChanged() {
+            if (view.pane === "playlist")
+                pane.focusCurrent()
+        }
         function onDownloadUrlChanged() { urlBox.show(view.downloadUrl) }
         function onDownloadQueryChanged() { searchBox.show(view.downloadQuery) }
     }

@@ -270,14 +270,6 @@ Fieldset {
                 }
                 Text {
                     textFormat: Text.PlainText
-                    text: "48 KHZ"
-                    color: Theme.foreground
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeS
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                Text {
-                    textFormat: Text.PlainText
                     text: "EQ"
                     color: view.vizOn ? Theme.good : Theme.muted
                     font.family: Theme.fontFamily
@@ -285,7 +277,7 @@ Fieldset {
                     anchors.verticalCenter: parent.verticalCenter
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: view.cycleViz(1)
+                        onClicked: view.toggleViz()
                     }
                 }
             }

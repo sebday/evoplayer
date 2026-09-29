@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import "compat"
 import "compat/PluginIds.js" as PluginIds
+import "../media/Model.js" as Model
 
 Item {
     id: root
@@ -26,15 +27,9 @@ Item {
         return media.runAction(action, showFeedback, targetKey)
     }
     property var vizLevels: []
-    property int vizRevision: 0
     property int vizSequence: 0
     property int vizGeneration: 0
-    property string scrobblePath: ""
-    property bool scrobbleSubmitted: false
-    property real scrobbleStartPos: -1
-    property int scrobbleStartedAt: 0
-    property string lastNowPlayingScrobblePath: ""
-    property int lastNowPlayingScrobbleAt: 0
+    property string announcedPath: ""
 
     readonly property string home: Quickshell.env("HOME") || ""
     readonly property string socketPath: {
@@ -54,24 +49,14 @@ Item {
     property var ipcTimeouts: ({})
 
     readonly property int ipcTimeoutMs: 15000
+    readonly property int ipcWaitQueueMax: 64
+    readonly property int connectRetryMinMs: 150
+    readonly property int connectRetryMaxMs: 5000
 
     property bool scanNoticeShown: false
     readonly property int scanNotifyId: 42421
     readonly property int notifyNormalMs: 5000
     readonly property int notifyLowMs: 3000
-
-    function stripNotify(value) {
-        var s = String(value == null ? "" : value)
-        var out = ""
-        for (var i = 0; i < s.length && out.length < 180; i++) {
-            var code = s.charCodeAt(i)
-            if (code < 32 || (code >= 127 && code < 160)) continue
-            var c = s.charAt(i)
-            if (c === "<" || c === ">" || c === "&") continue
-            out += c
-        }
-        return out
-    }
 
     function omarchyNotify(opts) {
         var o = opts || {}
@@ -85,8 +70,8 @@ Item {
         var image = String(o.image || "").trim()
         if (image)
             args.push("--image", image)
-        args.push(stripNotify(o.summary || "Evoplayer"))
-        var body = stripNotify(o.body || "")
+        args.push(Model.plain(o.summary || "Evoplayer", 180))
+        var body = Model.plain(o.body || "", 180)
         if (body)
             args.push(body)
         Quickshell.execDetached(args)
@@ -134,22 +119,15 @@ Item {
             enrichPath = path
             requestEnrich(path)
         }
-        if (!path) {
-            lastNotifiedPath = ""
-            lastNotifiedHadArt = false
-            lastNotifiedArt = ""
-            lastNotifiedGenre = ""
-            lastNotifiedYear = ""
-            lastNotifiedLiked = false
-            resetScrobbleSession()
-        }
+        if (!path)
+            announcedPath = ""
         mergePlayer(patch)
     }
 
     function ipcCall(method, params, onDone) {
         if (!playerSocket.connected) {
             ensurePlayer()
-            ipcWaitQueue.push({ method: method, params: params, onDone: onDone || null })
+            queueIpc(method, params, onDone)
             return
         }
         var id = ipcWrite(method, params)
@@ -158,9 +136,19 @@ Item {
                 onDone(false, null)
             return
         }
-        if (onDone)
+        if (onDone) {
             ipcPending[id] = onDone
-        ipcTimeouts[id] = Date.now() + ipcTimeoutMs
+            ipcTimeouts[id] = Date.now() + ipcTimeoutMs
+        }
+    }
+
+    function queueIpc(method, params, onDone) {
+        if (ipcWaitQueue.length >= ipcWaitQueueMax) {
+            var dropped = ipcWaitQueue.shift()
+            if (dropped.onDone)
+                dropped.onDone(false, null)
+        }
+        ipcWaitQueue.push({ method: method, params: params, onDone: onDone || null })
     }
 
     function clearIpcTimeout(id) {
@@ -190,23 +178,6 @@ Item {
             var job = pending[i]
             ipcCall(job.method, job.params, job.onDone)
         }
-    }
-
-    function callEvoplayerIPC(method, params, onDone) {
-        if (!playerSocket.connected) {
-            ensureEvoplayerConnect()
-            ipcWaitQueue.push({ method: method, params: params, onDone: onDone || null })
-            return
-        }
-        var id = ipcWrite(method, params)
-        if (id < 0) {
-            if (onDone)
-                onDone(false, null)
-            return
-        }
-        if (onDone)
-            ipcPending[id] = onDone
-        ipcTimeouts[id] = Date.now() + ipcTimeoutMs
     }
 
     function ipcCallVoid(method, params) {
@@ -245,26 +216,14 @@ Item {
             applyJobPayload(msg.data)
         else if (msg.event === "warm")
             applyWarmPayload(msg.data)
-        else if (msg.ok && msg.data)
-            applyStatePayload(msg.data)
     }
 
     function mergePlayer(patch) {
         var prevPath = String(player.path || "")
         var prevState = String(player.state || "")
-        var prevArt = String(player.art || "")
-        var prevGenre = String(player.genre || "").trim()
-        var prevYear = String(player.year || "").trim()
-        var prevLiked = !!player.liked
         var next = Object.assign({}, player, patch)
         var patchPath = String(patch.path || "")
         var samePath = patchPath !== "" && patchPath === prevPath
-        var prevPos = Number(player.position) || 0
-        if (samePath && patch.position !== undefined) {
-            var seekPos = Number(patch.position) || 0
-            if (seekPos < prevPos - 5)
-                beginScrobbleSession()
-        }
         if (samePath) {
             var metaKeys = ["title", "artist", "album", "art", "genre", "year", "label", "waveform", "liked", "queue_revision"]
             for (var i = 0; i < metaKeys.length; i++) {
@@ -279,29 +238,10 @@ Item {
             }
         }
         var newPath = String(next.path || "")
-        if (prevPath && newPath !== prevPath
-                && scrobblePath === prevPath
-                && !scrobbleSubmitted
-                && prevState === "playing")
-            maybeSubmitScrobble()
         player = next
         var state = String(player.state || "")
-        var pathChanged = newPath !== prevPath
-        if (newPath && state === "playing") {
-            if (pathChanged || state !== prevState)
-                notifyNowPlaying()
-            maybeSubmitScrobble()
-        }
-    }
-
-    function applyStatusPayload(text) {
-        var parsed
-        try {
-            parsed = JSON.parse(String(text || "{}"))
-        } catch (e) {
-            parsed = {}
-        }
-        applyStatePayload(parsed)
+        if (newPath && state === "playing" && (newPath !== prevPath || state !== prevState))
+            notifyNowPlaying()
     }
 
     function applyVizPayload(data) {
@@ -316,7 +256,6 @@ Item {
         if (seq > 0)
             vizSequence = seq
         vizLevels = data.levels
-        vizRevision++
     }
 
     function applyJobPayload(data) {
@@ -385,19 +324,14 @@ Item {
     function pumpEnrich() {
         var p = String(enrichQueuedPath || "")
         enrichQueuedPath = ""
-        if (!p) {
-            if (enrichQueuedPath)
-                pumpEnrich()
+        if (!p)
             return
-        }
         enrichBusy = true
         enrichCurrentPath = p
         ipcCall("library.meta", { path: p }, function(ok, msg) {
             enrichBusy = false
             var requested = String(enrichCurrentPath || "")
-            if (!requested || requested !== String(root.enrichPath || ""))
-                return
-            if (ok && msg && msg.data) {
+            if (ok && msg && msg.data && requested && requested === String(root.enrichPath || "")) {
                 var parsed = Object.assign({}, msg.data)
                 delete parsed.state
                 delete parsed.position
@@ -411,23 +345,6 @@ Item {
             if (String(root.enrichQueuedPath || ""))
                 root.pumpEnrich()
         })
-    }
-
-    function beginScrobbleSession() {
-        var path = String(player.path || "")
-        if (!path)
-            return
-        scrobblePath = path
-        scrobbleStartPos = Number(player.position) || 0
-        scrobbleStartedAt = Math.floor(Date.now() / 1000 - scrobbleStartPos)
-        scrobbleSubmitted = false
-    }
-
-    function resetScrobbleSession() {
-        scrobblePath = ""
-        scrobbleStartPos = -1
-        scrobbleStartedAt = 0
-        scrobbleSubmitted = false
     }
 
     function maybeWarmTrack() {
@@ -455,9 +372,12 @@ Item {
             ipcCallVoid("playback.next")
         else if (action === "prev" || action === "previous")
             ipcCallVoid("playback.prev")
-        else if (action === "play")
-            ipcCallVoid("playback.toggle")
-        else if (action === "pause") {
+        else if (action === "stop")
+            ipcCallVoid("playback.stop")
+        else if (action === "play") {
+            if (String(player.state || "") !== "playing")
+                ipcCallVoid("playback.toggle")
+        } else if (action === "pause") {
             if (String(player.state || "") === "playing")
                 ipcCallVoid("playback.toggle")
         }
@@ -477,87 +397,20 @@ Item {
         if (!shell)
             return
         var path = String(player.path || "")
-        if (!path)
+        if (!path || path === announcedPath)
             return
-        if (path !== scrobblePath) {
-            var now = Date.now()
-            if (path !== lastNowPlayingScrobblePath || now - lastNowPlayingScrobbleAt >= 2000) {
-                runScrobble(["nowplaying"])
-                lastNowPlayingScrobblePath = path
-                lastNowPlayingScrobbleAt = now
-            }
-            beginScrobbleSession()
-            maybeWarmTrack()
-            if (String(player.art || "") !== "")
-                cacheDisplayArt(path)
-        }
-    }
-
-    // Last.fm: track > 30s; listen min(half duration, 4 minutes).
-    function scrobbleListenThreshold(durationSec) {
-        var dur = Number(durationSec) || 0
-        if (dur <= 30)
-            return -1
-        return Math.min(dur * 0.5, 240)
-    }
-
-    function maybeSubmitScrobble() {
-        if (!player.path || scrobbleSubmitted || String(player.path) !== scrobblePath)
-            return
-        if (String(player.state || "") !== "playing")
-            return
-        if (scrobbleStartPos < 0)
-            return
-        var dur = Number(player.duration) || 0
-        var threshold = scrobbleListenThreshold(dur)
-        if (threshold < 0)
-            return
-        if (dur <= 0)
-            return
-        var pos = Number(player.position) || 0
-        if (pos < scrobbleStartPos)
-            scrobbleStartPos = pos
-        var listened = pos - scrobbleStartPos
-        if (listened < threshold)
-            return
-        scrobbleSubmitted = true
-        var started = scrobbleStartedAt > 0
-            ? scrobbleStartedAt
-            : Math.floor(Date.now() / 1000 - listened)
-        runScrobble(["submit", "--started", String(started)])
-    }
-
-    function runScrobble(args) {
-        args = args || []
-        if (args[0] === "nowplaying") {
-            ipcCallVoid("scrobble.nowplaying")
-            return
-        }
-        if (args[0] === "submit") {
-            var started = 0
-            for (var i = 1; i < args.length; i++) {
-                if (args[i] === "--started" && i + 1 < args.length)
-                    started = Number(args[++i]) || 0
-            }
-            ipcCallVoid("scrobble.submit", { started: started })
-            return
-        }
-        if (scrobbleProc.running)
-            return
-        scrobbleProc.command = playerCmd(["scrobble"].concat(args))
-        scrobbleProc.running = true
+        announcedPath = path
+        maybeWarmTrack()
+        if (String(player.art || "") !== "")
+            cacheDisplayArt(path)
     }
 
     function ensureEvoplayerConnect() {
         if (playerSocket.connected)
             return
         playerSocket.connected = true
-        if (!playerSocket.connected)
-            connectRetryTimer.restart()
-    }
-
-    function ensurePlayerConnect() {
-        ensureEvoplayerConnect()
+        if (!playerSocket.connected && !connectRetryTimer.running)
+            connectRetryTimer.start()
     }
 
     function ensurePlayer() {
@@ -573,8 +426,12 @@ Item {
         if (ipcSubscribed)
             return
         ipcSubscribed = true
-        ipcWrite("subscribe")
-        ipcWrite("state.get")
+        var applyState = function(ok, msg) {
+            if (ok && msg && msg.data)
+                root.applyStatePayload(msg.data)
+        }
+        ipcCall("subscribe", undefined, applyState)
+        ipcCall("state.get", undefined, applyState)
         ipcCall("job.status", {}, function(ok, msg) {
             if (!ok || !msg || !msg.data)
                 return
@@ -594,6 +451,7 @@ Item {
         onConnectedChanged: {
             if (connected) {
                 connectRetryTimer.stop()
+                connectRetryTimer.interval = root.connectRetryMinMs
                 root.ipcSubscribed = false
                 root.ipcSynced = false
                 Qt.callLater(root.subscribePlayer)
@@ -610,15 +468,18 @@ Item {
 
     Timer {
         id: connectRetryTimer
-        interval: 150
+        interval: root.connectRetryMinMs
         repeat: true
-        onTriggered: root.ensurePlayerConnect()
+        onTriggered: {
+            interval = Math.min(root.connectRetryMaxMs, interval * 2)
+            root.ensureEvoplayerConnect()
+        }
     }
 
     Process {
         id: startPlayerProc
         command: root.playerCmd(["start"])
-        onExited: Qt.callLater(root.ensurePlayerConnect)
+        onExited: Qt.callLater(root.ensureEvoplayerConnect)
     }
 
     Timer {
@@ -631,41 +492,36 @@ Item {
 
     Process {
         id: notifyArtProc
-    onStarted: { stdoutBuf = ""; stderrBuf = "" }
+        onStarted: stdoutBuf = ""
 
-    property string stdoutBuf: ""
-    property string stderrBuf: ""
+        property string stdoutBuf: ""
         property string requestedPath: ""
         property string pendingPath: ""
 
         stdout: SplitParser {
-      splitMarker: ""
-      onRead: function(chunk) {
-        notifyArtProc.stdoutBuf += chunk
-        if (notifyArtProc.stdoutBuf.length > 262144) {
-          notifyArtProc.signal(15)
-          notifyArtProc.stdoutBuf = ""
-        }
-      }
-    }
-        onExited: function(exitCode) {
-      var requested = String(notifyArtProc.requestedPath || "")
-                notifyArtProc.requestedPath = ""
-                var cached = String(stdoutBuf || "").trim()
-                if (cached && requested)
-                    root.notifyDisplayArtReady(requested, cached)
-                var pending = String(notifyArtProc.pendingPath || "")
-                if (pending) {
-                    notifyArtProc.pendingPath = ""
-                    notifyArtProc.requestedPath = pending
-                    notifyArtProc.command = root.playerCmd(["art", "notify-cache", pending])
-                    notifyArtProc.running = true
+            splitMarker: ""
+            onRead: function(chunk) {
+                notifyArtProc.stdoutBuf += chunk
+                if (notifyArtProc.stdoutBuf.length > 262144) {
+                    notifyArtProc.signal(15)
+                    notifyArtProc.stdoutBuf = ""
                 }
-    }
-  }
-
-    Process {
-        id: scrobbleProc
+            }
+        }
+        onExited: function(exitCode) {
+            var requested = String(notifyArtProc.requestedPath || "")
+            notifyArtProc.requestedPath = ""
+            var cached = String(notifyArtProc.stdoutBuf || "").trim()
+            if (cached && requested)
+                root.notifyDisplayArtReady(requested, cached)
+            var pending = String(notifyArtProc.pendingPath || "")
+            if (pending) {
+                notifyArtProc.pendingPath = ""
+                notifyArtProc.requestedPath = pending
+                notifyArtProc.command = root.playerCmd(["art", "notify-cache", pending])
+                notifyArtProc.running = true
+            }
+        }
     }
 
     Component.onCompleted: ensurePlayer()

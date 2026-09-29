@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.Pipewire
 import qs.Commons
 import qs.Ui
+import "panel/compat" as Compat
 import "panel/compat/PluginIds.js" as PluginIds
 import "media/Model.js" as Model
 
@@ -29,7 +30,7 @@ BarWidget {
   }
 
   function summonEvoplayer() {
-    Quickshell.execDetached(["xdg-terminal-exec", "--", "evoplayer"])
+    Quickshell.execDetached(["xdg-terminal-exec", "--", Compat.Util.evoplayerBinPath("")])
   }
 
   readonly property var mediaService: bar?.shell?.firstPartyServiceFor("omarchy.media")
@@ -138,9 +139,29 @@ BarWidget {
   Process {
     id: volumeSinkProc
     command: ["omarchy-audio-output-sink"]
-    stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.volumeSinkName = String(text).trim()
+    property string stdoutBuf: ""
+    property bool overflow: false
+    onStarted: {
+      stdoutBuf = ""
+      overflow = false
+    }
+    stdout: SplitParser {
+      splitMarker: ""
+      onRead: function(chunk) {
+        if (volumeSinkProc.overflow)
+          return
+        volumeSinkProc.stdoutBuf += String(chunk || "")
+        if (volumeSinkProc.stdoutBuf.length > 4096) {
+          volumeSinkProc.overflow = true
+          volumeSinkProc.stdoutBuf = ""
+          volumeSinkProc.signal(15)
+        }
+      }
+    }
+    onExited: {
+      if (!overflow)
+        root.volumeSinkName = String(stdoutBuf).trim()
+      stdoutBuf = ""
     }
   }
 

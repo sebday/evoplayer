@@ -1,31 +1,7 @@
-function plain(value, maxLen) {
-  var s = String(value == null ? "" : value)
-  var max = maxLen || 240
-  var out = ""
-  for (var i = 0; i < s.length && out.length < max; i++) {
-    var code = s.charCodeAt(i)
-    if (code < 32 || (code >= 127 && code < 160)) continue
-    var c = s.charAt(i)
-    if (c === "<" || c === ">" || c === "&") continue
-    out += c
-  }
-  return out
-}
-
 function isProxyPlayer(player) {
   var dbusName = String(player && player.dbusName || "").toLowerCase()
   var desktopEntry = String(player && player.desktopEntry || "").toLowerCase()
   return dbusName.indexOf("playerctld") !== -1 || desktopEntry === "playerctld"
-}
-
-function isEvoplayer(player) {
-  if (!player) return false
-  var identity = String(player.identity || "").toLowerCase()
-  if (identity === "evoplayer") return true
-  var desktopEntry = String(player.desktopEntry || "").toLowerCase()
-  if (desktopEntry === "evoplayer") return true
-  var dbusName = String(player.dbusName || "").toLowerCase()
-  return dbusName.indexOf("evoplayer") !== -1
 }
 
 function isBrave(player) {
