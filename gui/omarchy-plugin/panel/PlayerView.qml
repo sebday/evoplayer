@@ -331,7 +331,7 @@ Item {
             else if (downloadIdx === 1)
                 hints = [{ key: "⏎", label: "search" }, { key: "↓", label: "results" }]
             else
-                hints = [{ key: "⏎", label: "download" }, { key: "↓", label: "search" }]
+                return [{ key: "⏎", label: "download" }, { key: "s", label: "sync" }]
             var withSync = []
             for (var i = 0; i < hints.length; i++) {
                 withSync.push(hints[i])

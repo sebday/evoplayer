@@ -53,7 +53,8 @@ Fieldset {
     number: 3
     legend: view.playlistLegend()
     active: view.pane === "playlist"
-    hints: view.playlistHints()
+    framed: view.mode !== "download"
+    hints: view.mode === "download" ? [] : view.playlistHints()
 
     Item {
         anchors.fill: parent
@@ -472,11 +473,10 @@ Fieldset {
         }
 
         DownloadOverlay {
+            parent: pane
             anchors.fill: parent
-            anchors.topMargin: errLine.height + 8
-            anchors.leftMargin: 8
-            anchors.rightMargin: 8
-            anchors.bottomMargin: 4
+            anchors.topMargin: errLine.visible ? errLine.y + errLine.height + 24 : 0
+            z: 3
             visible: view.mode === "download"
             view: pane.view
         }

@@ -13,6 +13,7 @@ Item {
     property var hints: []
     property bool hintsRight: false
     property bool active: false
+    property bool framed: true
     property int pad: 10
 
     readonly property color borderColor: active ? Theme.liked : Theme.border
@@ -32,6 +33,7 @@ Item {
     // inside contentHost. onCompleted moves them back onto the frame.
     Rectangle {
         id: borderRect
+        visible: root.framed
         anchors.fill: parent
         radius: 6
         color: "transparent"
@@ -41,6 +43,7 @@ Item {
 
     Item {
         id: legendHost
+        visible: root.framed
         anchors.fill: parent
 
         Rectangle {
