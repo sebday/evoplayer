@@ -10,10 +10,6 @@ Item {
     readonly property int rowH: artSide + 8
     readonly property bool onResults: view.downloadHit >= 0
     readonly property bool focused: view.pane === "playlist"
-    readonly property bool searchStatus: {
-        var note = String(view.downloadNote || "")
-        return note === "searching…" || note === "nothing on soundcloud"
-    }
 
     FontMetrics {
         id: metaFont
@@ -122,52 +118,6 @@ Item {
                 }
                 onAccepted: view.runDownloadBox()
             }
-
-            NoteLine {
-                visible: view.downloadNote !== "" && !pane.onResults && !pane.searchStatus
-            }
-
-            Flickable {
-                width: parent.width
-                height: Math.min(logCol.height, pane.height * 0.4)
-                visible: logCol.height > 0
-                contentWidth: width
-                contentHeight: logCol.height
-                clip: true
-                boundsBehavior: Flickable.StopAtBounds
-
-                Column {
-                    id: logCol
-                    width: parent.width
-                    spacing: 2
-
-                    Text {
-                        textFormat: Text.PlainText
-                        width: logCol.width
-                        visible: view.downloadLog !== ""
-                        text: view.downloadLog
-                        color: Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeS
-                        wrapMode: Text.Wrap
-                    }
-
-                    Repeater {
-                        model: view.downloadFiles || []
-
-                        Text {
-                            required property var modelData
-                            textFormat: Text.PlainText
-                            width: logCol.width
-                            elide: Text.ElideRight
-                            text: view.trackLabel(modelData)
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeM
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -184,14 +134,65 @@ Item {
         NoteLine {
             id: searchNote
             anchors.top: parent.top
-            visible: view.downloadNote !== "" && (pane.onResults || pane.searchStatus)
+            visible: view.downloadNote !== ""
             height: visible ? implicitHeight : 0
+        }
+
+        Flickable {
+            id: logView
+            anchors.top: searchNote.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.topMargin: searchNote.height > 0 ? 4 : 0
+            readonly property real cap: hits.count > 0 ? parent.height * 0.45 : Math.max(0, parent.height - searchNote.height - anchors.topMargin)
+            height: logCol.implicitHeight > 0 ? Math.min(logCol.implicitHeight, cap) : 0
+            visible: height > 0
+            contentWidth: width
+            contentHeight: logCol.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            onContentHeightChanged: {
+                if (contentHeight > height)
+                    contentY = contentHeight - height
+            }
+
+            Column {
+                id: logCol
+                width: logView.width
+                spacing: 2
+
+                Text {
+                    textFormat: Text.PlainText
+                    width: logCol.width
+                    visible: view.downloadLog !== ""
+                    text: view.downloadLog
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                    wrapMode: Text.Wrap
+                }
+
+                Repeater {
+                    model: view.downloadFiles || []
+
+                    Text {
+                        required property var modelData
+                        textFormat: Text.PlainText
+                        width: logCol.width
+                        elide: Text.ElideRight
+                        text: view.trackLabel(modelData)
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeM
+                    }
+                }
+            }
         }
 
         ListView {
             id: hits
-            anchors.top: searchNote.bottom
-            anchors.topMargin: searchNote.visible ? 4 : 0
+            anchors.top: logView.bottom
+            anchors.topMargin: logView.height > 0 ? 4 : 0
             anchors.bottom: parent.bottom
             width: parent.width
             clip: true

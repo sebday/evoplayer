@@ -1,10 +1,12 @@
 # Evoplayer
 
-Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. The panel is Quickshell, laid out like btop: numbered panes for now playing, the library, the playlist, and the cover.
+Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. The panel is Quickshell, and integrated in Omarchy with a bar icon.
 
-I used Soundcloud for years and ignored my mp3 collection. This is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library. The terminal UI is on `feat/player-tui`.
+I used Soundcloud for years and ignored my mp3 collection. This is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library. 
 
-![Evoplayer TUI](preview.png)
+Search, download and sort Soundcloud and Youtube from in Evoplayer.
+
+![Evoplayer](preview.png)
 
 ## Layout
 

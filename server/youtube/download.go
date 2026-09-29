@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -99,7 +100,7 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 		return "", fmt.Errorf("youtube: yt-dlp is required")
 	}
 
-	report("metadata", 0)
+	report("reading metadata", 0)
 	info, browser, err := ytdlpDump(ctx, bin, pageURL)
 	if err != nil {
 		return "", err
@@ -107,10 +108,6 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 	archive, err := syncarchive.Load(syncarchive.Path(opts.StateDir))
 	if err != nil {
 		return "", err
-	}
-	if archive.HasYT(info.ID) {
-		report("download", 100)
-		return "", nil
 	}
 	artist := info.artist()
 	title := strings.TrimSpace(info.Title)
@@ -120,9 +117,14 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 	if title == "" {
 		title = info.ID
 	}
+	label := trackLabel(artist, title)
+	if archive.HasYT(info.ID) {
+		report(stage("already downloaded", label), 100)
+		return "", nil
+	}
 	dest := filepath.Join(incoming, tags.SanitizeFilenamePart(artist)+" - "+tags.SanitizeFilenamePart(title)+".mp3")
 	if _, err := os.Stat(dest); err == nil {
-		report("download", 100)
+		report(stage("already downloaded", label), 100)
 		return dest, nil
 	}
 
@@ -131,16 +133,17 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 		return "", err
 	}
 	defer os.RemoveAll(tmpDir)
-	report("download", 0)
-	raw, err := ytdlpFetch(ctx, bin, pageURL, tmpDir, browser, progress)
+	report(stage("downloading", label), 0)
+	raw, err := ytdlpFetch(ctx, bin, pageURL, tmpDir, browser, label, progress)
 	if err != nil {
 		return "", err
 	}
-	report("convert", 0)
+	report(stage("converting", label), 0)
 	var onConvert func(float64)
 	if progress != nil && info.Duration > 0 {
 		onConvert = func(sec float64) {
-			progress("convert", min(100, int(sec/info.Duration*100)))
+			pct := min(100, int(sec/info.Duration*100))
+			progress(stage(fmt.Sprintf("converting %d%%", pct), label), pct)
 		}
 	}
 	if err := ytdlp.ToMP3(ctx, raw, dest, onConvert); err != nil {
@@ -167,12 +170,12 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 	if info.Duration > 0 {
 		meta["duration_ms"] = fmt.Sprintf("%.0f", info.Duration*1000)
 	}
-	report("tag", 0)
+	report(stage("tagging", label), 0)
 	picture, mime := fetchThumbnail(info)
 	if err := tags.EmbedMP3(dest, meta, picture, mime); err != nil {
 		fmt.Fprintf(os.Stderr, "evoplayer: warn: youtube tag embed: %v\n", err)
 	}
-	report("tag", 100)
+	report(stage("tagging", label), 100)
 	if err := archive.AddYT(info.ID); err != nil {
 		fmt.Fprintf(os.Stderr, "evoplayer: warn: archive write: %v\n", err)
 	}
@@ -203,14 +206,14 @@ func ytdlpDump(ctx context.Context, bin, pageURL string) (ytdlpInfo, string, err
 	return ytdlpInfo{}, "", last
 }
 
-func ytdlpFetch(ctx context.Context, bin, pageURL, tmpDir, prefer string, progress ProgressFunc) (string, error) {
+func ytdlpFetch(ctx context.Context, bin, pageURL, tmpDir, prefer, label string, progress ProgressFunc) (string, error) {
 	outTmpl := filepath.Join(tmpDir, "audio.%(ext)s")
 	var last error
 	for _, browser := range ytdlp.Browsers(prefer) {
 		args := append(ytdlpBaseArgs(browser), "-f", "bestaudio/best", "--newline", "-o", outTmpl, "--", pageURL)
 		if err := ytdlp.Run(ctx, bin, args, func(line string) {
-			if pct, ok := parseYtDlpPercent(line); ok && progress != nil {
-				progress("download", pct)
+			if detail, pct, ok := ytDownloadDetail(line, label); ok && progress != nil {
+				progress(detail, pct)
 			}
 		}); err != nil {
 			if ctx.Err() != nil {
@@ -249,6 +252,54 @@ func ytdlpDumpOnce(ctx context.Context, bin, pageURL, browser string) (ytdlpInfo
 
 func ytdlpBaseArgs(browser string) []string {
 	return append([]string{"--no-playlist", "--no-warnings"}, ytdlp.CookieArgs(browser)...)
+}
+
+func trackLabel(artist, title string) string {
+	s := strings.TrimSpace(artist)
+	t := strings.TrimSpace(title)
+	switch {
+	case s != "" && t != "":
+		s = s + " — " + t
+	case t != "":
+		s = t
+	}
+	r := []rune(s)
+	if len(r) > 80 {
+		s = string(r[:79]) + "…"
+	}
+	return s
+}
+
+func stage(verb, label string) string {
+	if label == "" {
+		return verb
+	}
+	return verb + " · " + label
+}
+
+var ytProgressRE = regexp.MustCompile(`(\d+(?:\.\d+)?)%\s+of\s+~?\s*(\S+)(?:\s+at\s+(\S+))?(?:\s+ETA\s+(\S+))?`)
+
+func ytDownloadDetail(line, label string) (string, int, bool) {
+	if !strings.Contains(line, "[download]") {
+		return "", 0, false
+	}
+	pct, ok := parseYtDlpPercent(line)
+	if !ok {
+		return "", 0, false
+	}
+	detail := fmt.Sprintf("downloading %d%%", pct)
+	if m := ytProgressRE.FindStringSubmatch(line); m != nil {
+		if m[2] != "" {
+			detail += " of " + m[2]
+		}
+		if m[3] != "" {
+			detail += " at " + m[3]
+		}
+		if eta := m[4]; eta != "" && !strings.EqualFold(eta, "Unknown") {
+			detail += ", " + eta + " left"
+		}
+	}
+	return stage(detail, label), pct, true
 }
 
 func parseYtDlpPercent(line string) (int, bool) {
@@ -310,6 +361,7 @@ func fetchThumbnail(info ytdlpInfo) ([]byte, string) {
 		if mime == "" {
 			mime = tags.PictureMIME(body)
 		}
+		body, mime = squareCover(body)
 		return body, strings.TrimSpace(mime)
 	}
 	return nil, ""
