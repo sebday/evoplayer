@@ -149,10 +149,12 @@ Fieldset {
 
         Column {
             id: metaCol
-            width: Math.max(80, parent.width - transport.width - viz.width - 24)
+            width: Math.min(Math.max(260, titleText.implicitWidth, releaseText.implicitWidth),
+                            parent.width * 0.35)
             spacing: 4
 
             Text {
+                id: titleText
                 textFormat: Text.PlainText
                 width: parent.width
                 elide: Text.ElideRight
@@ -164,6 +166,7 @@ Fieldset {
             }
 
             Text {
+                id: releaseText
                 textFormat: Text.PlainText
                 width: parent.width
                 elide: Text.ElideRight
@@ -285,7 +288,7 @@ Fieldset {
 
         WaveformViz {
             id: viz
-            width: view.artW
+            width: Math.max(120, parent.width - transport.width - metaCol.width - 24)
             height: parent.height
             peaks: view.peaks
             levels: view.service ? view.service.vizLevels : []

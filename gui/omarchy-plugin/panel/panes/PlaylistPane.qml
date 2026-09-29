@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import "../compat"
 import "../overlays"
 import "../widgets"
@@ -27,6 +28,24 @@ Fieldset {
 
     readonly property int artSide: 32
     readonly property int rowH: artSide + 8
+
+    component ThinScrollBar: ScrollBar {
+        id: bar
+        policy: ScrollBar.AsNeeded
+        implicitWidth: 3
+        width: 3
+        minimumSize: 0.06
+        contentItem: Rectangle {
+            implicitWidth: 3
+            radius: width / 2
+            color: Theme.muted
+            opacity: bar.active || bar.hovered ? 0.9 : 0.35
+            Behavior on opacity {
+                NumberAnimation { duration: Theme.motionFast }
+            }
+        }
+        background: Item {}
+    }
 
     number: 3
     legend: view.playlistLegend()
@@ -73,6 +92,7 @@ Fieldset {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
+            ScrollBar.vertical: ThinScrollBar {}
             model: view.shownPlaylist ? view.shownTracks : view.queue
             onHeightChanged: view.playlistPage = Math.max(1, Math.floor(height / pane.rowH))
             onContentYChanged: {
@@ -158,7 +178,7 @@ Fieldset {
                 Row {
                     anchors.fill: parent
                     anchors.leftMargin: 2
-                    anchors.rightMargin: 2
+                    anchors.rightMargin: 8
                     spacing: 8
 
                     Rectangle {
@@ -333,6 +353,7 @@ Fieldset {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
+            ScrollBar.vertical: ThinScrollBar {}
             model: view.discoverTracks
 
             Text {
@@ -374,7 +395,7 @@ Fieldset {
                 Row {
                     anchors.fill: parent
                     anchors.leftMargin: 2
-                    anchors.rightMargin: 2
+                    anchors.rightMargin: 8
                     spacing: 8
 
                     Text {

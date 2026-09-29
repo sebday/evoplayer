@@ -83,7 +83,6 @@ Item {
     }
     readonly property real shownPosition: seekPreview >= 0 ? seekPreview : (Number(player.position) || 0)
 
-    readonly property int artW: artPane.width > 0 ? artPane.width : 280
     property string artOverride: ""
     property string artOverridePath: ""
     property int artEpoch: 0
