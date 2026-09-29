@@ -50,7 +50,7 @@ func (d *Daemon) runLibraryScan(ctx context.Context, env library.Env) error {
 	})
 	defer d.warm.SetOnProgress(nil)
 
-	d.warm.EnqueueMany(paths, warm.PriorityLow, true)
+	d.warm.EnqueueMany(paths, warm.PriorityLow)
 	if err := d.warm.WaitIdleCtx(ctx); err != nil {
 		return err
 	}

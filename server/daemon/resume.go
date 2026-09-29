@@ -27,13 +27,13 @@ func (d *Daemon) persistPlayerState(st playback.Status) {
 	volumeChanged := d.persistVolume != st.Volume
 	d.persistVolume = st.Volume
 	if volumeChanged && st.Path == "" {
-		_ = status.WriteVolume(d.Env, st.Volume)
+		_ = status.WriteVolume(d.env(), st.Volume)
 		return
 	}
 	if st.Path == "" {
 		return
 	}
-	st = status.EnrichLight(d.Env, st)
+	st = status.EnrichLight(d.env(), st)
 	d.persistMu.Lock()
 	pathChanged := st.Path != d.persistPath
 	stateChanged := st.State != d.persistState
@@ -45,7 +45,7 @@ func (d *Daemon) persistPlayerState(st playback.Status) {
 			d.persistTimer = nil
 		}
 		d.persistMu.Unlock()
-		_ = status.Write(d.Env, st)
+		_ = status.Write(d.env(), st)
 		return
 	}
 	if d.persistTimer == nil {
@@ -53,9 +53,9 @@ func (d *Daemon) persistPlayerState(st playback.Status) {
 			d.persistMu.Lock()
 			d.persistTimer = nil
 			d.persistMu.Unlock()
-			latest := status.EnrichLight(d.Env, d.Actor.Snapshot())
+			latest := status.EnrichLight(d.env(), d.Actor.Snapshot())
 			if latest.Path != "" {
-				_ = status.Write(d.Env, latest)
+				_ = status.Write(d.env(), latest)
 			}
 		})
 	}
@@ -69,12 +69,12 @@ func (d *Daemon) flushPlayerState() {
 		d.persistTimer = nil
 	}
 	d.persistMu.Unlock()
-	st := status.EnrichLight(d.Env, d.Actor.Snapshot())
+	st := status.EnrichLight(d.env(), d.Actor.Snapshot())
 	if st.Path != "" {
-		_ = status.Write(d.Env, st)
+		_ = status.Write(d.env(), st)
 		return
 	}
-	_ = status.WriteVolume(d.Env, st.Volume)
+	_ = status.WriteVolume(d.env(), st.Volume)
 }
 
 func (d *Daemon) resumePlayback(play bool) error {
@@ -89,12 +89,12 @@ func (d *Daemon) resumePlayback(play bool) error {
 		return nil
 	}
 
-	savedPath, savedPos, ok := readSavedPlayback(d.Env)
+	savedPath, savedPos, ok := readSavedPlayback(d.env())
 	if !ok {
 		return nil
 	}
 
-	paths, err := playlist.ReadCurrentPaths(playlist.EnvFrom(d.Env))
+	paths, err := playlist.ReadCurrentPaths(playlist.EnvFrom(d.env()))
 	if err != nil {
 		paths = nil
 	}

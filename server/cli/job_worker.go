@@ -16,70 +16,34 @@ func CmdJobWorker(env paths.Env, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: evoplayer _job <soundcloud-download|import-incoming|download-url|cache|discover-preview|discover-keep> [args]")
 	}
+	rest := args[1:]
+	var run func(ctx context.Context) int
 	switch args[0] {
 	case "soundcloud-download":
-		return runSoundCloudWorker(env, args[1:])
+		run = func(ctx context.Context) int {
+			return worker.RunSoundCloudDownload(ctx, env, hasFlag(rest, "--import"))
+		}
 	case "import-incoming":
-		return runImportWorker(env)
+		run = func(ctx context.Context) int { return worker.RunImportIncoming(ctx, env) }
 	case "download-url":
-		return runDownloadURLWorker(env, args[1:])
+		run = func(ctx context.Context) int {
+			return worker.RunDownloadURL(ctx, env, firstNonFlagArg(rest), hasFlag(rest, "--import"))
+		}
 	case "cache":
-		return runCacheWorker(env, args[1:])
+		run = func(ctx context.Context) int {
+			return worker.RunCache(ctx, env, flagValue(rest, "--genre"), hasFlag(rest, "--force"))
+		}
 	case "discover-preview":
-		return runDiscoverPreviewWorker(env, args[1:])
+		run = func(ctx context.Context) int { return worker.RunDiscoverPreview(ctx, env, worker.ParseTrackID(rest)) }
 	case "discover-keep":
-		return runDiscoverKeepWorker(env, args[1:])
+		run = func(ctx context.Context) int { return worker.RunDiscoverKeep(ctx, env, worker.ParseTrackID(rest)) }
 	default:
 		return fmt.Errorf("evoplayer: unknown job %q", args[0])
 	}
-}
-
-func runImportWorker(env paths.Env) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	os.Exit(worker.RunImportIncoming(ctx, env))
-	return nil
-}
-
-func runSoundCloudWorker(env paths.Env, args []string) error {
-	importAfter := hasFlag(args, "--import")
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	os.Exit(worker.RunSoundCloudDownload(ctx, env, importAfter))
-	return nil
-}
-
-func runDownloadURLWorker(env paths.Env, args []string) error {
-	importAfter := hasFlag(args, "--import")
-	rawURL := firstNonFlagArg(args)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	os.Exit(worker.RunDownloadURL(ctx, env, rawURL, importAfter))
-	return nil
-}
-
-func runDiscoverPreviewWorker(env paths.Env, args []string) error {
-	id := worker.ParseTrackID(args)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	os.Exit(worker.RunDiscoverPreview(ctx, env, id))
-	return nil
-}
-
-func runDiscoverKeepWorker(env paths.Env, args []string) error {
-	id := worker.ParseTrackID(args)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	os.Exit(worker.RunDiscoverKeep(ctx, env, id))
-	return nil
-}
-
-func runCacheWorker(env paths.Env, args []string) error {
-	force := hasFlag(args, "--force")
-	genre := flagValue(args, "--genre")
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	os.Exit(worker.RunCache(ctx, env, genre, force))
+	code := run(ctx)
+	stop()
+	os.Exit(code)
 	return nil
 }
 

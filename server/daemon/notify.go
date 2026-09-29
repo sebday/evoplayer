@@ -19,7 +19,7 @@ func (d *Daemon) onPlaybackNotify(st playback.Status) {
 		return
 	}
 	d.notifyPrev = st
-	enriched := status.EnrichLight(d.Env, st)
+	enriched := status.EnrichLight(d.env(), st)
 	if enriched.Path != prev.Path && enriched.Path != "" {
 		notify.NowPlaying(enriched)
 		return

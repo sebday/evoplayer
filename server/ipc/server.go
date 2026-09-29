@@ -8,7 +8,7 @@ import (
 	"net"
 	"os"
 	"sync"
-	"time"
+	"sync/atomic"
 )
 
 type Request struct {
@@ -33,21 +33,29 @@ type Event struct {
 type Handler func(req Request) (interface{}, error)
 
 type Server struct {
-	path         string
-	handler      Handler
-	ln           net.Listener
-	wg           sync.WaitGroup
-	mu           sync.Mutex
-	clients      []*clientConn
-	OnDisconnect func()
+	path    string
+	handler Handler
+	ln      net.Listener
+	wg      sync.WaitGroup
+	mu      sync.Mutex
+	conns   map[*clientConn]struct{}
+	closed  bool
+
+	closeOnce sync.Once
+	closeErr  error
+
+	// OnVizChange reports whether any connection holds a viz subscription.
+	OnVizChange func(active bool)
+	vizMu       sync.Mutex
+	vizSubs     atomic.Int32
 
 	coalesceMu      sync.Mutex
 	coalescePending map[string]Event
-	coalesceTimer   *time.Timer
+	coalesceArmed   bool
 }
 
 func NewServer(path string, handler Handler) *Server {
-	return &Server{path: path, handler: handler}
+	return &Server{path: path, handler: handler, conns: map[*clientConn]struct{}{}}
 }
 
 func (s *Server) Listen() error {
@@ -67,37 +75,85 @@ func (s *Server) Serve() error {
 	for {
 		conn, err := s.ln.Accept()
 		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
 			return err
 		}
-		s.wg.Add(1)
-		go func(c net.Conn) {
+		cc := &clientConn{conn: conn}
+		if !s.track(cc) {
+			_ = conn.Close()
+			continue
+		}
+		go func() {
 			defer s.wg.Done()
-			s.handleConn(c)
-		}(conn)
+			s.handleConn(cc)
+		}()
 	}
 }
 
 func (s *Server) Close() error {
-	if s.ln == nil {
-		return nil
-	}
-	err := s.ln.Close()
-	s.wg.Wait()
-	s.mu.Lock()
-	for _, c := range s.clients {
-		_ = c.conn.Close()
-	}
-	s.clients = nil
-	s.mu.Unlock()
-	_ = os.Remove(s.path)
-	return err
+	s.closeOnce.Do(func() {
+		if s.ln == nil {
+			return
+		}
+		s.closeErr = s.ln.Close()
+		s.mu.Lock()
+		s.closed = true
+		for c := range s.conns {
+			_ = c.conn.Close()
+		}
+		s.mu.Unlock()
+		s.wg.Wait()
+		_ = os.Remove(s.path)
+	})
+	return s.closeErr
 }
 
-// onClientDisconnect releases topic subscriptions for a dropped client connection.
-func (s *Server) onClientDisconnect() {
-	if s.OnDisconnect != nil {
-		s.OnDisconnect()
+func (s *Server) track(c *clientConn) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return false
 	}
+	s.wg.Add(1)
+	s.conns[c] = struct{}{}
+	return true
+}
+
+func (s *Server) untrack(c *clientConn) {
+	s.mu.Lock()
+	delete(s.conns, c)
+	s.mu.Unlock()
+	s.setViz(c, false)
+	_ = c.conn.Close()
+}
+
+func (s *Server) subscribe(c *clientConn) {
+	s.mu.Lock()
+	c.subscribed = true
+	s.mu.Unlock()
+}
+
+func (s *Server) setViz(c *clientConn, on bool) {
+	s.vizMu.Lock()
+	defer s.vizMu.Unlock()
+	if c.viz == on {
+		return
+	}
+	c.viz = on
+	delta := int32(-1)
+	if on {
+		delta = 1
+	}
+	active := s.vizSubs.Add(delta) > 0
+	if s.OnVizChange != nil {
+		s.OnVizChange(active)
+	}
+}
+
+func (s *Server) HasVizClients() bool {
+	return s.vizSubs.Load() > 0
 }
 
 func (s *Server) Broadcast(ev Event) {
@@ -110,9 +166,13 @@ func (s *Server) Broadcast(ev Event) {
 
 func (s *Server) HasEventClients() bool {
 	s.mu.Lock()
-	n := len(s.clients)
-	s.mu.Unlock()
-	return n > 0
+	defer s.mu.Unlock()
+	for c := range s.conns {
+		if c.subscribed {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) broadcastImmediate(ev Event) {
@@ -122,44 +182,16 @@ func (s *Server) broadcastImmediate(ev Event) {
 	}
 	b = append(b, '\n')
 	s.mu.Lock()
-	clients := append([]*clientConn(nil), s.clients...)
+	clients := make([]*clientConn, 0, len(s.conns))
+	for c := range s.conns {
+		if c.subscribed {
+			clients = append(clients, c)
+		}
+	}
 	s.mu.Unlock()
-	alive := make([]*clientConn, 0, len(clients))
 	for _, c := range clients {
-		if err := c.writeRaw(b); err != nil {
-			_ = c.conn.Close()
-			continue
-		}
-		alive = append(alive, c)
+		_ = c.writeRaw(b)
 	}
-	s.mu.Lock()
-	s.clients = alive
-	s.mu.Unlock()
-}
-
-func (c *clientConn) writeRaw(b []byte) error {
-	c.mu.Lock()
-	_, err := c.conn.Write(b)
-	c.mu.Unlock()
-	return err
-}
-
-func (s *Server) addClient(c *clientConn) {
-	s.mu.Lock()
-	s.clients = append(s.clients, c)
-	s.mu.Unlock()
-}
-
-func (s *Server) removeClient(c *clientConn) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := s.clients[:0]
-	for _, client := range s.clients {
-		if client != c {
-			out = append(out, client)
-		}
-	}
-	s.clients = out
 }
 
 func responseFromError(id int, err error) Response {
@@ -173,19 +205,10 @@ func responseFromError(id int, err error) Response {
 	return resp
 }
 
-func (s *Server) handleConn(conn net.Conn) {
-	defer conn.Close()
-	cc := &clientConn{conn: conn}
-	sc := bufio.NewScanner(conn)
+func (s *Server) handleConn(cc *clientConn) {
+	defer s.untrack(cc)
+	sc := bufio.NewScanner(cc.conn)
 	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
-	subscribed := false
-	onDisconnect := func() {
-		if subscribed {
-			s.removeClient(cc)
-			s.onClientDisconnect()
-		}
-	}
-	defer onDisconnect()
 	for sc.Scan() {
 		line := sc.Bytes()
 		var req Request
@@ -193,9 +216,13 @@ func (s *Server) handleConn(conn net.Conn) {
 			_ = cc.writeJSON(responseFromError(0, ErrInvalidParams("invalid request")))
 			continue
 		}
-		if req.Method == "subscribe" && !subscribed {
-			subscribed = true
-			s.addClient(cc)
+		switch req.Method {
+		case "subscribe":
+			s.subscribe(cc)
+		case "viz.subscribe":
+			s.setViz(cc, true)
+		case "viz.unsubscribe":
+			s.setViz(cc, false)
 		}
 		if req.ID == 0 {
 			go func(r Request) {
@@ -204,23 +231,20 @@ func (s *Server) handleConn(conn net.Conn) {
 			continue
 		}
 		if isSlowMethod(req.Method) {
-			go func(r Request) {
-				data, err := s.handler(r)
-				if err != nil {
-					_ = cc.writeJSON(responseFromError(r.ID, err))
-				} else {
-					_ = cc.writeJSON(Response{ID: r.ID, OK: true, Data: data})
-				}
-			}(req)
+			go s.respond(cc, req)
 			continue
 		}
-		data, err := s.handler(req)
-		if err != nil {
-			_ = cc.writeJSON(responseFromError(req.ID, err))
-		} else {
-			_ = cc.writeJSON(Response{ID: req.ID, OK: true, Data: data})
-		}
+		s.respond(cc, req)
 	}
+}
+
+func (s *Server) respond(cc *clientConn, req Request) {
+	data, err := s.handler(req)
+	if err != nil {
+		_ = cc.writeJSON(responseFromError(req.ID, err))
+		return
+	}
+	_ = cc.writeJSON(Response{ID: req.ID, OK: true, Data: data})
 }
 
 func Call(path string, req Request) (Response, error) {

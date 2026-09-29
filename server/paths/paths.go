@@ -8,22 +8,24 @@ import (
 )
 
 type Env struct {
-	MusicRoot      string
-	StateDir       string
-	CacheDir       string
-	MusicConfig    string
-	PlayerState    string
-	PlaylistDir    string
-	SocketPath     string
-	DaemonLock     string
-	RepoRoot       string
-	DisplayArtDir  string
-	LikesFile      string
-	TracksCacheDir string
-	WaveformDir    string
-	ArtDir         string
-	LibraryDB      string
-	ScrobbleLog    string
+	MusicRoot       string
+	StateDir        string
+	CacheDir        string
+	MusicConfig     string
+	PlayerState     string
+	PlaylistDir     string
+	SocketPath      string
+	DaemonLock      string
+	RepoRoot        string
+	DisplayArtDir   string
+	LikesFile       string
+	TracksCacheDir  string
+	WaveformDir     string
+	ArtDir          string
+	LibraryDB       string
+	ScrobbleLog     string
+	ScrobblePending string
+	DaemonLog       string
 }
 
 func Load(repoRoot string) Env {
@@ -51,22 +53,24 @@ func Load(repoRoot string) Env {
 		repo = "."
 	}
 	return Env{
-		MusicRoot:      root,
-		StateDir:       state,
-		CacheDir:       cache,
-		MusicConfig:    configPath,
-		PlayerState:    filepath.Join(state, "player.json"),
-		PlaylistDir:    filepath.Join(state, "playlists"),
-		SocketPath:     socket,
-		DaemonLock:     filepath.Join(state, "daemon.lock"),
-		RepoRoot:       repo,
-		DisplayArtDir:  filepath.Join(xdgCache(), "omarchy", "display-art"),
-		LikesFile:      filepath.Join(state, "likes.json"),
-		TracksCacheDir: filepath.Join(cache, "tracks"),
-		WaveformDir:    filepath.Join(cache, "waveforms"),
-		ArtDir:         filepath.Join(cache, "art"),
-		LibraryDB:      filepath.Join(cache, "library.sqlite3"),
-		ScrobbleLog:    filepath.Join(state, "scrobble.jsonl"),
+		MusicRoot:       root,
+		StateDir:        state,
+		CacheDir:        cache,
+		MusicConfig:     configPath,
+		PlayerState:     filepath.Join(state, "player.json"),
+		PlaylistDir:     filepath.Join(state, "playlists"),
+		SocketPath:      socket,
+		DaemonLock:      filepath.Join(state, "daemon.lock"),
+		RepoRoot:        repo,
+		DisplayArtDir:   filepath.Join(xdgCache(), "omarchy", "display-art"),
+		LikesFile:       filepath.Join(state, "likes.json"),
+		TracksCacheDir:  filepath.Join(cache, "tracks"),
+		WaveformDir:     filepath.Join(cache, "waveforms"),
+		ArtDir:          filepath.Join(cache, "art"),
+		LibraryDB:       filepath.Join(cache, "library.sqlite3"),
+		ScrobbleLog:     filepath.Join(state, "scrobble.jsonl"),
+		ScrobblePending: filepath.Join(state, "scrobble-pending.json"),
+		DaemonLog:       filepath.Join(state, "daemon.log"),
 	}
 }
 

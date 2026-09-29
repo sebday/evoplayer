@@ -24,7 +24,7 @@ func (d *Daemon) scheduleLibraryScan(ctx context.Context) {
 }
 
 func (d *Daemon) startBootstrapScan() bool {
-	env := library.EnvFrom(d.Env)
+	env := library.EnvFrom(d.env())
 	need, err := library.NeedsBootstrap(env)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "evoplayer: warn: library scan check: %v\n", err)
@@ -40,7 +40,6 @@ func (d *Daemon) startBootstrapScan() bool {
 		fmt.Fprintf(os.Stderr, "evoplayer: warn: library scan: %v\n", err)
 		return false
 	}
-	d.broadcastJob()
 	return true
 }
 
@@ -107,8 +106,8 @@ func (d *Daemon) syncLibraryOnce(ctx context.Context) {
 }
 
 func (d *Daemon) runLibrarySync(ctx context.Context) ([]string, error) {
-	env := library.EnvFrom(d.Env)
-	if err := d.runArtMaintain(); err != nil {
+	env := library.EnvFrom(d.env())
+	if err := d.runArtMaintain(false); err != nil {
 		fmt.Fprintf(os.Stderr, "evoplayer: warn: art maintain: %v\n", err)
 	}
 	need, err := library.NeedsScan(env)
@@ -125,7 +124,7 @@ func (d *Daemon) runLibrarySync(ctx context.Context) ([]string, error) {
 	status.InvalidateAllMeta()
 	d.broadcastState()
 	if len(res.Paths) > 0 {
-		d.warm.EnqueueMany(res.Paths, warm.PriorityLow, true)
+		d.warm.EnqueueMany(res.Paths, warm.PriorityLow)
 	}
 	return res.Paths, nil
 }

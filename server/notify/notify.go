@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
@@ -17,12 +18,16 @@ const AppID = "evo.evoplayer"
 // Match evo.monitors Service.qml low popup duration default.
 const LowTimeoutMs = 3000
 
+var hasOmarchy = sync.OnceValue(func() bool {
+	_, err := exec.LookPath("omarchy")
+	return err == nil
+})
+
 func Enabled() bool {
 	if os.Getenv("EVOPLAYER_NOTIFY") == "0" {
 		return false
 	}
-	_, err := exec.LookPath("omarchy")
-	return err == nil
+	return hasOmarchy()
 }
 
 func send(icon, summary, body, urgency string, timeoutMs int) {
@@ -51,7 +56,9 @@ func send(icon, summary, body, urgency string, timeoutMs int) {
 		args = append(args, body)
 	}
 	cmd := exec.Command("omarchy", args...)
-	_ = cmd.Start()
+	if cmd.Start() == nil {
+		go func() { _ = cmd.Wait() }()
+	}
 }
 
 func trackSummary(st playback.Status) string {

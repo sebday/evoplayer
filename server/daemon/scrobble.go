@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/sebday/evoplayer/server/ipc"
@@ -14,7 +15,11 @@ import (
 	"github.com/sebday/evoplayer/server/secrets"
 )
 
-const scrobbleDedupeWindow = 3 * time.Second
+const (
+	scrobbleDedupeWindow  = 3 * time.Second
+	scrobblePendingBatch  = 50
+	scrobblePendingMaxAge = 14 * 24 * time.Hour
+)
 
 func warnLastfmCredentialsMissing() {
 	if os.Getenv("LASTFM_API_KEY") != "" &&
@@ -36,7 +41,7 @@ func (d *Daemon) handleScrobble(req ipc.Request) (interface{}, error) {
 		_ = ipc.DecodeParams(req.Params, &p)
 		return nil, d.scrobbleSubmit(p.Started)
 	default:
-		return nil, fmt.Errorf("unknown scrobble method: %s", req.Method)
+		return nil, ipc.ErrUnknownMethod(req.Method)
 	}
 }
 
@@ -92,15 +97,21 @@ func (d *Daemon) autoScrobble(st playback.Status) {
 	d.scrobblePrev = st
 	d.scrobbleMu.Unlock()
 
-	if !configured {
+	if !configured || (nowPlaying == nil && submit == nil) {
 		return
 	}
-	if nowPlaying != nil {
-		_ = d.scrobbleNowPlayingStatus(*nowPlaying)
-	}
-	if submit != nil {
-		_ = d.scrobbleSubmitStatus(*submit, submitAt)
-	}
+	go func() {
+		if nowPlaying != nil {
+			if err := d.scrobbleNowPlayingStatus(*nowPlaying); err != nil {
+				fmt.Fprintf(os.Stderr, "evoplayer: scrobble now playing: %v\n", err)
+			}
+		}
+		if submit != nil {
+			if err := d.scrobbleSubmitStatus(*submit, submitAt); err != nil {
+				fmt.Fprintf(os.Stderr, "evoplayer: scrobble submit: %v\n", err)
+			}
+		}
+	}()
 }
 
 func (d *Daemon) resetScrobbleSessionLocked() {
@@ -151,11 +162,11 @@ func scrobbleSubmitDue(scrobblePath string, startPos float64, startedAt int64, s
 }
 
 func (d *Daemon) scrobbleNowPlaying() error {
-	return d.scrobbleNowPlayingStatus(enrichTrack(d.Env, d.Actor.Snapshot()))
+	return d.scrobbleNowPlayingStatus(enrichTrack(d.env(), d.Actor.Snapshot()))
 }
 
 func (d *Daemon) scrobbleNowPlayingStatus(st playback.Status) error {
-	st = enrichTrack(d.Env, st)
+	st = enrichTrack(d.env(), st)
 	if st.Path == "" || st.Artist == "" || st.Title == "" {
 		return nil
 	}
@@ -166,15 +177,15 @@ func (d *Daemon) scrobbleNowPlayingStatus(st playback.Status) error {
 	if err := scrobbleAPI("track.updateNowPlaying", st, 0); err != nil {
 		return err
 	}
-	return recordScrobble(d.Env.ScrobbleLog, st, "nowplaying", 0)
+	return recordScrobble(d.env().ScrobbleLog, st, "nowplaying", 0)
 }
 
 func (d *Daemon) scrobbleSubmit(started int64) error {
-	return d.scrobbleSubmitStatus(enrichTrack(d.Env, d.Actor.Snapshot()), started)
+	return d.scrobbleSubmitStatus(enrichTrack(d.env(), d.Actor.Snapshot()), started)
 }
 
 func (d *Daemon) scrobbleSubmitStatus(st playback.Status, started int64) error {
-	st = enrichTrack(d.Env, st)
+	st = enrichTrack(d.env(), st)
 	if st.Path == "" || st.Artist == "" || st.Title == "" {
 		return nil
 	}
@@ -189,9 +200,118 @@ func (d *Daemon) scrobbleSubmitStatus(st playback.Status, started int64) error {
 		return nil
 	}
 	if err := scrobbleAPI("track.scrobble", st, started); err != nil {
+		if !strings.Contains(err.Error(), "ignored scrobble") {
+			if qerr := d.queuePendingScrobble(st, started); qerr != nil {
+				fmt.Fprintf(os.Stderr, "evoplayer: scrobble queue: %v\n", qerr)
+			}
+		}
 		return err
 	}
-	return recordScrobble(d.Env.ScrobbleLog, st, "submit", started)
+	if err := recordScrobble(d.env().ScrobbleLog, st, "submit", started); err != nil {
+		return err
+	}
+	go d.flushPendingScrobbles()
+	return nil
+}
+
+type pendingScrobble struct {
+	Path     string  `json:"path"`
+	Artist   string  `json:"artist"`
+	Title    string  `json:"title"`
+	Album    string  `json:"album,omitempty"`
+	Duration float64 `json:"duration,omitempty"`
+	Started  int64   `json:"started"`
+}
+
+func (p pendingScrobble) status() playback.Status {
+	return playback.Status{Path: p.Path, Artist: p.Artist, Title: p.Title, Album: p.Album, Duration: p.Duration}
+}
+
+func (d *Daemon) queuePendingScrobble(st playback.Status, started int64) error {
+	d.scrobblePendingMu.Lock()
+	defer d.scrobblePendingMu.Unlock()
+	path := d.env().ScrobblePending
+	pending := readPendingScrobbles(path)
+	pending = append(pending, pendingScrobble{
+		Path:     st.Path,
+		Artist:   st.Artist,
+		Title:    st.Title,
+		Album:    st.Album,
+		Duration: st.Duration,
+		Started:  started,
+	})
+	return writePendingScrobbles(path, pending)
+}
+
+// flushPendingScrobbles resubmits queued scrobbles oldest first; Last.fm rejects entries older than 14 days.
+func (d *Daemon) flushPendingScrobbles() {
+	if !secrets.LastfmConfigured() {
+		return
+	}
+	d.scrobblePendingMu.Lock()
+	defer d.scrobblePendingMu.Unlock()
+	env := d.env()
+	pending := readPendingScrobbles(env.ScrobblePending)
+	if len(pending) == 0 {
+		return
+	}
+	cutoff := time.Now().Add(-scrobblePendingMaxAge).Unix()
+	keep := pending[:0]
+	for _, p := range pending {
+		if p.Started >= cutoff {
+			keep = append(keep, p)
+		}
+	}
+	sent := 0
+	for _, p := range keep {
+		if sent >= scrobblePendingBatch {
+			break
+		}
+		st := p.status()
+		if err := scrobbleAPI("track.scrobble", st, p.Started); err != nil {
+			if !strings.Contains(err.Error(), "ignored scrobble") {
+				fmt.Fprintf(os.Stderr, "evoplayer: scrobble pending: %v\n", err)
+				break
+			}
+		} else {
+			_ = recordScrobble(env.ScrobbleLog, st, "submit", p.Started)
+		}
+		sent++
+	}
+	if err := writePendingScrobbles(env.ScrobblePending, keep[sent:]); err != nil {
+		fmt.Fprintf(os.Stderr, "evoplayer: scrobble queue: %v\n", err)
+	}
+}
+
+func readPendingScrobbles(path string) []pendingScrobble {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	var out []pendingScrobble
+	if err := json.Unmarshal(b, &out); err != nil {
+		fmt.Fprintf(os.Stderr, "evoplayer: scrobble queue: %v\n", err)
+		return nil
+	}
+	return out
+}
+
+func writePendingScrobbles(path string, pending []pendingScrobble) error {
+	if len(pending) == 0 {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	b, err := json.Marshal(pending)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func scrobbleDedupeKey(method string, st playback.Status, started int64) string {

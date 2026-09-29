@@ -27,6 +27,7 @@ type Manager struct {
 	mu                 sync.Mutex
 	current            *State
 	cancel             func()
+	done               chan struct{}
 	seq                int
 	onChange           func()
 	lastProgressNotify time.Time
@@ -59,8 +60,10 @@ func (m *Manager) Start(name string, fn func(ctx context.Context) error) (State,
 		StartedAt: time.Now().Format(time.RFC3339),
 		Log:       "",
 	}
+	done := make(chan struct{})
 	m.current = &st
 	m.cancel = cancel
+	m.done = done
 	m.lastProgressNotify = time.Time{}
 	startCb := m.onChange
 	m.mu.Unlock()
@@ -69,6 +72,7 @@ func (m *Manager) Start(name string, fn func(ctx context.Context) error) (State,
 	}
 
 	go func() {
+		defer close(done)
 		err := fn(ctx)
 		cancel()
 		m.mu.Lock()
@@ -112,6 +116,21 @@ func (m *Manager) Cancel() bool {
 	}
 	cancel()
 	return true
+}
+
+// CancelAndWait cancels the running job and waits up to timeout for it to return.
+func (m *Manager) CancelAndWait(timeout time.Duration) {
+	m.mu.Lock()
+	cancel, done := m.cancel, m.done
+	m.mu.Unlock()
+	if cancel == nil {
+		return
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+	}
 }
 
 func (m *Manager) AppendLog(line string) {

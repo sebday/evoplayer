@@ -70,7 +70,7 @@ func (d *Daemon) initMPRIS() {
 }
 
 func (d *Daemon) broadcastState() {
-	st := status.EnrichLight(d.Env, d.Actor.Snapshot())
+	st := status.EnrichLight(d.env(), d.Actor.Snapshot())
 	d.Server.Broadcast(ipc.Event{Event: "state", Data: st})
 	if d.mpris != nil {
 		d.mpris.Sync(st)
@@ -78,7 +78,7 @@ func (d *Daemon) broadcastState() {
 }
 
 func (d *Daemon) broadcastStateFull() {
-	st := status.EnrichFull(d.Env, d.Actor.Snapshot())
+	st := status.EnrichFull(d.env(), d.Actor.Snapshot())
 	d.Server.Broadcast(ipc.Event{Event: "state", Data: st})
 	if d.mpris != nil {
 		d.mpris.Sync(st)
@@ -89,15 +89,9 @@ func (d *Daemon) broadcastViz(levels []float32) {
 	if d.vizFrame != nil {
 		_ = d.vizFrame.Write(levels)
 	} else {
-		_ = viz.WriteFrame(viz.FramePath(d.Env.SocketPath), levels)
+		_ = viz.WriteFrame(viz.FramePath(d.env().SocketPath), levels)
 	}
-	if !d.Server.HasEventClients() {
-		return
-	}
-	d.vizMu.Lock()
-	subs := d.vizSubs
-	d.vizMu.Unlock()
-	if subs <= 0 {
+	if !d.Server.HasVizClients() || !d.Server.HasEventClients() {
 		return
 	}
 	out := make([]float64, len(levels))
@@ -113,7 +107,7 @@ func (d *Daemon) broadcastViz(levels []float32) {
 }
 
 func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
-	libEnv := library.EnvFrom(d.Env)
+	libEnv := library.EnvFrom(d.env())
 	switch req.Method {
 	case "library.meta":
 		var p struct {
@@ -122,7 +116,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		playlist := readPlaylist(d.Env.PlayerState)
+		playlist := readPlaylist(d.env().PlayerState)
 		row, err := library.Meta(libEnv, p.Path, playlist)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -185,7 +179,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		return find.Tracks(d.Env.TracksCacheDir, p.Mode, p.Query)
+		return find.Tracks(d.env().TracksCacheDir, p.Mode, p.Query)
 	case "library.soundcloud.search":
 		var search struct {
 			Query string `json:"query"`
@@ -197,13 +191,13 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if strings.TrimSpace(search.Query) == "" {
 			return nil, ipc.ErrInvalidParams("query required")
 		}
-		tracks, err := soundcloud.Search(d.Env, search.Query, search.Limit)
+		tracks, err := soundcloud.Search(d.env(), search.Query, search.Limit)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"tracks": tracks}, nil
 	case "library.playlist.list":
-		return playlist.ListIndex(playlist.EnvFrom(d.Env))
+		return playlist.ListIndex(playlist.EnvFrom(d.env()))
 	case "library.playlist.tracks":
 		var p struct {
 			Name   string `json:"name"`
@@ -213,7 +207,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		return playlist.TracksPageFor(playlist.EnvFrom(d.Env), p.Name, p.Offset, p.Limit)
+		return playlist.TracksPageFor(playlist.EnvFrom(d.env()), p.Name, p.Offset, p.Limit)
 	case "library.playlist.star":
 		var p struct {
 			Name string `json:"name"`
@@ -221,7 +215,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		return playlist.StarToggle(playlist.EnvFrom(d.Env), p.Name)
+		return playlist.StarToggle(playlist.EnvFrom(d.env()), p.Name)
 	case "library.favorite.toggle":
 		var p struct {
 			Path string `json:"path"`
@@ -229,12 +223,12 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		row, err := playlist.FavoriteToggle(playlist.EnvFrom(d.Env), p.Path)
+		row, err := playlist.FavoriteToggle(playlist.EnvFrom(d.env()), p.Path)
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
 		status.InvalidateMeta(p.Path)
-		notify.Favorite(d.Env, row.Liked, p.Path)
+		notify.Favorite(d.env(), row.Liked, p.Path)
 		return row, nil
 	case "library.track.move":
 		var p struct {
@@ -244,12 +238,12 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		libEnv := library.EnvFrom(d.Env)
+		libEnv := library.EnvFrom(d.env())
 		res, err := library.MoveTrackToFolder(libEnv, p.Path, p.Folder)
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
-		_ = playlist.OnTrackMoved(playlist.EnvFrom(d.Env), res.From, res.To)
+		_ = playlist.OnTrackMoved(playlist.EnvFrom(d.env()), res.From, res.To)
 		_ = d.Actor.RelocatePath(res.From, res.To)
 		status.InvalidateMeta(res.From)
 		status.InvalidateMeta(res.To)
@@ -278,7 +272,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		libEnv := library.EnvFrom(d.Env)
+		libEnv := library.EnvFrom(d.env())
 		row, err := library.UpdateTrackTags(libEnv, p.Path, library.TrackTagsPatch{
 			Title:  p.Title,
 			Artist: p.Artist,
@@ -295,7 +289,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		}
 		return row, nil
 	case "library.current.load":
-		return playlist.LoadCurrent(playlist.EnvFrom(d.Env))
+		return playlist.LoadCurrent(playlist.EnvFrom(d.env()))
 	case "library.current.save":
 		var p struct {
 			Paths []string `json:"paths"`
@@ -306,7 +300,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if len(p.Paths) == 0 {
 			return nil, fmt.Errorf("current save: no paths")
 		}
-		env := playlist.EnvFrom(d.Env)
+		env := playlist.EnvFrom(d.env())
 		paths := append([]string(nil), p.Paths...)
 		changed, err := playlist.SaveCurrentFast(env, paths)
 		if err := wrapJobErr(err); err != nil {
@@ -321,13 +315,13 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		libEnv := library.EnvFrom(d.Env)
+		libEnv := library.EnvFrom(d.env())
 		row, err := library.Meta(libEnv, p.Path, "")
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
 		path := p.Path
-		d.warm.Enqueue(path, warm.PriorityHigh, true)
+		d.warm.Enqueue(path, warm.PriorityHigh)
 		return warm.Result{
 			Path:  path,
 			Art:   row.Art,
@@ -343,7 +337,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		paths := append([]string(nil), p.Paths...)
-		d.warm.EnqueueMany(paths, warm.PriorityNormal, true)
+		d.warm.EnqueueMany(paths, warm.PriorityNormal)
 		return []warm.Result{}, nil
 	case "library.warm.waveform":
 		var p struct {
@@ -352,7 +346,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		file, err := warm.WaveformForTrack(d.Env, p.Path)
+		file, err := warm.WaveformForTrack(d.env(), p.Path)
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
@@ -395,9 +389,9 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 				return err
 			}
 			d.jobs.SetResult(map[string]any{
-				"files":   library.ListIncoming(library.EnvFrom(d.Env)),
-				"folders": library.GenreChoices(library.EnvFrom(d.Env)),
-				"genres":  library.GenreChoices(library.EnvFrom(d.Env)),
+				"files":   library.ListIncoming(library.EnvFrom(d.env())),
+				"folders": library.GenreChoices(library.EnvFrom(d.env())),
+				"genres":  library.GenreChoices(library.EnvFrom(d.env())),
 			})
 			status.InvalidateAllMeta()
 			d.broadcastState()
@@ -407,7 +401,6 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
-		d.broadcastJob()
 		return st, nil
 	case "library.cache":
 		var p struct {
@@ -421,13 +414,11 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 			}
 			status.InvalidateAllMeta()
 			d.broadcastState()
-			d.broadcastJob()
 			return nil
 		})
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
-		d.broadcastJob()
 		return st, nil
 	case "library.soundcloud.download":
 		var p struct {
@@ -438,14 +429,12 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 			if err := d.runSoundCloudDownloadJob(ctx, p.Import); err != nil {
 				return err
 			}
-			d.broadcastJob()
 			d.scheduleArtMaintain()
 			return nil
 		})
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
-		d.broadcastJob()
 		return st, nil
 	case "library.download":
 		var p struct {
@@ -467,7 +456,7 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 			if err != nil {
 				return err
 			}
-			env := library.EnvFrom(d.Env)
+			env := library.EnvFrom(d.env())
 			folders := library.GenreChoices(env)
 			d.jobs.SetResult(map[string]any{
 				"files":   library.ListIncoming(env),
@@ -478,28 +467,23 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 				status.InvalidateAllMeta()
 				d.broadcastState()
 			}
-			d.broadcastJob()
 			d.scheduleArtMaintain()
 			return nil
 		})
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
-		d.broadcastJob()
 		return st, nil
 	case "library.art.maintain":
 		st, err := d.jobs.Start("art-maintain", func(context.Context) error {
-			err := library.Maintain(library.EnvFrom(d.Env))
-			d.broadcastJob()
-			return err
+			return d.runArtMaintain(true)
 		})
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
-		d.broadcastJob()
 		return st, nil
 	default:
-		return nil, fmt.Errorf("unknown job method: %s", req.Method)
+		return nil, ipc.ErrUnknownMethod(req.Method)
 	}
 }
 

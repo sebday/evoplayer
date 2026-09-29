@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/playback"
 )
+
+var writeMu sync.Mutex
 
 type playerStatePayload struct {
 	Path     string  `json:"path,omitempty"`
@@ -28,7 +31,7 @@ func readPlayerState(env paths.Env) (playerStatePayload, error) {
 	if err != nil {
 		return out, err
 	}
-	if json.Unmarshal(b, &out) != nil {
+	if err := json.Unmarshal(b, &out); err != nil {
 		return playerStatePayload{}, err
 	}
 	return out, nil
@@ -42,10 +45,38 @@ func writePlayerState(env paths.Env, payload playerStatePayload) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(env.PlayerState), 0o755); err != nil {
+	dir := filepath.Dir(env.PlayerState)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(env.PlayerState, b, 0o644)
+	tmp, err := os.CreateTemp(dir, ".player-*.json")
+	if err != nil {
+		return err
+	}
+	_, werr := tmp.Write(b)
+	cerr := tmp.Close()
+	if werr == nil {
+		werr = cerr
+	}
+	if werr == nil {
+		werr = os.Chmod(tmp.Name(), 0o644)
+	}
+	if werr == nil {
+		werr = os.Rename(tmp.Name(), env.PlayerState)
+	}
+	if werr != nil {
+		_ = os.Remove(tmp.Name())
+	}
+	return werr
+}
+
+// updatePlayerState serializes read-modify-write of player.json; unreadable state is replaced.
+func updatePlayerState(env paths.Env, fn func(*playerStatePayload)) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	payload, _ := readPlayerState(env)
+	fn(&payload)
+	return writePlayerState(env, payload)
 }
 
 func clampVolume(vol int) int {
@@ -69,34 +100,25 @@ func SavedVolume(env paths.Env) (int, bool) {
 
 // WriteVolume persists the output level without requiring a loaded track.
 func WriteVolume(env paths.Env, volume int) error {
-	payload, err := readPlayerState(env)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	v := clampVolume(volume)
-	payload.Volume = &v
-	return writePlayerState(env, payload)
+	return updatePlayerState(env, func(payload *playerStatePayload) {
+		v := clampVolume(volume)
+		payload.Volume = &v
+	})
 }
 
 // Write saves the current track so a later daemon start can restore it paused.
 func Write(env paths.Env, st playback.Status) error {
-	if env.PlayerState == "" {
+	if env.PlayerState == "" || st.Path == "" {
 		return nil
 	}
-	payload, err := readPlayerState(env)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	if st.Path == "" {
-		return nil
-	}
-	payload.Path = st.Path
-	payload.Genre = st.Genre
-	payload.Playlist = st.Playlist
-	payload.Position = st.Position
-	payload.Title = st.Title
-	payload.Artist = st.Artist
-	v := clampVolume(st.Volume)
-	payload.Volume = &v
-	return writePlayerState(env, payload)
+	return updatePlayerState(env, func(payload *playerStatePayload) {
+		payload.Path = st.Path
+		payload.Genre = st.Genre
+		payload.Playlist = st.Playlist
+		payload.Position = st.Position
+		payload.Title = st.Title
+		payload.Artist = st.Artist
+		v := clampVolume(st.Volume)
+		payload.Volume = &v
+	})
 }

@@ -19,77 +19,50 @@ import (
 const workerKillGrace = 3 * time.Second
 
 func (d *Daemon) runSoundCloudDownloadJob(ctx context.Context, importAfter bool) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
+	args := []string{"soundcloud-download"}
+	if importAfter {
+		args = append(args, "--import")
 	}
-	return d.pauseWarmAndSupervise(ctx, soundCloudWorkerCmd(exe, importAfter))
+	return d.runWorkerJob(ctx, args...)
 }
 
 func (d *Daemon) runImportJob(ctx context.Context) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	return d.pauseWarmAndSupervise(ctx, importWorkerCmd(exe))
+	return d.runWorkerJob(ctx, "import-incoming")
 }
 
 func (d *Daemon) runDownloadURLJob(ctx context.Context, rawURL string, importAfter bool) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
+	args := []string{"download-url", rawURL}
+	if importAfter {
+		args = append(args, "--import")
 	}
-	return d.pauseWarmAndSupervise(ctx, downloadURLWorkerCmd(exe, rawURL, importAfter))
+	return d.runWorkerJob(ctx, args...)
 }
 
 func (d *Daemon) runCacheJob(ctx context.Context, genre string, force bool) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	return d.pauseWarmAndSupervise(ctx, cacheWorkerCmd(exe, genre, force))
-}
-
-func (d *Daemon) pauseWarmAndSupervise(ctx context.Context, cmd *exec.Cmd) error {
-	d.warm.ClearPending()
-	d.warm.Pause()
-	defer d.warm.Resume()
-	return superviseWorker(ctx, d.jobs, cmd)
-}
-
-func isSoundCloudLikesURL(rawURL string) bool {
-	return download.ClassifyURL(rawURL) == download.KindSCLikes
-}
-
-func importWorkerCmd(exe string) *exec.Cmd {
-	return workerCmd(exe, "_job", "import-incoming")
-}
-
-func soundCloudWorkerCmd(exe string, importAfter bool) *exec.Cmd {
-	args := []string{"_job", "soundcloud-download"}
-	if importAfter {
-		args = append(args, "--import")
-	}
-	return workerCmd(exe, args...)
-}
-
-func downloadURLWorkerCmd(exe, rawURL string, importAfter bool) *exec.Cmd {
-	args := []string{"_job", "download-url", rawURL}
-	if importAfter {
-		args = append(args, "--import")
-	}
-	return workerCmd(exe, args...)
-}
-
-func cacheWorkerCmd(exe, genre string, force bool) *exec.Cmd {
-	args := []string{"_job", "cache"}
+	args := []string{"cache"}
 	if force {
 		args = append(args, "--force")
 	}
 	if genre != "" {
 		args = append(args, "--genre", genre)
 	}
-	return workerCmd(exe, args...)
+	return d.runWorkerJob(ctx, args...)
+}
+
+// runWorkerJob runs `evoplayer _job <args>` with background warming paused.
+func (d *Daemon) runWorkerJob(ctx context.Context, args ...string) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	d.warm.ClearPending()
+	d.warm.Pause()
+	defer d.warm.Resume()
+	return superviseWorker(ctx, d.jobs, workerCmd(exe, append([]string{"_job"}, args...)...))
+}
+
+func isSoundCloudLikesURL(rawURL string) bool {
+	return download.ClassifyURL(rawURL) == download.KindSCLikes
 }
 
 func workerCmd(exe string, args ...string) *exec.Cmd {
@@ -113,19 +86,13 @@ func superviseWorker(ctx context.Context, jm jobRelay, cmd *exec.Cmd) error {
 		scanDone <- relayWorkerStdout(stdout, jm)
 	}()
 
-	waitDone := make(chan error, 1)
-	go func() {
-		waitDone <- cmd.Wait()
-	}()
-
 	select {
 	case <-ctx.Done():
-		killWorkerGroup(cmd.Process)
-		<-waitDone
-		<-scanDone
+		killWorkerGroup(cmd.Process.Pid, scanDone)
+		_ = cmd.Wait()
 		return ctx.Err()
-	case err := <-waitDone:
-		scanErr := <-scanDone
+	case scanErr := <-scanDone:
+		err := cmd.Wait()
 		if scanErr != nil {
 			return scanErr
 		}
@@ -143,31 +110,36 @@ func superviseWorker(ctx context.Context, jm jobRelay, cmd *exec.Cmd) error {
 func relayWorkerStdout(r io.Reader, jm jobRelay) error {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	var workerErr error
 	for sc.Scan() {
 		ev, err := worker.ParseEvent(sc.Bytes())
 		if err != nil {
 			continue
 		}
 		if ev.Type == "error" && ev.Message != "" {
-			return errors.New(ev.Message)
+			if workerErr == nil {
+				workerErr = errors.New(ev.Message)
+			}
+			continue
 		}
 		worker.ApplyEvent(jm, ev)
 	}
-	return sc.Err()
+	scanErr := sc.Err()
+	_, _ = io.Copy(io.Discard, r)
+	if workerErr != nil {
+		return workerErr
+	}
+	return scanErr
 }
 
-func killWorkerGroup(proc *os.Process) {
-	if proc == nil {
-		return
-	}
-	pgid := proc.Pid
+// killWorkerGroup stops the worker process group; the unreaped leader keeps pgid from being reused.
+func killWorkerGroup(pgid int, stdoutDone <-chan error) {
 	_ = syscall.Kill(-pgid, syscall.SIGTERM)
-	deadline := time.Now().Add(workerKillGrace)
-	for time.Now().Before(deadline) {
-		if err := proc.Signal(syscall.Signal(0)); err != nil {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
+	select {
+	case <-stdoutDone:
+	case <-time.After(workerKillGrace):
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		<-stdoutDone
 	}
 	_ = syscall.Kill(-pgid, syscall.SIGKILL)
 }

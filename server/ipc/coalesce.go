@@ -13,8 +13,9 @@ func (s *Server) coalesceBroadcast(ev Event) {
 		s.coalescePending = make(map[string]Event, 2)
 	}
 	s.coalescePending[ev.Event] = ev
-	if s.coalesceTimer == nil {
-		s.coalesceTimer = time.AfterFunc(coalesceWindow, s.flushCoalesced)
+	if !s.coalesceArmed {
+		s.coalesceArmed = true
+		time.AfterFunc(coalesceWindow, s.flushCoalesced)
 	}
 	s.coalesceMu.Unlock()
 }
@@ -23,9 +24,15 @@ func (s *Server) flushCoalesced() {
 	s.coalesceMu.Lock()
 	pending := s.coalescePending
 	s.coalescePending = nil
-	s.coalesceTimer = nil
 	s.coalesceMu.Unlock()
 	for _, ev := range pending {
 		s.broadcastImmediate(ev)
 	}
+	s.coalesceMu.Lock()
+	if len(s.coalescePending) > 0 {
+		time.AfterFunc(coalesceWindow, s.flushCoalesced)
+	} else {
+		s.coalesceArmed = false
+	}
+	s.coalesceMu.Unlock()
 }

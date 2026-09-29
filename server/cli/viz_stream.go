@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sebday/evoplayer/server/ipc"
 	"github.com/sebday/evoplayer/server/paths"
 )
 
@@ -20,10 +21,18 @@ func cmdVizStream(env paths.Env, exe string, fps int) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	if _, err := IPC(env, "viz.subscribe", nil); err != nil {
+	conn, err := ipc.Dial(env.SocketPath)
+	if err != nil {
 		return err
 	}
-	defer func() { _, _ = IPC(env, "viz.unsubscribe", nil) }()
+	defer conn.Close()
+	resp, err := conn.Call("viz.subscribe", nil)
+	if err != nil {
+		return err
+	}
+	if !resp.OK {
+		return respError(resp)
+	}
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -37,15 +46,12 @@ func cmdVizStream(env paths.Env, exe string, fps int) error {
 		case <-sig:
 			return nil
 		case <-ticker.C:
-			resp, err := IPC(env, "spectrum.get", nil)
+			resp, err := conn.Call("spectrum.get", nil)
 			if err != nil {
 				return err
 			}
 			if !resp.OK {
-				if resp.Code != "" {
-					return fmt.Errorf("%s: %s", resp.Code, resp.Error)
-				}
-				return fmt.Errorf("%s", resp.Error)
+				return respError(resp)
 			}
 			data, ok := resp.Data.(map[string]any)
 			if !ok {
@@ -71,12 +77,16 @@ func cmdSpectrumGet(env paths.Env, exe string) error {
 		return err
 	}
 	if !resp.OK {
-		if resp.Code != "" {
-			return fmt.Errorf("%s: %s", resp.Code, resp.Error)
-		}
-		return fmt.Errorf("%s", resp.Error)
+		return respError(resp)
 	}
 	return printJSON(resp.Data)
+}
+
+func respError(resp ipc.Response) error {
+	if resp.Code != "" {
+		return fmt.Errorf("%s: %s", resp.Code, resp.Error)
+	}
+	return fmt.Errorf("%s", resp.Error)
 }
 
 func levelsToFloat64(raw []any) []float64 {

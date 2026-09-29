@@ -27,13 +27,12 @@ import (
 
 type Daemon struct {
 	Env               paths.Env
+	envMu             sync.RWMutex
 	Actor             *playback.Actor
 	Server            *ipc.Server
 	jobs              *jobs.Manager
 	mpris             mprisCloser
 	lock              *os.File
-	vizMu             sync.Mutex
-	vizSubs           int
 	vizSeq            atomic.Uint64
 	vizFrame          *viz.FrameWriter
 	warm              *warm.Scheduler
@@ -45,6 +44,7 @@ type Daemon struct {
 	scrobbleStartPos  float64
 	scrobbleStartedAt int64
 	scrobbleSubmitted bool
+	scrobblePendingMu sync.Mutex
 	artMaintainMu     sync.Mutex
 	syncMu            sync.Mutex
 	syncing           bool
@@ -63,6 +63,11 @@ type Daemon struct {
 	discoverByID      map[int64]soundcloud.SimilarResult
 	discoverByPath    map[string]int64
 }
+
+const jobShutdownGrace = 10 * time.Second
+
+// lockRetries covers clients briefly probing the lock with LockHeld.
+const lockRetries = 5
 
 type mprisCloser interface {
 	Sync(st playback.Status)
@@ -92,19 +97,13 @@ func New(env paths.Env) *Daemon {
 		traceIPCOut(req, before, d.Actor.Snapshot(), err, time.Since(start))
 		return data, err
 	})
-	d.Server.OnDisconnect = func() {
-		d.vizMu.Lock()
-		if d.vizSubs > 0 {
-			d.vizSubs--
-		}
-		want := d.vizSubs > 0
-		d.vizMu.Unlock()
-		d.Actor.SetVizWanted(want)
+	d.Server.OnVizChange = func(active bool) {
+		d.Actor.SetVizWanted(active)
 	}
 	d.Actor = playback.NewActor(func(st playback.Status) {
 		if st.Path != "" && st.Path != d.lastWarmPath {
 			d.lastWarmPath = st.Path
-			d.warm.Enqueue(st.Path, warm.PriorityHigh, true)
+			d.warm.Enqueue(st.Path, warm.PriorityHigh)
 		}
 		d.autoScrobble(st)
 		d.onPlaybackNotify(st)
@@ -112,8 +111,8 @@ func New(env paths.Env) *Daemon {
 		d.persistPlayerState(st)
 	})
 	if vol, ok := status.SavedVolume(env); ok {
-		d.Actor.SetVolume(vol)
 		d.persistVolume = vol
+		d.Actor.SetVolume(vol)
 	} else {
 		d.persistVolume = -1
 	}
@@ -129,14 +128,14 @@ func New(env paths.Env) *Daemon {
 }
 
 func (d *Daemon) Run() error {
-	if err := d.Env.EnsureDirs(); err != nil {
+	if err := d.env().EnsureDirs(); err != nil {
 		return err
 	}
-	initScrobbleCredentials()
 	if err := d.acquireLock(); err != nil {
 		return err
 	}
 	defer d.releaseLock()
+	initScrobbleCredentials()
 	if err := d.Server.Listen(); err != nil {
 		return fmt.Errorf("ipc listen: %w", err)
 	}
@@ -144,9 +143,8 @@ func (d *Daemon) Run() error {
 	defer d.flushPlayerState()
 	defer d.Actor.CloseOutput()
 	defer d.vizFrame.Close()
-	if d.mpris != nil {
-		defer d.mpris.Close()
-	}
+	defer d.warm.Close()
+	defer d.jobs.CancelAndWait(jobShutdownGrace)
 	if err := d.resumePlayback(false); err != nil {
 		fmt.Fprintf(os.Stderr, "evoplayer: restore: %v\n", err)
 	}
@@ -156,28 +154,36 @@ func (d *Daemon) Run() error {
 		}
 	}()
 	d.initMPRIS()
+	if d.mpris != nil {
+		defer d.mpris.Close()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	d.scheduleLibraryScan(ctx)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sig)
 	go func() {
 		<-sig
-		d.flushPlayerState()
 		_ = d.Server.Close()
 	}()
 	return d.Server.Serve()
 }
 
 func (d *Daemon) acquireLock() error {
-	if err := os.MkdirAll(filepath.Dir(d.Env.DaemonLock), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(d.env().DaemonLock), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(d.Env.DaemonLock, os.O_CREATE|os.O_RDWR, 0o644)
+	f, err := os.OpenFile(d.env().DaemonLock, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
-	if err := lockFile(f); err != nil {
+	err = lockFile(f)
+	for i := 0; err != nil && i < lockRetries; i++ {
+		time.Sleep(20 * time.Millisecond)
+		err = lockFile(f)
+	}
+	if err != nil {
 		_ = f.Close()
 		return fmt.Errorf("daemon already running: %w", err)
 	}
@@ -192,6 +198,7 @@ func (d *Daemon) acquireLock() error {
 
 func (d *Daemon) releaseLock() {
 	if d.lock != nil {
+		_ = d.lock.Truncate(0)
 		_ = unlockFile(d.lock)
 		_ = d.lock.Close()
 		d.lock = nil
@@ -203,9 +210,9 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 	case "capabilities":
 		return capabilities(), nil
 	case "state.get":
-		return status.EnrichLight(d.Env, d.Actor.Snapshot()), nil
+		return status.EnrichLight(d.env(), d.Actor.Snapshot()), nil
 	case "subscribe":
-		return status.EnrichFull(d.Env, d.Actor.Snapshot()), nil
+		return status.EnrichFull(d.env(), d.Actor.Snapshot()), nil
 	case "playback.toggle":
 		st := d.Actor.Snapshot()
 		if st.Path == "" || st.State == "stopped" {
@@ -279,7 +286,7 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		if err := checkQueueRevision(d.Actor.QueueRevision(), p.IfRevision); err != nil {
 			return nil, err
 		}
-		env := playlist.EnvFrom(d.Env)
+		env := playlist.EnvFrom(d.env())
 		if len(p.Paths) > 0 {
 			paths := append([]string(nil), p.Paths...)
 			if _, err := playlist.SaveCurrentFast(env, paths); err != nil {
@@ -366,13 +373,14 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		if err := checkQueueRevision(d.Actor.QueueRevision(), p.IfRevision); err != nil {
 			return nil, err
 		}
-		libEnv := library.EnvFrom(d.Env)
+		denv := d.env()
+		libEnv := library.EnvFrom(denv)
 		rel := strings.Trim(strings.TrimPrefix(p.Path, "/"), "/")
-		if strings.HasPrefix(p.Path, d.Env.MusicRoot) {
-			rel = strings.TrimPrefix(p.Path, d.Env.MusicRoot)
+		if p.Path == denv.MusicRoot || strings.HasPrefix(p.Path, denv.MusicRoot+"/") {
+			rel = strings.TrimPrefix(p.Path, denv.MusicRoot)
 			rel = strings.Trim(strings.TrimPrefix(rel, "/"), "/")
 		}
-		dir := filepath.Join(d.Env.MusicRoot, filepath.FromSlash(rel))
+		dir := filepath.Join(denv.MusicRoot, filepath.FromSlash(rel))
 		paths, err := library.CollectQueuePaths(libEnv, rel, dir)
 		if err != nil {
 			return nil, err
@@ -380,7 +388,7 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		if len(paths) == 0 {
 			return map[string]any{"added": 0, "paths": []string{}}, nil
 		}
-		env := playlist.EnvFrom(d.Env)
+		env := playlist.EnvFrom(d.env())
 		current, _ := playlist.ReadCurrentPaths(env)
 		seen := map[string]struct{}{}
 		merged := make([]string, 0, len(current)+len(paths))
@@ -427,7 +435,7 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		if len(paths) == 0 {
 			return []library.Track{}, nil
 		}
-		return library.TracksForPaths(library.EnvFrom(d.Env), paths, ""), nil
+		return library.TracksForPaths(library.EnvFrom(d.env()), paths, ""), nil
 	case "playback.seek":
 		var p struct {
 			Seconds float64 `json:"seconds"`
@@ -494,23 +502,9 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 	case "config.set":
 		return d.handleConfigSet(req)
 	case "viz.subscribe":
-		d.vizMu.Lock()
-		d.vizSubs++
-		want := d.vizSubs > 0
-		d.vizMu.Unlock()
-		d.Actor.SetVizWanted(want)
-		if want {
-			d.broadcastViz(d.Actor.VizAnalyzer().Snapshot())
-		}
+		d.broadcastViz(d.Actor.VizAnalyzer().Snapshot())
 		return map[string]any{"subscribed": true}, nil
 	case "viz.unsubscribe":
-		d.vizMu.Lock()
-		if d.vizSubs > 0 {
-			d.vizSubs--
-		}
-		want := d.vizSubs > 0
-		d.vizMu.Unlock()
-		d.Actor.SetVizWanted(want)
 		return map[string]any{"subscribed": false}, nil
 	case "spectrum.get":
 		levels := d.Actor.VizAnalyzer().Snapshot()
@@ -544,8 +538,8 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 }
 
 func (d *Daemon) saveCurrentQueue() error {
-	env := playlist.EnvFrom(d.Env)
-	paths := withoutDiscoverPreviews(d.Env.CacheDir, d.Actor.QueuePaths())
+	env := playlist.EnvFrom(d.env())
+	paths := withoutDiscoverPreviews(d.env().CacheDir, d.Actor.QueuePaths())
 	if _, err := playlist.SaveCurrentFast(env, paths); err != nil {
 		return err
 	}

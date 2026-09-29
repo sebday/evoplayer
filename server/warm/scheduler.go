@@ -24,7 +24,6 @@ type job struct {
 // Scheduler deduplicates and prioritizes background asset warming.
 type Scheduler struct {
 	mu         sync.Mutex
-	idle       *sync.Cond
 	inflight   map[string]struct{}
 	pending    []job
 	env        paths.Env
@@ -46,9 +45,14 @@ func NewScheduler(env paths.Env, workers int) *Scheduler {
 		workers:  workers,
 		cancel:   cancel,
 	}
-	s.idle = sync.NewCond(&s.mu)
 	go s.loop(ctx)
 	return s
+}
+
+func (s *Scheduler) SetEnv(env paths.Env) {
+	s.mu.Lock()
+	s.env = env
+	s.mu.Unlock()
 }
 
 func (s *Scheduler) SetOnComplete(fn func(path string, art bool)) {
@@ -80,24 +84,10 @@ func (s *Scheduler) Close() {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	s.mu.Lock()
-	s.pending = nil
-	s.idle.Broadcast()
-	s.mu.Unlock()
+	s.ClearPending()
 }
 
-func (s *Scheduler) Enqueue(path string, priority Priority, _ bool) {
-	s.enqueue(path, priority)
-}
-
-func (s *Scheduler) EnqueueMany(paths []string, priority Priority, art bool) {
-	for _, p := range paths {
-		s.Enqueue(p, priority, art)
-	}
-}
-
-func (s *Scheduler) enqueue(path string, priority Priority) {
-	path = stringPath(path)
+func (s *Scheduler) Enqueue(path string, priority Priority) {
 	if path == "" {
 		return
 	}
@@ -117,10 +107,15 @@ func (s *Scheduler) enqueue(path string, priority Priority) {
 	s.pending = append(s.pending, job{path: path, priority: priority})
 }
 
+func (s *Scheduler) EnqueueMany(paths []string, priority Priority) {
+	for _, p := range paths {
+		s.Enqueue(p, priority)
+	}
+}
+
 func (s *Scheduler) ClearPending() {
 	s.mu.Lock()
 	s.pending = nil
-	s.idle.Broadcast()
 	s.mu.Unlock()
 }
 
@@ -170,7 +165,7 @@ func (s *Scheduler) loop(ctx context.Context) {
 			time.Sleep(50 * time.Millisecond)
 			continue
 		}
-		j, ok := s.pop()
+		j, env, ok := s.pop()
 		if !ok {
 			time.Sleep(50 * time.Millisecond)
 			continue
@@ -182,25 +177,19 @@ func (s *Scheduler) loop(ctx context.Context) {
 				_ = recover()
 				s.mu.Lock()
 				delete(s.inflight, j.path)
-				if len(s.pending) == 0 && len(s.inflight) == 0 {
-					s.idle.Broadcast()
-				}
 				s.mu.Unlock()
 				s.complete(j.path, true)
 			}()
-			_, _ = TrackAssets(s.env, j.path)
+			_, _ = TrackAssets(env, j.path)
 		}(j)
 	}
 }
 
-func (s *Scheduler) pop() (job, bool) {
+func (s *Scheduler) pop() (job, paths.Env, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if len(s.pending) == 0 {
-		if len(s.inflight) == 0 {
-			s.idle.Broadcast()
-		}
-		return job{}, false
+		return job{}, paths.Env{}, false
 	}
 	best := 0
 	for i := 1; i < len(s.pending); i++ {
@@ -211,12 +200,8 @@ func (s *Scheduler) pop() (job, bool) {
 	j := s.pending[best]
 	s.pending = append(s.pending[:best], s.pending[best+1:]...)
 	if _, ok := s.inflight[j.path]; ok {
-		return job{}, false
+		return job{}, paths.Env{}, false
 	}
 	s.inflight[j.path] = struct{}{}
-	return j, true
-}
-
-func stringPath(p string) string {
-	return p
+	return j, s.env, true
 }

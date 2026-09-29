@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -32,7 +31,7 @@ func (d *Daemon) handleDiscover(req ipc.Request) (interface{}, error) {
 		if res, ok := d.discoverLookup(p.Path, p.ID); ok {
 			return res, nil
 		}
-		res, err := soundcloud.Similar(d.Env, soundcloud.Seed{Path: p.Path, ID: p.ID})
+		res, err := soundcloud.Similar(d.env(), soundcloud.Seed{Path: p.Path, ID: p.ID})
 		if err != nil {
 			return nil, err
 		}
@@ -43,7 +42,7 @@ func (d *Daemon) handleDiscover(req ipc.Request) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		path := soundcloud.PreviewPath(d.Env.CacheDir, id)
+		path := soundcloud.PreviewPath(d.env().CacheDir, id)
 		if st, err := os.Stat(path); err == nil && !st.IsDir() && st.Size() > 0 {
 			if err := d.playPreview(path); err != nil {
 				return nil, err
@@ -54,24 +53,23 @@ func (d *Daemon) handleDiscover(req ipc.Request) (interface{}, error) {
 			if err := d.runDiscoverPreviewJob(ctx, id); err != nil {
 				return err
 			}
-			path := soundcloud.PreviewPath(d.Env.CacheDir, id)
+			path := soundcloud.PreviewPath(d.env().CacheDir, id)
 			d.jobs.SetResult(map[string]any{"id": id, "path": path})
 			return d.playPreview(path)
 		})
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
-		d.broadcastJob()
 		return st, nil
 	case "discover.keep":
 		id, err := discoverID(req)
 		if err != nil {
 			return nil, err
 		}
-		preview := soundcloud.PreviewPath(d.Env.CacheDir, id)
+		preview := soundcloud.PreviewPath(d.env().CacheDir, id)
 		if st, err := os.Stat(preview); err == nil && !st.IsDir() && st.Size() > 0 {
 			wasPlaying := d.Actor.Snapshot().Path == preview
-			dest, err := soundcloud.Keep(context.Background(), d.Env, id, jobs.NopReporter)
+			dest, err := soundcloud.Keep(context.Background(), d.env(), id, jobs.NopReporter)
 			if err != nil {
 				return nil, err
 			}
@@ -94,14 +92,13 @@ func (d *Daemon) handleDiscover(req ipc.Request) (interface{}, error) {
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}
-		d.broadcastJob()
 		return st, nil
 	case "discover.dismiss":
 		id, err := discoverID(req)
 		if err != nil {
 			return nil, err
 		}
-		if err := soundcloud.DismissID(d.Env.StateDir, id); err != nil {
+		if err := soundcloud.DismissID(d.env().StateDir, id); err != nil {
 			return nil, err
 		}
 		d.discoverDrop(id)
@@ -133,27 +130,11 @@ func (d *Daemon) playPreview(path string) error {
 }
 
 func (d *Daemon) runDiscoverPreviewJob(ctx context.Context, id int64) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	return d.pauseWarmAndSupervise(ctx, discoverPreviewWorkerCmd(exe, id))
+	return d.runWorkerJob(ctx, "discover-preview", strconv.FormatInt(id, 10))
 }
 
 func (d *Daemon) runDiscoverKeepJob(ctx context.Context, id int64) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	return d.pauseWarmAndSupervise(ctx, discoverKeepWorkerCmd(exe, id))
-}
-
-func discoverPreviewWorkerCmd(exe string, id int64) *exec.Cmd {
-	return workerCmd(exe, "_job", "discover-preview", strconv.FormatInt(id, 10))
-}
-
-func discoverKeepWorkerCmd(exe string, id int64) *exec.Cmd {
-	return workerCmd(exe, "_job", "discover-keep", strconv.FormatInt(id, 10))
+	return d.runWorkerJob(ctx, "discover-keep", strconv.FormatInt(id, 10))
 }
 
 func (d *Daemon) discoverLookup(path string, id int64) (soundcloud.SimilarResult, bool) {

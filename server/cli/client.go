@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -43,16 +42,18 @@ func EnsureDaemon(env paths.Env, exe string) error {
 	secrets.Load()
 	cmd := exec.Command(exe, "serve")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if devNull, err := os.OpenFile(os.DevNull, os.O_RDWR, 0); err == nil {
+	if devNull, err := os.Open(os.DevNull); err == nil {
+		defer devNull.Close()
 		cmd.Stdin = devNull
-		cmd.Stdout = devNull
-		cmd.Stderr = devNull
 	}
+	logFile, logStart, err := openDaemonLog(env.DaemonLog)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 	cmd.Env = append(os.Environ(), "EVOPLAYER_ROOT="+env.RepoRoot)
-	var stderr bytes.Buffer
-	if cmd.Stderr == nil {
-		cmd.Stderr = &stderr
-	}
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -66,8 +67,10 @@ func EnsureDaemon(env paths.Env, exe string) error {
 		}
 		select {
 		case err := <-done:
-			msg := strings.TrimSpace(stderr.String())
-			if msg != "" {
+			if DaemonUp(env) {
+				return nil
+			}
+			if msg := daemonLogSince(env.DaemonLog, logStart); msg != "" {
 				return fmt.Errorf("evoplayer: daemon exited: %s", msg)
 			}
 			if err != nil {
@@ -80,16 +83,57 @@ func EnsureDaemon(env paths.Env, exe string) error {
 	}
 
 	_ = cmd.Process.Kill()
-	msg := strings.TrimSpace(stderr.String())
-	if msg != "" {
+	if msg := daemonLogSince(env.DaemonLog, logStart); msg != "" {
 		return fmt.Errorf("evoplayer: daemon did not start: %s", msg)
 	}
-	return fmt.Errorf("evoplayer: daemon did not start")
+	return fmt.Errorf("evoplayer: daemon did not start (log: %s)", env.DaemonLog)
+}
+
+const daemonLogMaxBytes = 1 << 20
+
+func openDaemonLog(path string) (*os.File, int64, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, 0, err
+	}
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if st, err := os.Stat(path); err == nil && st.Size() > daemonLogMaxBytes {
+		flags |= os.O_TRUNC
+	}
+	f, err := os.OpenFile(path, flags, 0o644)
+	if err != nil {
+		return nil, 0, err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, 0, err
+	}
+	return f, st.Size(), nil
+}
+
+func daemonLogSince(path string, offset int64) string {
+	b, err := os.ReadFile(path)
+	if err != nil || int64(len(b)) <= offset {
+		return ""
+	}
+	return strings.TrimSpace(string(b[offset:]))
+}
+
+// daemonPID returns the pid in daemon.lock only while a daemon still holds the lock.
+func daemonPID(env paths.Env) int {
+	if !daemon.LockHeld(env.DaemonLock) {
+		return 0
+	}
+	pid, err := daemon.ReadLockPID(env.DaemonLock)
+	if err != nil || !daemon.ProcessAlive(pid) {
+		return 0
+	}
+	return pid
 }
 
 func daemonBinaryStale(env paths.Env, exe string) bool {
-	pid, err := daemon.ReadLockPID(env.DaemonLock)
-	if err != nil || pid <= 0 || !daemon.ProcessAlive(pid) {
+	pid := daemonPID(env)
+	if pid <= 0 {
 		return false
 	}
 	want, err := filepath.EvalSymlinks(exe)
@@ -118,10 +162,9 @@ func restartDaemon(env paths.Env) {
 	if DaemonUp(env) {
 		_ = savePlayerState(env)
 	}
-	pid, _ := daemon.ReadLockPID(env.DaemonLock)
-	if pid > 0 && daemon.ProcessAlive(pid) {
+	if pid := daemonPID(env); pid > 0 {
 		_ = daemon.StopProcess(pid)
-		for i := 0; i < 40; i++ {
+		for i := 0; i < 300; i++ {
 			if !daemon.ProcessAlive(pid) {
 				break
 			}
@@ -144,12 +187,8 @@ func cleanupStaleDaemon(env paths.Env) {
 	if DaemonUp(env) {
 		return
 	}
-	pid, err := daemon.ReadLockPID(env.DaemonLock)
-	if err != nil || pid <= 0 {
-		_ = os.Remove(env.SocketPath)
-		return
-	}
-	if !daemon.ProcessAlive(pid) {
+	pid := daemonPID(env)
+	if pid <= 0 {
 		_ = os.Remove(env.SocketPath)
 		return
 	}

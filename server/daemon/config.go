@@ -5,11 +5,29 @@ import (
 
 	"github.com/sebday/evoplayer/server/config"
 	"github.com/sebday/evoplayer/server/ipc"
+	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/secrets"
+	"github.com/sebday/evoplayer/server/status"
 )
 
+func (d *Daemon) env() paths.Env {
+	d.envMu.RLock()
+	defer d.envMu.RUnlock()
+	return d.Env
+}
+
+func (d *Daemon) setMusicRoot(root string) {
+	d.envMu.Lock()
+	d.Env.MusicRoot = root
+	env := d.Env
+	d.envMu.Unlock()
+	d.warm.SetEnv(env)
+	status.InvalidateAllMeta()
+}
+
 func (d *Daemon) configJSONView() (config.JSONView, error) {
-	view, err := config.JSON(d.Env.MusicConfig, d.Env.MusicRoot)
+	env := d.env()
+	view, err := config.JSON(env.MusicConfig, env.MusicRoot)
 	if err != nil {
 		return view, err
 	}
@@ -37,16 +55,13 @@ func (d *Daemon) handleConfigSet(req ipc.Request) (interface{}, error) {
 		if err := config.ValidateMusicRoot(value); err != nil {
 			return nil, err
 		}
-		if err := d.Env.EnsureDirs(); err != nil {
+		if err := config.Set(d.env().MusicConfig, section, key, value); err != nil {
 			return nil, err
 		}
-		if err := config.Set(d.Env.MusicConfig, section, key, value); err != nil {
-			return nil, err
-		}
-		d.Env.MusicRoot = value
+		d.setMusicRoot(value)
 		return d.configJSONView()
 	}
-	if err := config.Set(d.Env.MusicConfig, section, key, value); err != nil {
+	if err := config.Set(d.env().MusicConfig, section, key, value); err != nil {
 		return nil, err
 	}
 	return d.configJSONView()
