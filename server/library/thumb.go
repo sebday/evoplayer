@@ -38,18 +38,18 @@ func thumbPathForArt(env Env, artPath string) string {
 }
 
 func resolveThumb(env Env, artPath string) string {
-	if artPath == "" || !isDecodableArtFile(artPath) {
+	if artPath == "" || !nonEmptyFile(artPath) {
 		return ""
 	}
 	dest := thumbPathForArt(env, artPath)
-	if dest != "" && isDecodableArtFile(dest) {
+	if dest != "" && nonEmptyFile(dest) {
 		return dest
 	}
 	return ""
 }
 
 func EnsureThumb(env Env, artPath string) (string, error) {
-	if artPath == "" || !isDecodableArtFile(artPath) {
+	if artPath == "" || !nonEmptyFile(artPath) {
 		return "", os.ErrNotExist
 	}
 	dir := thumbDir(env)
@@ -60,7 +60,7 @@ func EnsureThumb(env Env, artPath string) (string, error) {
 		return "", err
 	}
 	dest := thumbPathForArt(env, artPath)
-	if isDecodableArtFile(dest) {
+	if nonEmptyFile(dest) {
 		return dest, nil
 	}
 	tmp := dest + ".tmp"
@@ -71,7 +71,7 @@ func EnsureThumb(env Env, artPath string) (string, error) {
 			return "", err
 		}
 	}
-	if !isDecodableArtFile(tmp) {
+	if !nonEmptyFile(tmp) {
 		os.Remove(tmp)
 		return "", fmt.Errorf("thumb generation failed")
 	}

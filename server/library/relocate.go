@@ -5,44 +5,35 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
+
+	"github.com/sebday/evoplayer/server/config"
 )
 
-func folderKey(name string) string {
-	s := strings.ReplaceAll(strings.ToLower(name), "&", "and")
-	var b strings.Builder
-	for _, r := range s {
-		if unicode.IsLetter(r) || unicode.IsNumber(r) {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
 func topFolderMap(root string) map[string]string {
-	entries, err := os.ReadDir(root)
+	names, err := listGenreNames(root)
 	if err != nil {
 		return nil
 	}
 	out := map[string]string{}
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		key := folderKey(e.Name())
+	for _, name := range names {
+		key := config.NormalizeGenreKey(name)
 		if key == "" {
 			continue
 		}
 		if _, ok := out[key]; !ok {
-			out[key] = e.Name()
+			out[key] = name
 		}
 	}
 	return out
 }
 
-func fileExists(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && !st.IsDir()
+// FoldedGenreFolder returns the top-level library folder whose normalized name matches name.
+func FoldedGenreFolder(root, name string) string {
+	key := config.NormalizeGenreKey(name)
+	if key == "" {
+		return ""
+	}
+	return topFolderMap(root)[key]
 }
 
 func relUnderRootFold(root, path string) string {
@@ -94,7 +85,7 @@ type fileIndex struct {
 
 func indexLibraryFiles(root string) *fileIndex {
 	idx := &fileIndex{ci: map[string]string{}, base: map[string][]string{}}
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	_ = walkLibrary(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil
 		}
@@ -122,9 +113,19 @@ func (idx *fileIndex) relocate(root, path string) string {
 			return actual
 		}
 	}
-	hits := idx.base[strings.ToLower(filepath.Base(path))]
-	if len(hits) == 1 {
-		return hits[0]
+	parent := filepath.Base(filepath.Dir(path))
+	match := ""
+	for _, hit := range idx.base[strings.ToLower(filepath.Base(path))] {
+		if !strings.EqualFold(filepath.Base(filepath.Dir(hit)), parent) {
+			continue
+		}
+		if match != "" {
+			return RelocatePath(root, path)
+		}
+		match = hit
+	}
+	if match != "" {
+		return match
 	}
 	return RelocatePath(root, path)
 }
@@ -139,33 +140,25 @@ func RelocatePath(root, path string) string {
 	}
 	rel := relUnderRootFold(root, path)
 	if rel == "" {
-		oldRel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
-		if err != nil || oldRel == "." || strings.HasPrefix(oldRel, "..") {
-			return path
-		}
-		rel = oldRel
+		return path
 	}
 	if found := resolveCaseInsensitive(root, rel); found != "" {
 		return found
 	}
 	parts := strings.Split(rel, string(os.PathSeparator))
-	if len(parts) == 0 {
-		return path
-	}
 	folders := topFolderMap(root)
 	if folders == nil {
 		return path
 	}
-	actual, ok := folders[folderKey(parts[0])]
+	actual, ok := folders[config.NormalizeGenreKey(parts[0])]
 	if !ok || actual == parts[0] {
 		return path
 	}
 	parts[0] = actual
-	next := filepath.Join(root, filepath.Join(parts...))
-	if found := resolveCaseInsensitive(root, strings.TrimPrefix(next, filepath.Clean(root)+string(os.PathSeparator))); found != "" {
+	if found := resolveCaseInsensitive(root, filepath.Join(parts...)); found != "" {
 		return found
 	}
-	return next
+	return filepath.Join(root, filepath.Join(parts...))
 }
 
 // RelocateLibraryPaths rewrites likes, playlists, and player state onto current folder names.
@@ -229,7 +222,6 @@ func relocateM3UDir(root, dir string, idx *fileIndex) error {
 		}
 		return err
 	}
-	folders := topFolderMap(root)
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -238,20 +230,8 @@ func relocateM3UDir(root, dir string, idx *fileIndex) error {
 		path := filepath.Join(dir, name)
 		switch {
 		case strings.HasSuffix(name, ".m3u"):
-			if err := relocateM3UFile(root, path, idx); err != nil {
+			if err := RewriteM3U(path, func(p string) string { return idx.relocate(root, p) }); err != nil {
 				return err
-			}
-			stem := strings.TrimSuffix(name, ".m3u")
-			if actual, ok := folders[folderKey(stem)]; ok && actual != stem {
-				dest := filepath.Join(dir, actual+".m3u")
-				if dest == path {
-					break
-				}
-				if _, err := os.Stat(dest); err == nil {
-					_ = os.Remove(path)
-				} else {
-					_ = os.Rename(path, dest)
-				}
 			}
 		case name == "current.tracks.json":
 			_ = relocateTracksJSON(root, path, idx)
@@ -260,20 +240,26 @@ func relocateM3UDir(root, dir string, idx *fileIndex) error {
 	return nil
 }
 
-func relocateM3UFile(root, path string, idx *fileIndex) error {
+// RewriteM3U maps every entry line of an m3u through fn and saves the file when any entry changed.
+func RewriteM3U(path string, fn func(string) string) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
 		return err
 	}
 	lines := strings.Split(string(raw), "\n")
 	changed := false
 	for i, line := range lines {
-		trim := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		trim := M3UEntry(line, i == 0)
 		if trim == "" || strings.HasPrefix(trim, "#") {
 			continue
 		}
-		next := idx.relocate(root, trim)
-		if next != trim {
+		if next := fn(trim); next != trim {
+			if strings.HasSuffix(line, "\r") {
+				next += "\r"
+			}
 			lines[i] = next
 			changed = true
 		}
@@ -281,7 +267,15 @@ func relocateM3UFile(root, path string, idx *fileIndex) error {
 	if !changed {
 		return nil
 	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
+	return WriteFileAtomic(path, []byte(strings.Join(lines, "\n")), 0o644)
+}
+
+// M3UEntry trims a raw m3u line, dropping CRLF endings and a UTF-8 BOM on the first line.
+func M3UEntry(line string, first bool) string {
+	if first {
+		line = strings.TrimPrefix(line, "\ufeff")
+	}
+	return strings.TrimSpace(strings.TrimSuffix(line, "\r"))
 }
 
 func relocateTracksJSON(root, path string, idx *fileIndex) error {
@@ -334,9 +328,5 @@ func writeJSONAtomic(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return WriteFileAtomic(path, raw, 0o644)
 }

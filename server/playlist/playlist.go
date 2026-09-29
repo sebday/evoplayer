@@ -88,11 +88,7 @@ func ListIndex(env Env) ([]IndexItem, error) {
 		})
 	}
 
-	genres, err := listMusicGenres(env.MusicRoot)
-	if err != nil {
-		return nil, err
-	}
-	for _, genre := range genres {
+	for _, genre := range library.GenreChoices(env.Env) {
 		if genre == "mixes" {
 			continue
 		}
@@ -164,13 +160,6 @@ func TracksAll(env Env, name string) ([]library.Track, error) {
 	if err != nil {
 		return nil, err
 	}
-	if page.Total <= len(page.Items) {
-		return page.Items, nil
-	}
-	page, err = TracksPageFor(env, name, 0, page.Total)
-	if err != nil {
-		return nil, err
-	}
 	return page.Items, nil
 }
 
@@ -228,7 +217,7 @@ func FavoriteToggle(env Env, path string) (FavoriteResult, error) {
 	library.InvalidateLikesCache(env.LikesFile)
 	_ = writeLikesM3U(env, filepath.Join(env.PlaylistDir, "all.m3u"))
 	_ = writeMixesM3U(env)
-	if genre := genreFromPath(env.MusicRoot, path); genre != "" {
+	if genre := library.GenreFromPath(env.MusicRoot, path); genre != "" {
 		_ = writeGenreM3U(env, genre)
 	}
 	if db, err := library.EnsureDB(env.Env); err == nil && db != nil {
@@ -331,21 +320,11 @@ func writeLikes(path string, likes map[string]likeEntry) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return library.WriteFileAtomic(path, raw, 0o644)
 }
 
 func tracksPageFromDB(env Env, db *sql.DB, name string, offset, limit int) (TracksPage, bool, error) {
 	switch name {
-	case "current":
-		paths, err := ReadCurrentPaths(env)
-		if err != nil {
-			return TracksPage{Offset: offset}, true, nil
-		}
-		return paginatePaths(env, paths, name, offset, limit), true, nil
 	case "mixes":
 		paths, err := library.LikedMixPaths(db, env.Env)
 		if err != nil {
@@ -374,14 +353,14 @@ SELECT path FROM tracks WHERE liked=1 ORDER BY path LIMIT ? OFFSET ?`, limit, of
 		}, true, nil
 	default:
 		if isGenreDir(env, name) {
-			prefix := filepath.Join(env.MusicRoot, name) + string(os.PathSeparator)
+			lo, hi := library.PathPrefixRange(filepath.Join(env.MusicRoot, name))
 			var total int
-			if err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE liked=1 AND path LIKE ?`, prefix+"%").Scan(&total); err != nil || total == 0 {
+			if err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE liked=1 AND path >= ? AND path < ?`, lo, hi).Scan(&total); err != nil || total == 0 {
 				return TracksPage{}, false, nil
 			}
 			rows, err := db.Query(`
-SELECT path FROM tracks WHERE liked=1 AND path LIKE ? ORDER BY path LIMIT ? OFFSET ?`,
-				prefix+"%", limit, offset)
+SELECT path FROM tracks WHERE liked=1 AND path >= ? AND path < ? ORDER BY path LIMIT ? OFFSET ?`,
+				lo, hi, limit, offset)
 			if err != nil {
 				return TracksPage{}, true, err
 			}
@@ -499,9 +478,9 @@ func countLikedGenre(env Env, db *sql.DB, dbErr error, genre string) (int, error
 		return len(paths), nil
 	}
 	if dbErr == nil && db != nil && library.Ready(db) {
-		prefix := filepath.Join(env.MusicRoot, genre) + string(os.PathSeparator)
+		lo, hi := library.PathPrefixRange(filepath.Join(env.MusicRoot, genre))
 		var n int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE liked=1 AND path LIKE ?`, prefix+"%").Scan(&n); err == nil && n > 0 {
+		if err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE liked=1 AND path >= ? AND path < ?`, lo, hi).Scan(&n); err == nil && n > 0 {
 			return n, nil
 		}
 	}
@@ -545,37 +524,6 @@ func listExtraPlaylists(env Env, stars []string, existing []IndexItem) []IndexIt
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
-}
-
-func listMusicGenres(root string) ([]string, error) {
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var genres []string
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if skipDir(name) {
-			continue
-		}
-		genres = append(genres, name)
-	}
-	sort.Strings(genres)
-	return genres, nil
-}
-
-func skipDir(name string) bool {
-	switch name {
-	case ".incoming", ".Trash", ".trash", ".cache", ".git":
-		return true
-	}
-	return strings.HasPrefix(name, ".")
 }
 
 func isGenreDir(env Env, name string) bool {

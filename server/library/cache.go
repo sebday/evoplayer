@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -235,22 +236,9 @@ func probeCacheFile(env Env, f cacheFile) probedFile {
 		genre = f.genre
 	}
 	if genre == "" {
-		genre = genreFromPath(env.MusicRoot, f.path)
+		genre = GenreFromPath(env.MusicRoot, f.path)
 	}
-	return probedFile{
-		track: Track{
-			Path:     f.path,
-			Genre:    genre,
-			Title:    res.Tag.Title,
-			Artist:   res.Tag.Artist,
-			Album:    res.Tag.Album,
-			Year:     res.Tag.Year,
-			Label:    res.Tag.Label,
-			Duration: res.Duration,
-		},
-		mtime: f.mtime,
-		size:  f.size,
-	}
+	return probedFile{track: trackFromProbe(f.path, genre, res), mtime: f.mtime, size: f.size}
 }
 
 // walkRoot follows a symlink at music root so WalkDir can enter ~/Music -> /mnt/...,
@@ -278,17 +266,25 @@ func remapWalkPath(walkFrom, displayRoot, path string) string {
 	return filepath.Join(displayRoot, rel)
 }
 
+// walkLibrary walks root like filepath.WalkDir but follows a symlinked root and
+// reports paths under the original root.
+func walkLibrary(root string, fn fs.WalkDirFunc) error {
+	walkFrom, displayRoot := walkRoot(root)
+	return filepath.WalkDir(walkFrom, func(path string, d fs.DirEntry, err error) error {
+		return fn(remapWalkPath(walkFrom, displayRoot, path), d, err)
+	})
+}
+
 func listAudioFiles(root, folderGenre string) ([]cacheFile, error) {
 	out := make([]cacheFile, 0)
-	walkFrom, displayRoot := walkRoot(root)
-	err := filepath.WalkDir(walkFrom, func(path string, d os.DirEntry, err error) error {
+	displayRoot := filepath.Clean(root)
+	err := walkLibrary(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		displayPath := remapWalkPath(walkFrom, displayRoot, path)
 		name := d.Name()
 		if d.IsDir() {
-			if path != walkFrom && (strings.HasPrefix(name, ".") || name == ".incoming") {
+			if path != displayRoot && strings.HasPrefix(name, ".") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -296,7 +292,7 @@ func listAudioFiles(root, folderGenre string) ([]cacheFile, error) {
 		if strings.HasPrefix(name, ".") {
 			return nil
 		}
-		if !playback.IsSupportedPath(displayPath) {
+		if !playback.IsSupportedPath(path) {
 			return nil
 		}
 		info, err := d.Info()
@@ -305,10 +301,10 @@ func listAudioFiles(root, folderGenre string) ([]cacheFile, error) {
 		}
 		genre := folderGenre
 		if genre == "" {
-			genre = genreFromPath(displayRoot, displayPath)
+			genre = GenreFromPath(displayRoot, path)
 		}
 		out = append(out, cacheFile{
-			path:  displayPath,
+			path:  path,
 			genre: genre,
 			mtime: info.ModTime().UnixNano(),
 			size:  info.Size(),
@@ -318,8 +314,8 @@ func listAudioFiles(root, folderGenre string) ([]cacheFile, error) {
 	return out, err
 }
 
-func listGenreNames(env Env) ([]string, error) {
-	entries, err := os.ReadDir(env.MusicRoot)
+func listGenreNames(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
 	if err != nil {
 		return nil, err
 	}

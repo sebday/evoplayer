@@ -19,7 +19,7 @@ func PreviewIncoming(env Env, path string) map[string]any {
 	overlay := overlayGenre(env, path)
 	folder := overlay
 	if folder == "" {
-		folder = genreFolderFromTags(env, probed.Tag)
+		folder = MatchLibraryGenre(env, probed.Tag.Genre)
 	}
 	genre := strings.TrimSpace(probed.Tag.Genre)
 	if overlay != "" {

@@ -4,11 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/sebday/evoplayer/server/playback"
-	"github.com/sebday/evoplayer/server/tags"
 )
 
 const tracksBatchSize = 400
@@ -93,7 +91,7 @@ FROM tracks WHERE path IN (%s)`, strings.Join(placeholders, ","))
 			row.Liked = isLiked(env, row.Path)
 		}
 		enrichTrackAssets(env, &row)
-		applyTagGenreIfEmpty(&row)
+		applyTagGenre(&row)
 		out[row.Path] = row
 	}
 	return out, rows.Err()
@@ -106,20 +104,7 @@ func fallbackTrack(env Env, path string) Track {
 	if _, err := os.Stat(path); err != nil {
 		return Track{Path: path}
 	}
-	row := trackFromTagsCache(env, path)
-	if row.Title == "" {
-		if tag, err := tags.ReadTags(path); err == nil {
-			row.Title = tag.Title
-			row.Artist = tag.Artist
-			row.Album = tag.Album
-			row.Year = tag.Year
-			row.Label = tag.Label
-		}
-	}
-	applyTagGenre(&row)
-	if row.Title == "" {
-		row.Title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	}
+	row := trackFromFileTags(env, path)
 	if row.Duration <= 0 {
 		row.Duration = playback.DurationForPath(path)
 	}

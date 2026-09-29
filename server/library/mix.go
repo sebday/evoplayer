@@ -14,7 +14,7 @@ import (
 // (imports, dest folders, and the generated mixes playlist).
 const MixMinDurationSec = 25 * 60
 
-func IsMix(path string, dur float64) bool {
+func IsMix(dur float64) bool {
 	return dur >= float64(MixMinDurationSec)
 }
 

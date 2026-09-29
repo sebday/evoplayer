@@ -1,14 +1,13 @@
 package library
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode"
 )
 
 func resolveArt(env Env, path, existing string) string {
-	if existing != "" && isDecodableArtFile(existing) {
+	if existing != "" && nonEmptyFile(existing) {
 		return existing
 	}
 	return artCacheFind(env, path)
@@ -18,8 +17,8 @@ func artCacheFind(env Env, path string) string {
 	if path == "" {
 		return ""
 	}
-	track := filepath.Join(env.ArtDir, cacheKey(env.MusicRoot, path)+".jpg")
-	if isDecodableArtFile(track) {
+	track := filepath.Join(env.ArtDir, CacheKey(env.MusicRoot, path)+".jpg")
+	if nonEmptyFile(track) {
 		return track
 	}
 	return ""
@@ -39,10 +38,6 @@ func artFolderKey(musicRoot, path string) string {
 
 func CacheKey(musicRoot, path string) string {
 	return trackCacheSlug(relUnderRoot(musicRoot, path))
-}
-
-func cacheKey(musicRoot, path string) string {
-	return CacheKey(musicRoot, path)
 }
 
 func relUnderRoot(musicRoot, path string) string {
@@ -80,13 +75,8 @@ func trackCacheSlug(s string) string {
 	return b.String()
 }
 
-func isDecodableArtFile(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && !st.IsDir() && st.Size() > 0
-}
-
 func resolveWaveform(env Env, path, existing string) string {
-	if existing != "" && isWaveformFile(existing) {
+	if existing != "" && nonEmptyFile(existing) {
 		return existing
 	}
 	return waveformCacheFind(env, path)
@@ -96,14 +86,9 @@ func waveformCacheFind(env Env, path string) string {
 	if path == "" {
 		return ""
 	}
-	candidate := filepath.Join(env.WaveformDir, cacheKey(env.MusicRoot, path)+".json")
-	if isWaveformFile(candidate) {
+	candidate := filepath.Join(env.WaveformDir, CacheKey(env.MusicRoot, path)+".json")
+	if nonEmptyFile(candidate) {
 		return candidate
 	}
 	return ""
-}
-
-func isWaveformFile(path string) bool {
-	st, err := os.Stat(path)
-	return err == nil && !st.IsDir() && st.Size() > 0
 }

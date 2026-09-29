@@ -86,7 +86,7 @@ func readID3(path string) (TagInfo, float64) {
 	info.Genre = strings.TrimSpace(tag.Genre())
 	info.Album = strings.TrimSpace(tag.Album())
 	info.Label = strings.TrimSpace(textFrame(tag, "TPUB"))
-	info.Year = yearFromText(firstNonEmpty(textFrame(tag, "TDRC"), textFrame(tag, "TYER")))
+	info.Year = yearTag(firstNonEmpty(textFrame(tag, "TDRC"), textFrame(tag, "TYER")))
 	if comm, ok := tag.GetLastFrame("COMM").(id3v2.CommentFrame); ok {
 		info.Comment = strings.TrimSpace(comm.Text)
 	}
@@ -151,15 +151,19 @@ func readFFProbe(path string) (TagInfo, float64) {
 	info.CatalogNumber = pick("catalognumber", "catalog", "catalogue", "catno")
 	info.Comment = pick("comment", "description")
 	info.SoundcloudID = pick("soundcloud_id")
-	year := pick("date", "year", "originaldate", "original_year", "tyer")
-	if m := yearInTag.FindStringSubmatch(year); len(m) > 1 {
-		info.Year = m[1]
-	}
+	info.Year = yearTag(pick("date", "year", "originaldate", "original_year", "tyer"))
 	dur := 0.0
 	if payload.Format.Duration != "" {
 		dur, _ = strconv.ParseFloat(payload.Format.Duration, 64)
 	}
 	return info, dur
+}
+
+func yearTag(raw string) string {
+	if m := yearInTag.FindStringSubmatch(raw); len(m) > 1 {
+		return m[1]
+	}
+	return ""
 }
 
 // MediaDuration returns audio length in seconds (ffprobe), or 0 when unknown.

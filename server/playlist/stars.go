@@ -3,6 +3,8 @@ package playlist
 import (
 	"encoding/json"
 	"os"
+
+	"github.com/sebday/evoplayer/server/library"
 )
 
 func loadStars(path string) ([]string, error) {
@@ -28,7 +30,7 @@ func saveStars(path string, stars []string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(raw, '\n'), 0o644)
+	return library.WriteFileAtomic(path, append(raw, '\n'), 0o644)
 }
 
 func isStarred(stars []string, name string) bool {

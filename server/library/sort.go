@@ -14,9 +14,10 @@ import (
 )
 
 type SortResult struct {
-	Folder string `json:"folder"`
-	Moved  int    `json:"moved"`
-	Failed int    `json:"failed"`
+	Folder string            `json:"folder"`
+	Moved  int               `json:"moved"`
+	Failed int               `json:"failed"`
+	Moves  []MoveTrackResult `json:"moves,omitempty"`
 }
 
 func SortFolder(env Env, rel string) (SortResult, error) {
@@ -34,15 +35,27 @@ func SortFolder(env Env, rel string) (SortResult, error) {
 			defer db.Close()
 		}
 	}
-	err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	walkDir := filepath.Clean(dir)
+	err = walkLibrary(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
 			return err
+		}
+		if d.IsDir() {
+			if path != walkDir && strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if !playback.IsSupportedPath(path) {
 			return nil
 		}
+		genre := GenreFromPath(env.MusicRoot, path)
+		if genre == "" || !dirExists(filepath.Join(env.MusicRoot, genre)) {
+			res.Failed++
+			return nil
+		}
 		probed, _ := tags.Probe(path)
-		canon, err := incomingDest(env, path, probed)
+		canon, err := trackDestForFolder(env, path, genre, probed)
 		if err != nil {
 			res.Failed++
 			return nil
@@ -64,26 +77,12 @@ func SortFolder(env Env, rel string) (SortResult, error) {
 		}
 		if db != nil {
 			if st, err := os.Stat(canon); err == nil {
-				item := Track{
-					Path:     canon,
-					Genre:    genreFromPath(env.MusicRoot, canon),
-					Title:    probed.Tag.Title,
-					Artist:   probed.Tag.Artist,
-					Album:    probed.Tag.Album,
-					Year:     probed.Tag.Year,
-					Label:    probed.Tag.Label,
-					Duration: probed.Duration,
-				}
-				tx, err := db.Begin()
-				if err == nil {
-					_, _ = tx.Exec(`DELETE FROM tracks WHERE path=?`, path)
-					_ = upsertTrack(tx, env, item, st.ModTime().UnixNano(), st.Size())
-					_ = tx.Commit()
-				}
+				_ = replaceTrack(db, env, path, trackFromProbe(canon, genre, probed), st.ModTime().UnixNano(), st.Size())
 			}
 		}
 		appendPlacement(env, "sort", path, canon)
 		res.Moved++
+		res.Moves = append(res.Moves, MoveTrackResult{From: path, To: canon, Folder: genre})
 		return nil
 	})
 	return res, err

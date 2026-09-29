@@ -2,7 +2,6 @@ package library
 
 import (
 	"database/sql"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"sort"
@@ -51,7 +50,7 @@ func Browse(env Env, opt BrowseOptions) (BrowseResult, error) {
 	}
 	if opt.Queue {
 		if opt.QueuePathsOnly {
-			paths, err := collectQueuePaths(env, rel, dir)
+			paths, err := CollectQueuePaths(env, rel, dir)
 			if err != nil {
 				return BrowseResult{}, err
 			}
@@ -138,16 +137,12 @@ type genreCount struct {
 }
 
 func listGenres(env Env, db *sql.DB, dbErr error) ([]genreCount, error) {
-	entries, err := os.ReadDir(env.MusicRoot)
+	names, err := listGenreNames(env.MusicRoot)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]genreCount, 0)
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
-			continue
-		}
-		name := e.Name()
+	out := make([]genreCount, 0, len(names))
+	for _, name := range names {
 		dir := filepath.Join(env.MusicRoot, name)
 		count := 0
 		if db != nil && dbErr == nil {
@@ -158,7 +153,6 @@ func listGenres(env Env, db *sql.DB, dbErr error) ([]genreCount, error) {
 		}
 		out = append(out, genreCount{Name: name, Count: count})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -261,10 +255,6 @@ func scanTrack(rows *sql.Rows, env Env) (Track, error) {
 
 // CollectQueuePaths returns audio file paths under a folder tree.
 func CollectQueuePaths(env Env, rel, dir string) ([]string, error) {
-	return collectQueuePaths(env, rel, dir)
-}
-
-func collectQueuePaths(env Env, rel, dir string) ([]string, error) {
 	dir = filepath.Clean(dir)
 	if db, err := EnsureDB(env); err == nil {
 		if paths, err := collectQueuePathsDB(db, dir); err == nil && len(paths) > 0 {
@@ -275,9 +265,8 @@ func collectQueuePaths(env Env, rel, dir string) ([]string, error) {
 }
 
 func collectQueuePathsDB(db *sql.DB, dir string) ([]string, error) {
-	dir = filepath.Clean(dir)
-	pattern := dir + string(os.PathSeparator) + "%"
-	rows, err := db.Query(`SELECT path FROM tracks WHERE path LIKE ? ORDER BY path`, pattern)
+	lo, hi := PathPrefixRange(dir)
+	rows, err := db.Query(`SELECT path FROM tracks WHERE path >= ? AND path < ? ORDER BY path`, lo, hi)
 	if err != nil {
 		return nil, err
 	}
@@ -334,11 +323,10 @@ func collectQueueTracks(env Env, rel, dir string) ([]Track, error) {
 }
 
 func collectQueueTracksDB(env Env, db *sql.DB, dir string) ([]Track, error) {
-	dir = filepath.Clean(dir)
-	pattern := dir + string(os.PathSeparator) + "%"
+	lo, hi := PathPrefixRange(dir)
 	rows, err := db.Query(`
 SELECT path, genre, title, artist, album, year, label, duration, art, waveform, liked
-FROM tracks WHERE path LIKE ? ORDER BY path`, pattern)
+FROM tracks WHERE path >= ? AND path < ? ORDER BY path`, lo, hi)
 	if err != nil {
 		return nil, err
 	}
@@ -410,28 +398,14 @@ func TracksForGenre(env Env, genre string) ([]Track, error) {
 			return tracks, nil
 		}
 	}
-	cache := filepath.Join(env.TracksCacheDir, genre+".tags.json")
-	if raw, err := os.ReadFile(cache); err == nil {
-		var items []Track
-		if json.Unmarshal(raw, &items) == nil && len(items) > 0 {
-			for i := range items {
-				enrichTrackAssets(env, &items[i])
-				if isLiked(env, items[i].Path) {
-					items[i].Liked = true
-				}
-			}
-			return items, nil
-		}
-	}
 	tracks, _, err := listTracksPage(env, nil, os.ErrNotExist, genre, dir, 0, 100000)
 	return tracks, err
 }
 
 func tracksUnderDir(env Env, db *sql.DB, dir string) ([]Track, error) {
-	dir = filepath.Clean(dir)
 	rows, err := db.Query(`
 SELECT path, genre, title, artist, album, year, label, duration, art, waveform, liked
-FROM tracks WHERE path = ? OR path LIKE ? ORDER BY path`, dir, dir+string(os.PathSeparator)+"%")
+FROM tracks WHERE `+pathUnderSQL+` ORDER BY path`, pathUnderArgs(dir)...)
 	if err != nil {
 		return nil, err
 	}

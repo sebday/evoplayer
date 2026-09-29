@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	_ "golang.org/x/image/webp"
 	"image"
 	_ "image/jpeg"
 	_ "image/png"
-	_ "golang.org/x/image/webp"
 	"io"
 	"net/http"
 	"os"
@@ -65,7 +65,7 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 		return InstallResult{}, err
 	}
 	content := artPathContent(env, hash)
-	if !isDecodableArtFile(content) {
+	if !nonEmptyFile(content) {
 		if err := os.Rename(tmp, content); err != nil {
 			return InstallResult{}, err
 		}
@@ -136,9 +136,9 @@ func validateImageBytes(body []byte) error {
 func ClearArt(env Env, trackPath string) error {
 	trackArt := artPathTrack(env, trackPath)
 	folder := artPathFolder(env, trackPath)
-	if trackArt != folder && isDecodableArtFile(trackArt) {
+	if trackArt != folder && nonEmptyFile(trackArt) {
 		_ = os.Remove(trackArt)
-	} else if isDecodableArtFile(folder) {
+	} else if nonEmptyFile(folder) {
 		_ = os.Remove(folder)
 	}
 	markArtDirty(env, trackPath, "track")
@@ -169,14 +169,14 @@ func Maintain(env Env) error {
 		return err
 	}
 	for dir := range snap.Dirs {
-		_, _, _, _ = embedFolder(env, dir)
+		_ = embedFolder(env, dir)
 	}
 	for track := range snap.Tracks {
 		art := artCacheFind(env, track)
 		if art == "" {
 			continue
 		}
-		_, _ = embedAudio(track, art)
+		_ = embedAudio(track, art)
 	}
 	if env.CacheDir == "" {
 		return nil
@@ -240,13 +240,13 @@ func writeDirty(env Env, snap dirtySnapshot) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dirtyPath(env), raw, 0o644)
+	return WriteFileAtomic(dirtyPath(env), raw, 0o644)
 }
 
-func embedFolder(env Env, dir string) (embedded, failed, skipped int, err error) {
+func embedFolder(env Env, dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return 0, 0, 0, err
+		return err
 	}
 	var sample string
 	for _, e := range entries {
@@ -260,37 +260,36 @@ func embedFolder(env Env, dir string) (embedded, failed, skipped int, err error)
 		}
 	}
 	if sample == "" {
-		return 0, 0, 0, nil
+		return nil
 	}
 	art := artPathFolder(env, sample)
-	if !isDecodableArtFile(art) {
-		return 0, 0, 0, nil
+	if !nonEmptyFile(art) {
+		return nil
 	}
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
 		p := filepath.Join(dir, e.Name())
-		if !playback.IsSupportedPath(p) {
-			continue
-		}
-		st, err := embedAudio(p, art)
-		switch {
-		case err != nil:
-			failed++
-		case st == 2:
-			skipped++
-		default:
-			embedded++
+		if playback.IsSupportedPath(p) {
+			_ = embedAudio(p, art)
 		}
 	}
-	return embedded, failed, skipped, nil
+	return nil
 }
 
-func embedAudio(audioPath, artPath string) (int, error) {
+func embedAudio(audioPath, artPath string) error {
+	st, err := os.Stat(audioPath)
+	if err != nil {
+		return err
+	}
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(audioPath), "."))
-	tmp := audioPath + ".arttmp." + ext
-	var err error
+	f, err := os.CreateTemp(filepath.Dir(audioPath), ".arttmp-*."+ext)
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	f.Close()
 	switch ext {
 	case "mp3":
 		err = exec.Command("ffmpeg", "-y", "-loglevel", "error", "-i", audioPath, "-i", artPath,
@@ -300,13 +299,14 @@ func embedAudio(audioPath, artPath string) (int, error) {
 		err = exec.Command("ffmpeg", "-y", "-loglevel", "error", "-i", audioPath, "-i", artPath,
 			"-map", "0", "-map", "1", "-c", "copy", "-disposition:v:0", "attached_pic", tmp).Run()
 	}
+	if err == nil {
+		err = os.Chmod(tmp, st.Mode().Perm())
+	}
+	if err == nil {
+		err = os.Rename(tmp, audioPath)
+	}
 	if err != nil {
 		os.Remove(tmp)
-		return 1, err
 	}
-	if err := os.Rename(tmp, audioPath); err != nil {
-		os.Remove(tmp)
-		return 1, err
-	}
-	return 0, nil
+	return err
 }

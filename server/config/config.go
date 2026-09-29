@@ -1,10 +1,12 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -39,26 +41,41 @@ type JSONView struct {
 	Viz VizView `json:"viz"`
 }
 
-func Load(path string) (map[string]map[string]any, error) {
-	data := map[string]map[string]any{}
+func loadDoc(path string) (map[string]any, error) {
+	doc := map[string]any{}
 	if path == "" {
-		return data, nil
+		return doc, nil
 	}
 	if _, err := os.Stat(path); err != nil {
-		return data, nil
+		return doc, nil
 	}
-	raw := map[string]any{}
-	if _, err := toml.DecodeFile(path, &raw); err != nil {
+	if _, err := toml.DecodeFile(path, &doc); err != nil {
 		return nil, err
 	}
-	for section, val := range raw {
-		m, ok := val.(map[string]any)
-		if !ok {
-			continue
+	return doc, nil
+}
+
+func Load(path string) (map[string]map[string]any, error) {
+	doc, err := loadDoc(path)
+	if err != nil {
+		return nil, err
+	}
+	data := map[string]map[string]any{}
+	for section, val := range doc {
+		if m, ok := val.(map[string]any); ok {
+			data[section] = m
 		}
-		data[section] = m
 	}
 	return data, nil
+}
+
+func docSection(doc map[string]any, section string) map[string]any {
+	if m, ok := doc[section].(map[string]any); ok {
+		return m
+	}
+	m := map[string]any{}
+	doc[section] = m
+	return m
 }
 
 func Get(path, section, key, defaultVal string) (string, error) {
@@ -86,32 +103,30 @@ func Get(path, section, key, defaultVal string) (string, error) {
 }
 
 func Set(path, section, key, value string) error {
-	data, err := Load(path)
+	doc, err := loadDoc(path)
 	if err != nil {
 		return err
 	}
-	if data[section] == nil {
-		data[section] = map[string]any{}
-	}
+	sec := docSection(doc, section)
 	if section == "soundcloud" && key == "oauth_token" {
-		delete(data[section], "oauth_token")
-		_ = write(path, data)
+		delete(sec, "oauth_token")
+		_ = write(path, doc)
 		return fmt.Errorf("evoplayer: soundcloud oauth is not stored in music.toml (browser cookie or pass)")
 	}
-	data[section][key] = value
-	if section == "soundcloud" || data["soundcloud"] != nil {
-		delete(data["soundcloud"], "likes_url")
-		delete(data["soundcloud"], "oauth_token")
+	sec[key] = value
+	if sc, ok := doc["soundcloud"].(map[string]any); ok {
+		delete(sc, "likes_url")
+		delete(sc, "oauth_token")
 	}
-	return write(path, data)
+	return write(path, doc)
 }
 
 func PruneDerived(path string) error {
-	data, err := Load(path)
+	doc, err := loadDoc(path)
 	if err != nil {
 		return err
 	}
-	sc, ok := data["soundcloud"]
+	sc, ok := doc["soundcloud"].(map[string]any)
 	if !ok {
 		return nil
 	}
@@ -122,7 +137,7 @@ func PruneDerived(path string) error {
 	}
 	delete(sc, "likes_url")
 	delete(sc, "oauth_token")
-	return write(path, data)
+	return write(path, doc)
 }
 
 func JSON(path, musicRoot string) (JSONView, error) {
@@ -205,106 +220,99 @@ func SkipDirs(path string) ([]string, error) {
 	return out, nil
 }
 
-func esc(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `"`, `\"`)
-	return s
+var sectionOrder = []string{"paths", "soundcloud", "genres", "genre_aliases", "playlist_folders"}
+
+func sectionRank(name string) int {
+	for i, s := range sectionOrder {
+		if s == name {
+			return i
+		}
+	}
+	return len(sectionOrder)
 }
 
-func write(path string, data map[string]map[string]any) error {
-	sections := make([]string, 0, len(data))
-	for section := range data {
-		sections = append(sections, section)
+func isTable(v any) bool {
+	switch v.(type) {
+	case map[string]any, []map[string]any:
+		return true
 	}
-	// stable section order: paths first, then soundcloud, genres, genre_aliases, then rest sorted
-	sortSections := func(a, b string) bool {
-		order := map[string]int{"paths": 0, "soundcloud": 1, "genres": 2, "genre_aliases": 3, "playlist_folders": 4}
-		oa, ob := order[a], order[b]
-		if oa != ob {
-			if oa == 0 {
-				return true
-			}
-			if ob == 0 {
-				return false
-			}
-			if oa == 1 {
-				return true
-			}
-			if ob == 1 {
-				return false
-			}
-			if oa == 2 {
-				return true
-			}
-			if ob == 2 {
-				return false
-			}
-			if oa == 3 {
-				return true
-			}
-			if ob == 3 {
-				return false
-			}
-		}
-		return a < b
-	}
-	for i := 0; i < len(sections); i++ {
-		for j := i + 1; j < len(sections); j++ {
-			if !sortSections(sections[i], sections[j]) {
-				sections[i], sections[j] = sections[j], sections[i]
-			}
-		}
-	}
+	return false
+}
 
-	var lines []string
-	for _, section := range sections {
-		vals := data[section]
-		if vals == nil {
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("[%s]", section))
-		keys := make([]string, 0, len(vals))
-		for key := range vals {
-			keys = append(keys, key)
-		}
-		for i := 0; i < len(keys); i++ {
-			for j := i + 1; j < len(keys); j++ {
-				if keys[j] < keys[i] {
-					keys[i], keys[j] = keys[j], keys[i]
-				}
-			}
-		}
-		for _, key := range keys {
-			val := vals[key]
-			switch v := val.(type) {
-			case string:
-				lines = append(lines, fmt.Sprintf("%s = \"%s\"", key, esc(v)))
-			case bool:
-				if v {
-					lines = append(lines, fmt.Sprintf("%s = true", key))
-				} else {
-					lines = append(lines, fmt.Sprintf("%s = false", key))
-				}
-			case []any:
-				items := make([]string, 0, len(v))
-				for _, item := range v {
-					items = append(items, fmt.Sprintf("\"%s\"", esc(fmt.Sprint(item))))
-				}
-				lines = append(lines, fmt.Sprintf("%s = [%s]", key, strings.Join(items, ", ")))
-			default:
-				lines = append(lines, fmt.Sprintf("%s = %v", key, v))
-			}
-		}
-		lines = append(lines, "")
+func encodeTOML(v map[string]any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := toml.NewEncoder(&buf)
+	enc.Indent = ""
+	if err := enc.Encode(v); err != nil {
+		return nil, err
 	}
-	dir := filepath.Dir(path)
-	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+	return bytes.TrimSpace(buf.Bytes()), nil
+}
+
+func write(path string, doc map[string]any) error {
+	top := map[string]any{}
+	var sections []string
+	for key, val := range doc {
+		if isTable(val) {
+			sections = append(sections, key)
+		} else {
+			top[key] = val
+		}
+	}
+	sort.Slice(sections, func(i, j int) bool {
+		ri, rj := sectionRank(sections[i]), sectionRank(sections[j])
+		if ri != rj {
+			return ri < rj
+		}
+		return sections[i] < sections[j]
+	})
+	var chunks [][]byte
+	if len(top) > 0 {
+		chunk, err := encodeTOML(top)
+		if err != nil {
 			return err
 		}
+		chunks = append(chunks, chunk)
 	}
-	content := strings.TrimRight(strings.Join(lines, "\n"), "\n") + "\n"
-	return os.WriteFile(path, []byte(content), 0o644)
+	for _, section := range sections {
+		chunk, err := encodeTOML(map[string]any{section: doc[section]})
+		if err != nil {
+			return err
+		}
+		chunks = append(chunks, chunk)
+	}
+	content := append(bytes.Join(chunks, []byte("\n\n")), '\n')
+	return writeAtomic(path, content)
+}
+
+func writeAtomic(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	mode := os.FileMode(0o644)
+	if st, err := os.Stat(path); err == nil {
+		mode = st.Mode().Perm()
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	_, err = tmp.Write(data)
+	if cerr := tmp.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(name, mode)
+	}
+	if err == nil {
+		err = os.Rename(name, path)
+	}
+	if err != nil {
+		_ = os.Remove(name)
+	}
+	return err
 }
 
 func ValidateMusicRoot(root string) error {

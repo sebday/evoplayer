@@ -9,16 +9,34 @@ import (
 )
 
 func OnTrackMoved(env Env, from, to string) error {
-	if from == "" || to == "" || from == to {
+	return OnTracksMoved(env, map[string]string{from: to})
+}
+
+// OnTracksMoved rewrites likes, the current queue and playlists for moved
+// tracks (old path -> new path) and regenerates the affected auto lists.
+func OnTracksMoved(env Env, moved map[string]string) error {
+	moves := make(map[string]string, len(moved))
+	for from, to := range moved {
+		if from != "" && to != "" && from != to {
+			moves[from] = to
+		}
+	}
+	if len(moves) == 0 {
 		return nil
 	}
 	likes, err := readLikes(env.LikesFile)
 	if err != nil {
 		return err
 	}
-	if entry, ok := likes[from]; ok {
-		delete(likes, from)
-		likes[to] = entry
+	likesChanged := false
+	for from, to := range moves {
+		if entry, ok := likes[from]; ok {
+			delete(likes, from)
+			likes[to] = entry
+			likesChanged = true
+		}
+	}
+	if likesChanged {
 		if err := writeLikes(env.LikesFile, likes); err != nil {
 			return err
 		}
@@ -27,7 +45,7 @@ func OnTrackMoved(env Env, from, to string) error {
 	if paths, err := ReadCurrentPaths(env); err == nil {
 		changed := false
 		for i, p := range paths {
-			if p == from {
+			if to, ok := moves[p]; ok {
 				paths[i] = to
 				changed = true
 			}
@@ -43,46 +61,26 @@ func OnTrackMoved(env Env, from, to string) error {
 				if e.IsDir() || !strings.HasSuffix(e.Name(), ".m3u") {
 					continue
 				}
-				_ = replaceM3UPath(filepath.Join(env.PlaylistDir, e.Name()), from, to)
+				_ = library.RewriteM3U(filepath.Join(env.PlaylistDir, e.Name()), func(p string) string {
+					if to, ok := moves[p]; ok {
+						return to
+					}
+					return p
+				})
 			}
 		}
 	}
-	oldGenre := genreFromPath(env.MusicRoot, from)
-	newGenre := genreFromPath(env.MusicRoot, to)
 	_ = writeLikesM3U(env, filepath.Join(env.PlaylistDir, "all.m3u"))
 	_ = writeMixesM3U(env)
-	if oldGenre != "" {
-		_ = writeGenreM3U(env, oldGenre)
+	genres := map[string]struct{}{}
+	for from, to := range moves {
+		genres[library.GenreFromPath(env.MusicRoot, from)] = struct{}{}
+		genres[library.GenreFromPath(env.MusicRoot, to)] = struct{}{}
 	}
-	if newGenre != "" && newGenre != oldGenre {
-		_ = writeGenreM3U(env, newGenre)
+	for genre := range genres {
+		if genre != "" {
+			_ = writeGenreM3U(env, genre)
+		}
 	}
 	return nil
-}
-
-func replaceM3UPath(path, from, to string) error {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	text := string(raw)
-	if !strings.Contains(text, from) {
-		return nil
-	}
-	lines := strings.Split(text, "\n")
-	changed := false
-	for i, line := range lines {
-		trim := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
-		if trim == from {
-			lines[i] = to
-			changed = true
-		}
-	}
-	if !changed {
-		return nil
-	}
-	return os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o644)
 }

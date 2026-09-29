@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/sebday/evoplayer/server/tags"
@@ -14,26 +13,8 @@ import (
 const incomingTagsFile = "tags.json"
 
 func GenreChoices(env Env) []string {
-	seen := map[string]struct{}{}
-	var out []string
-	add := func(name string) {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return
-		}
-		if _, ok := seen[name]; ok {
-			return
-		}
-		seen[name] = struct{}{}
-		out = append(out, name)
-	}
-	if names, err := listGenreNames(env); err == nil {
-		for _, name := range names {
-			add(name)
-		}
-	}
-	sort.Strings(out)
-	return out
+	names, _ := listGenreNames(env.MusicRoot)
+	return names
 }
 
 func SetIncomingGenre(env Env, path, genre string) (map[string]any, error) {
@@ -41,7 +22,7 @@ func SetIncomingGenre(env Env, path, genre string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	folder := matchLibraryFolder(env, genre)
+	folder := MatchLibraryGenre(env, genre)
 	if folder == "" {
 		return nil, fmt.Errorf("unknown library folder: %s", genre)
 	}
@@ -95,15 +76,30 @@ func writeIncomingOverlayGenre(env Env, path, genre string) error {
 	}
 	overlay := readIncomingOverlay(env)
 	overlay[filepath.Base(path)] = genre
+	return writeIncomingOverlay(env, overlay)
+}
+
+func removeIncomingOverlay(env Env, bases []string) error {
+	if len(bases) == 0 {
+		return nil
+	}
+	overlay := readIncomingOverlay(env)
+	n := len(overlay)
+	for _, base := range bases {
+		delete(overlay, base)
+	}
+	if len(overlay) == n {
+		return nil
+	}
+	return writeIncomingOverlay(env, overlay)
+}
+
+func writeIncomingOverlay(env Env, overlay map[string]string) error {
 	raw, err := json.Marshal(overlay)
 	if err != nil {
 		return err
 	}
-	tmp := incomingOverlayPath(env) + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, incomingOverlayPath(env))
+	return WriteFileAtomic(incomingOverlayPath(env), raw, 0o644)
 }
 
 func incomingOverlayPath(env Env) string {

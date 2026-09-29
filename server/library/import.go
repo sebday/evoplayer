@@ -8,51 +8,6 @@ import (
 	"strings"
 )
 
-func hasTagsJSON(env Env) bool {
-	matches, err := filepath.Glob(filepath.Join(env.TracksCacheDir, "*.tags.json"))
-	return err == nil && len(matches) > 0
-}
-
-func ImportTagsCaches(db *sql.DB, env Env) error {
-	matches, err := filepath.Glob(filepath.Join(env.TracksCacheDir, "*.tags.json"))
-	if err != nil {
-		return err
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	for _, cache := range matches {
-		raw, err := os.ReadFile(cache)
-		if err != nil {
-			continue
-		}
-		var items []Track
-		if err := json.Unmarshal(raw, &items); err != nil {
-			continue
-		}
-		for _, item := range items {
-			if item.Path == "" {
-				continue
-			}
-			st, err := os.Stat(item.Path)
-			if err != nil || st.IsDir() {
-				continue
-			}
-			genre := item.Genre
-			if genre == "" {
-				genre = genreFromPath(env.MusicRoot, item.Path)
-			}
-			item.Genre = genre
-			if err := upsertTrack(tx, env, item, st.ModTime().UnixNano(), st.Size()); err != nil {
-				_ = tx.Rollback()
-				return err
-			}
-		}
-	}
-	return tx.Commit()
-}
-
 func SyncLiked(db *sql.DB, env Env) error {
 	_ = RelocateLibraryPaths(env)
 	raw, err := os.ReadFile(env.LikesFile)
@@ -100,14 +55,11 @@ func SyncLiked(db *sql.DB, env Env) error {
 	return tx.Commit()
 }
 
-func genreFromPath(root, path string) string {
+// GenreFromPath returns the top-level library folder containing path.
+func GenreFromPath(root, path string) string {
 	rel, err := filepath.Rel(root, path)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
 		return ""
 	}
-	parts := strings.Split(rel, string(os.PathSeparator))
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return ""
+	return strings.Split(rel, string(os.PathSeparator))[0]
 }

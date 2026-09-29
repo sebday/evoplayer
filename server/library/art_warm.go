@@ -15,7 +15,7 @@ func artPathFolder(env Env, path string) string {
 }
 
 func artPathTrack(env Env, path string) string {
-	return filepath.Join(env.ArtDir, cacheKey(env.MusicRoot, path)+".jpg")
+	return filepath.Join(env.ArtDir, CacheKey(env.MusicRoot, path)+".jpg")
 }
 
 func artPathContent(env Env, hash string) string {
@@ -89,7 +89,7 @@ func EnsureArt(env Env, path string) (string, bool, error) {
 		return "", false, err
 	}
 	trackArt := artPathTrack(env, path)
-	if isDecodableArtFile(trackArt) {
+	if nonEmptyFile(trackArt) {
 		return trackArt, false, nil
 	}
 	tmp, err := os.CreateTemp(env.ArtDir, ".art.*.jpg")
@@ -103,7 +103,7 @@ func EnsureArt(env Env, path string) (string, bool, error) {
 		"-an", "-vcodec", "copy", tmpName).Run(); err != nil {
 		return "", false, nil
 	}
-	if !isDecodableArtFile(tmpName) {
+	if !nonEmptyFile(tmpName) {
 		return "", false, nil
 	}
 	hash, err := artImageHash(tmpName)
@@ -111,7 +111,7 @@ func EnsureArt(env Env, path string) (string, bool, error) {
 		return "", false, err
 	}
 	content := artPathContent(env, hash)
-	if !isDecodableArtFile(content) {
+	if !nonEmptyFile(content) {
 		if err := os.Rename(tmpName, content); err != nil {
 			return "", false, err
 		}
@@ -121,7 +121,7 @@ func EnsureArt(env Env, path string) (string, bool, error) {
 	if err := artLinkFolderAlias(trackArt, content); err != nil {
 		return "", false, err
 	}
-	if isDecodableArtFile(trackArt) {
+	if nonEmptyFile(trackArt) {
 		return trackArt, true, nil
 	}
 	return "", false, nil

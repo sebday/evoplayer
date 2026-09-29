@@ -10,9 +10,6 @@ import (
 )
 
 const schemaSQL = `
-PRAGMA journal_mode=WAL;
-PRAGMA busy_timeout=5000;
-PRAGMA synchronous=NORMAL;
 CREATE TABLE IF NOT EXISTS tracks (
   path TEXT PRIMARY KEY NOT NULL,
   genre TEXT NOT NULL DEFAULT '',
@@ -38,11 +35,19 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `
 
+// SQLiteDSN applies per-connection pragmas so every pooled connection waits on locks.
+func SQLiteDSN(path string) string {
+	if path == "" {
+		return ""
+	}
+	return path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+}
+
 func OpenDB(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", SQLiteDSN(path))
 	if err != nil {
 		return nil, err
 	}
@@ -73,45 +78,46 @@ func Ready(db *sql.DB) bool {
 	if db == nil {
 		return false
 	}
+	n, err := countTracks(db)
+	return err == nil && n > 0
+}
+
+func countTracks(db *sql.DB) (int, error) {
 	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM tracks`).Scan(&n); err != nil {
-		return false
-	}
-	return n > 0
+	err := db.QueryRow(`SELECT COUNT(*) FROM tracks`).Scan(&n)
+	return n, err
 }
 
 func EnsureDB(env Env) (*sql.DB, error) {
-	if db, ok := cachedDB(env.LibraryDB); ok {
+	dbMu.Lock()
+	defer dbMu.Unlock()
+	if db, ok := dbCache[env.LibraryDB]; ok {
 		return db, nil
 	}
 	db, err := OpenDB(env.LibraryDB)
 	if err != nil {
 		return nil, err
 	}
-	if !Ready(db) {
-		if hasTagsJSON(env) {
-			if err := rebuildFromJSON(db, env); err != nil {
-				_ = db.Close()
-				return nil, err
-			}
-		}
-	} else {
+	if Ready(db) {
 		_ = SyncLiked(db, env)
 	}
-	storeCachedDB(env.LibraryDB, db)
+	dbCache[env.LibraryDB] = db
 	return db, nil
 }
 
-func rebuildFromJSON(db *sql.DB, env Env) error {
-	_, _ = db.Exec(`DELETE FROM tracks`)
-	if err := ImportTagsCaches(db, env); err != nil {
-		return err
-	}
-	if err := SyncLiked(db, env); err != nil {
-		return err
-	}
-	_, err := db.Exec(`INSERT OR REPLACE INTO meta(key,value) VALUES('built_at', datetime('now'))`)
-	return err
+// PathPrefixRange returns bounds such that lo <= path < hi selects paths strictly under dir.
+func PathPrefixRange(dir string) (lo, hi string) {
+	sep := string(os.PathSeparator)
+	dir = strings.TrimRight(filepath.Clean(dir), sep)
+	return dir + sep, dir + string(rune(os.PathSeparator+1))
+}
+
+const pathUnderSQL = `(path = ? OR (path >= ? AND path < ?))`
+
+func pathUnderArgs(dir string) []any {
+	dir = filepath.Clean(dir)
+	lo, hi := PathPrefixRange(dir)
+	return []any{dir, lo, hi}
 }
 
 func CountInDir(db *sql.DB, dir string) (int, error) {
@@ -122,13 +128,12 @@ func CountInDir(db *sql.DB, dir string) (int, error) {
 
 func CountUnder(db *sql.DB, dir string) (int, error) {
 	var n int
-	dir = filepath.Clean(dir)
-	err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE path = ? OR path LIKE ?`, dir, dir+string(os.PathSeparator)+"%").Scan(&n)
+	err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE `+pathUnderSQL, pathUnderArgs(dir)...).Scan(&n)
 	return n, err
 }
 
 func ListTrackPaths(env Env) ([]string, error) {
-	return listTrackPathsQuery(env, "", "")
+	return listTrackPathsQuery(env, "")
 }
 
 // ListTrackPathsInDir returns indexed track paths under a library-relative folder (e.g. drum&bass/soundcloud).
@@ -137,32 +142,22 @@ func ListTrackPathsInDir(env Env, rel string) ([]string, error) {
 	if rel == "" {
 		return ListTrackPaths(env)
 	}
-	dir := filepath.Join(env.MusicRoot, filepath.FromSlash(rel))
-	return listTrackPathsQuery(env, dir, dir+string(os.PathSeparator)+"%")
+	return listTrackPathsQuery(env, filepath.Join(env.MusicRoot, filepath.FromSlash(rel)))
 }
 
-func listTrackPathsQuery(env Env, exact, like string) ([]string, error) {
+func listTrackPathsQuery(env Env, dir string) ([]string, error) {
 	db, err := OpenDB(env.LibraryDB)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
-	var (
-		rows *sql.Rows
-		q    string
-		args []any
-	)
-	switch {
-	case exact != "" && like != "":
-		q = `SELECT path FROM tracks WHERE path = ? OR path LIKE ? ORDER BY path`
-		args = []any{exact, like}
-	case exact != "":
-		q = `SELECT path FROM tracks WHERE path = ? ORDER BY path`
-		args = []any{exact}
-	default:
-		q = `SELECT path FROM tracks ORDER BY path`
+	q := `SELECT path FROM tracks ORDER BY path`
+	var args []any
+	if dir != "" {
+		q = `SELECT path FROM tracks WHERE ` + pathUnderSQL + ` ORDER BY path`
+		args = pathUnderArgs(dir)
 	}
-	rows, err = db.Query(q, args...)
+	rows, err := db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -185,14 +180,18 @@ type fileStat struct {
 	size  int64
 }
 
-func loadFileStats(db *sql.DB, prefix string) (map[string]fileStat, error) {
-	q := `SELECT path, mtime, size FROM tracks`
+type queryer interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
+func loadFileStats(q queryer, prefix string) (map[string]fileStat, error) {
+	query := `SELECT path, mtime, size FROM tracks`
 	var args []any
 	if prefix != "" {
-		q += ` WHERE path = ? OR path LIKE ?`
-		args = []any{prefix, prefix + string(os.PathSeparator) + "%"}
+		query += ` WHERE ` + pathUnderSQL
+		args = pathUnderArgs(prefix)
 	}
-	rows, err := db.Query(q, args...)
+	rows, err := q.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -235,8 +234,27 @@ ON CONFLICT(path) DO UPDATE SET
 	return err
 }
 
+// replaceTrack swaps the row for from with item in one transaction.
+func replaceTrack(db *sql.DB, env Env, from string, item Track, mtime, size int64) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	if from != "" && from != item.Path {
+		if _, err := tx.Exec(`DELETE FROM tracks WHERE path=?`, from); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	if err := upsertTrack(tx, env, item, mtime, size); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
+
 func pruneMissing(tx *sql.Tx, prefix string, seen map[string]struct{}) (int, error) {
-	stats, err := loadFileStatsTx(tx, prefix)
+	stats, err := loadFileStats(tx, prefix)
 	if err != nil {
 		return 0, err
 	}
@@ -251,28 +269,4 @@ func pruneMissing(tx *sql.Tx, prefix string, seen map[string]struct{}) (int, err
 		n++
 	}
 	return n, nil
-}
-
-func loadFileStatsTx(tx *sql.Tx, prefix string) (map[string]fileStat, error) {
-	q := `SELECT path, mtime, size FROM tracks`
-	var args []any
-	if prefix != "" {
-		q += ` WHERE path = ? OR path LIKE ?`
-		args = []any{prefix, prefix + string(os.PathSeparator) + "%"}
-	}
-	rows, err := tx.Query(q, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := make(map[string]fileStat)
-	for rows.Next() {
-		var path string
-		var st fileStat
-		if err := rows.Scan(&path, &st.mtime, &st.size); err != nil {
-			return nil, err
-		}
-		out[path] = st
-	}
-	return out, rows.Err()
 }

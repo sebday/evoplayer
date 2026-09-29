@@ -2,28 +2,26 @@ package find
 
 import (
 	"database/sql"
-	"encoding/json"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
-	_ "modernc.org/sqlite"
+	"github.com/sebday/evoplayer/server/library"
 )
 
 func Tracks(cacheDir, mode, query string) ([]map[string]any, error) {
 	dbPath := filepath.Join(filepath.Dir(cacheDir), "library.sqlite3")
-	if items, err := tracksFromSQLite(dbPath, mode, query); err == nil && len(items) > 0 {
-		return items, nil
-	}
-	return tracksFromJSON(cacheDir, mode, query)
+	return tracksFromSQLite(dbPath, mode, query)
 }
 
 func tracksFromSQLite(dbPath, mode, query string) ([]map[string]any, error) {
 	if _, err := os.Stat(dbPath); err != nil {
+		if os.IsNotExist(err) {
+			return []map[string]any{}, nil
+		}
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", dbPath)
+	db, err := sql.Open("sqlite", library.SQLiteDSN(dbPath))
 	if err != nil {
 		return nil, err
 	}
@@ -50,42 +48,6 @@ func tracksFromSQLite(dbPath, mode, query string) ([]map[string]any, error) {
 		}
 	}
 	return out, rows.Err()
-}
-
-func tracksFromJSON(cacheDir, mode, query string) ([]map[string]any, error) {
-	needle := strings.ToLower(query)
-	matches, err := filepath.Glob(filepath.Join(cacheDir, "*.tags.json"))
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(matches)
-	seen := map[string]struct{}{}
-	out := make([]map[string]any, 0)
-	for _, cache := range matches {
-		raw, err := os.ReadFile(cache)
-		if err != nil {
-			continue
-		}
-		var items []map[string]any
-		if err := json.Unmarshal(raw, &items); err != nil {
-			continue
-		}
-		for _, item := range items {
-			path, _ := item["path"].(string)
-			if path == "" {
-				continue
-			}
-			if _, ok := seen[path]; ok {
-				continue
-			}
-			if !matchItem(item, mode, query, needle) {
-				continue
-			}
-			seen[path] = struct{}{}
-			out = append(out, item)
-		}
-	}
-	return out, nil
 }
 
 func matchItem(item map[string]any, mode, query, needle string) bool {

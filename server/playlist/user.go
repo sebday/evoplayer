@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+
+	"github.com/sebday/evoplayer/server/library"
 )
 
 type ActionResult struct {
@@ -110,7 +112,7 @@ func validateUserName(env Env, name string) error {
 		}
 		return fmt.Errorf("invalid playlist name: %s", name)
 	}
-	if isGenreDir(env, name) {
+	if isGenreDir(env, name) || library.FoldedGenreFolder(env.MusicRoot, name) != "" {
 		return fmt.Errorf("invalid playlist name: %s", name)
 	}
 	return nil

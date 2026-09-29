@@ -1,9 +1,5 @@
 package library
 
-import (
-	"database/sql"
-)
-
 type Stats struct {
 	Root   string `json:"root"`
 	Genres int    `json:"genres"`
@@ -12,7 +8,7 @@ type Stats struct {
 
 func LibraryStats(env Env) (Stats, error) {
 	out := Stats{Root: env.MusicRoot}
-	genres, err := listGenreNames(env)
+	genres, err := listGenreNames(env.MusicRoot)
 	if err != nil {
 		return out, err
 	}
@@ -32,10 +28,4 @@ func LibraryStats(env Env) (Stats, error) {
 		}
 	}
 	return out, nil
-}
-
-func countTracks(db *sql.DB) (int, error) {
-	var n int
-	err := db.QueryRow(`SELECT COUNT(*) FROM tracks`).Scan(&n)
-	return n, err
 }

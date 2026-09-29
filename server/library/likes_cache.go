@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+	"time"
 )
 
 var likesCaches sync.Map
@@ -13,6 +14,8 @@ type likesCache struct {
 	file   string
 	set    map[string]struct{}
 	loaded bool
+	mtime  time.Time
+	size   int64
 }
 
 func likesForEnv(env Env) *likesCache {
@@ -28,10 +31,20 @@ func likesForEnv(env Env) *likesCache {
 }
 
 func (c *likesCache) loadLocked() {
-	if c.loaded {
+	if c.file == "" {
+		return
+	}
+	var mtime time.Time
+	var size int64
+	if st, err := os.Stat(c.file); err == nil {
+		mtime, size = st.ModTime(), st.Size()
+	}
+	if c.loaded && mtime.Equal(c.mtime) && size == c.size {
 		return
 	}
 	c.loaded = true
+	c.mtime, c.size = mtime, size
+	c.set = map[string]struct{}{}
 	raw, err := os.ReadFile(c.file)
 	if err != nil {
 		return

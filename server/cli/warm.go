@@ -90,10 +90,10 @@ func CmdWarm(env paths.Env, args []string) error {
 		}
 		if jsonOut {
 			return printJSON(map[string]any{
-				"total":      len(out),
-				"with_art":   withArt,
-				"art_built":  built,
-				"folder":     folder,
+				"total":     len(out),
+				"with_art":  withArt,
+				"art_built": built,
+				"folder":    folder,
 			})
 		}
 		msg := fmt.Sprintf("evoplayer: warmed %d track(s), %d with art", len(out), withArt)

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sebday/evoplayer/server/audio"
 	"github.com/sebday/evoplayer/server/jobs"
@@ -45,6 +47,8 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 	moved := 0
 	failed := 0
 	skipped := 0
+	var imported []string
+	defer func() { _ = removeIncomingOverlay(env, imported) }()
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -98,21 +102,12 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 			continue
 		}
+		imported = append(imported, base)
 		genre := probed.Tag.Genre
 		if genre == "" {
-			genre = genreFromPath(env.MusicRoot, dest)
+			genre = GenreFromPath(env.MusicRoot, dest)
 		}
-		item := Track{
-			Path:     dest,
-			Genre:    genre,
-			Title:    probed.Tag.Title,
-			Artist:   probed.Tag.Artist,
-			Album:    probed.Tag.Album,
-			Year:     probed.Tag.Year,
-			Label:    probed.Tag.Label,
-			Duration: probed.Duration,
-		}
-		if err := upsertTrack(tx, env, item, st.ModTime().UnixNano(), st.Size()); err != nil {
+		if err := upsertTrack(tx, env, trackFromProbe(dest, genre, probed), st.ModTime().UnixNano(), st.Size()); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -186,7 +181,7 @@ func incomingDest(env Env, path string, probed tags.ProbeResult) (string, error)
 	tag := probed.Tag
 	genre := overlayGenre(env, path)
 	if genre == "" {
-		genre = genreFolderFromTags(env, tag)
+		genre = MatchLibraryGenre(env, tag.Genre)
 	}
 	if genre == "" && strings.TrimSpace(tag.Genre) != "" {
 		return "", fmt.Errorf("unknown genre for %s: %s", path, tag.Genre)
@@ -194,6 +189,11 @@ func incomingDest(env Env, path string, probed tags.ProbeResult) (string, error)
 	if genre == "" {
 		return "", fmt.Errorf("unknown genre for %s", path)
 	}
+	return trackDestForFolder(env, path, genre, probed)
+}
+
+func trackDestForFolder(env Env, path, folder string, probed tags.ProbeResult) (string, error) {
+	tag := probed.Tag
 	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
 	if ext == "" {
 		ext = "mp3"
@@ -202,27 +202,13 @@ func incomingDest(env Env, path string, probed tags.ProbeResult) (string, error)
 	if base == "" {
 		return "", fmt.Errorf("cannot name %s", path)
 	}
-	dir := filepath.Join(env.MusicRoot, genre, "soundcloud")
-	if incomingIsMix(path, base, probed.Duration) {
-		year := mixYear(tag.Year, path, base)
-		dir = filepath.Join(env.MusicRoot, genre, "mixes", year)
+	dir := filepath.Join(env.MusicRoot, folder, "soundcloud")
+	if IsMix(probed.Duration) {
+		dir = filepath.Join(env.MusicRoot, folder, "mixes", mixYear(tag.Year, path, base))
 	} else if isYouTubeSource(path, tag) {
-		year := mixYear(tag.Year, path, base)
-		dir = filepath.Join(env.MusicRoot, genre, "youtube", year)
+		dir = filepath.Join(env.MusicRoot, folder, "youtube", mixYear(tag.Year, path, base))
 	}
 	return filepath.Join(dir, base), nil
-}
-
-func incomingIsMix(incomingPath, destBase string, dur float64) bool {
-	return IsMix(incomingPath, dur) || IsMix(destBase, dur)
-}
-
-func genreFolderFromTags(env Env, tag tags.TagInfo) string {
-	return MatchLibraryGenre(env, tag.Genre)
-}
-
-func matchLibraryFolder(env Env, name string) string {
-	return MatchLibraryGenre(env, name)
 }
 
 func trackFilename(artist, title, path, ext string) string {
@@ -265,11 +251,12 @@ func mixYear(yearTag string, paths ...string) string {
 	if len(year) >= 4 {
 		return year[:4]
 	}
+	maxYear := strconv.Itoa(time.Now().Year() + 1)
 	for _, path := range paths {
 		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		for i := 0; i+4 <= len(stem); i++ {
 			part := stem[i : i+4]
-			if part >= "1985" && part <= "2026" {
+			if part >= "1985" && part <= maxYear {
 				return part
 			}
 		}

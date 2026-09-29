@@ -95,10 +95,28 @@ func CmdConfig(env paths.Env, args []string) error {
 
 func cmdConfigGet(env paths.Env, args []string) error {
 	jsonOut := false
+	key := ""
 	for _, arg := range args {
 		if arg == "--json" {
 			jsonOut = true
+		} else if key == "" {
+			key = arg
 		}
+	}
+	if key != "" {
+		section, field, ok := strings.Cut(key, ".")
+		if !ok || section == "" || field == "" {
+			return fmt.Errorf("evoplayer: usage: evoplayer config get [section.key]")
+		}
+		value, err := config.Get(env.MusicConfig, section, field, "")
+		if err != nil {
+			return err
+		}
+		if jsonOut {
+			return printJSON(map[string]string{key: value})
+		}
+		fmt.Println(value)
+		return nil
 	}
 	if err := env.EnsureDirs(); err != nil {
 		return err

@@ -36,10 +36,11 @@ func MoveTrackToFolder(env Env, path, folder string) (MoveTrackResult, error) {
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return MoveTrackResult{}, fmt.Errorf("not under music root: %s", path)
 	}
-	folder = matchLibraryFolder(env, folder)
-	if folder == "" {
+	matched := MatchLibraryGenre(env, folder)
+	if matched == "" {
 		return MoveTrackResult{}, fmt.Errorf("unknown library folder: %s", folder)
 	}
+	folder = matched
 	probed, _ := tags.Probe(path)
 	dest, err := trackDestForFolder(env, path, folder, probed)
 	if err != nil {
@@ -69,48 +70,11 @@ func MoveTrackToFolder(env Env, path, folder string) (MoveTrackResult, error) {
 	}
 	if db, err := EnsureDB(env); err == nil && db != nil {
 		if st, err := os.Stat(dest); err == nil {
-			item := Track{
-				Path:     dest,
-				Genre:    folder,
-				Title:    probed.Tag.Title,
-				Artist:   probed.Tag.Artist,
-				Album:    probed.Tag.Album,
-				Year:     probed.Tag.Year,
-				Label:    probed.Tag.Label,
-				Duration: probed.Duration,
-			}
-			tx, err := db.Begin()
-			if err == nil {
-				_, _ = tx.Exec(`DELETE FROM tracks WHERE path=?`, path)
-				_ = upsertTrack(tx, env, item, st.ModTime().UnixNano(), st.Size())
-				_ = tx.Commit()
-			}
+			_ = replaceTrack(db, env, path, trackFromProbe(dest, folder, probed), st.ModTime().UnixNano(), st.Size())
 		}
 	}
 	appendPlacement(env, "move", path, dest)
-	res.To = dest
 	return res, nil
-}
-
-func trackDestForFolder(env Env, path, folder string, probed tags.ProbeResult) (string, error) {
-	tag := probed.Tag
-	ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
-	if ext == "" {
-		ext = "mp3"
-	}
-	base := trackFilename(tag.Artist, tag.Title, path, ext)
-	if base == "" {
-		return "", fmt.Errorf("cannot name %s", path)
-	}
-	dir := filepath.Join(env.MusicRoot, folder, "soundcloud")
-	if incomingIsMix(path, base, probed.Duration) {
-		year := mixYear(tag.Year, path, base)
-		dir = filepath.Join(env.MusicRoot, folder, "mixes", year)
-	} else if isYouTubeSource(path, tag) {
-		year := mixYear(tag.Year, path, base)
-		dir = filepath.Join(env.MusicRoot, folder, "youtube", year)
-	}
-	return filepath.Join(dir, base), nil
 }
 
 func embedGenreTag(path, genre string) error {

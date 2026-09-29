@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"strings"
 )
 
 type Entry map[string]any
@@ -105,24 +106,5 @@ func str(v any) string {
 }
 
 func trim(s string) string {
-	return stringsTrimSpace(s)
-}
-
-func stringsTrimSpace(s string) string {
-	start, end := 0, len(s)
-	for start < end {
-		c := s[start]
-		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
-			break
-		}
-		start++
-	}
-	for end > start {
-		c := s[end-1]
-		if c != ' ' && c != '\t' && c != '\n' && c != '\r' {
-			break
-		}
-		end--
-	}
-	return s[start:end]
+	return strings.TrimSpace(s)
 }

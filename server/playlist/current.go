@@ -54,11 +54,7 @@ func writeCurrentTracksJSON(env Env, paths []string) error {
 	if err != nil {
 		return err
 	}
-	tmp := env.currentTracksJSON() + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, env.currentTracksJSON())
+	return library.WriteFileAtomic(env.currentTracksJSON(), raw, 0o644)
 }
 
 func pathsEqual(a, b []string) bool {

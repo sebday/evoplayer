@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sebday/evoplayer/server/ipc"
 	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/playback"
@@ -83,7 +84,7 @@ func CmdToggle(env paths.Env, exe string) error {
 	if st.State == "stopped" {
 		return resumeSaved(env, exe, false)
 	}
-	_, err = IPC(env, "playback.toggle", nil)
+	_, err = ipcOK(env, "playback.toggle", nil)
 	return err
 }
 
@@ -91,7 +92,7 @@ func CmdNext(env paths.Env, exe string) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	_, err := IPC(env, "playback.next", nil)
+	_, err := ipcOK(env, "playback.next", nil)
 	if err == nil {
 		_ = savePlayerState(env)
 	}
@@ -102,7 +103,7 @@ func CmdPrev(env paths.Env, exe string) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	_, err := IPC(env, "playback.prev", nil)
+	_, err := ipcOK(env, "playback.prev", nil)
 	if err == nil {
 		_ = savePlayerState(env)
 	}
@@ -117,7 +118,7 @@ func CmdSeek(env paths.Env, exe, sec string) error {
 	if err != nil {
 		return fmt.Errorf("invalid seek seconds: %s", sec)
 	}
-	_, err = IPC(env, "playback.seek", map[string]float64{"seconds": v})
+	_, err = ipcOK(env, "playback.seek", map[string]float64{"seconds": v})
 	return err
 }
 
@@ -140,7 +141,7 @@ func CmdShuffle(env paths.Env, exe, mode string) error {
 	default:
 		return fmt.Errorf("unknown shuffle mode: %s", mode)
 	}
-	_, err := IPC(env, "playback.shuffle", map[string]bool{"on": on})
+	_, err := ipcOK(env, "playback.shuffle", map[string]bool{"on": on})
 	return err
 }
 
@@ -153,14 +154,14 @@ func CmdVolume(env paths.Env, exe, arg, value string) error {
 		if err != nil {
 			return fmt.Errorf("invalid volume: %s", value)
 		}
-		_, err = IPC(env, "playback.volume.set", map[string]int{"volume": v})
+		_, err = ipcOK(env, "playback.volume.set", map[string]int{"volume": v})
 		return err
 	}
 	delta, err := strconv.Atoi(arg)
 	if err != nil {
 		return fmt.Errorf("invalid volume delta: %s", arg)
 	}
-	_, err = IPC(env, "playback.volume.delta", map[string]int{"delta": delta})
+	_, err = ipcOK(env, "playback.volume.delta", map[string]int{"delta": delta})
 	return err
 }
 
@@ -218,17 +219,10 @@ func CmdLoad(env paths.Env, exe string, args []string) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	resp, err := IPC(env, "queue.replace", map[string]interface{}{
+	if _, err := ipcOK(env, "queue.replace", map[string]interface{}{
 		"paths":      pathsList,
 		"start_path": path,
-	})
-	if err != nil {
-		return err
-	}
-	if !resp.OK {
-		return fmt.Errorf("%s", resp.Error)
-	}
-	if err := queueSave(env, pathsList); err != nil {
+	}); err != nil {
 		return err
 	}
 	st, err := waitForTrack(env, path, 5*time.Second)
@@ -348,13 +342,8 @@ func CmdQueueAppend(env paths.Env, exe string, pathsArg []string) error {
 	if len(filtered) == 0 {
 		return nil
 	}
-	_, err := IPC(env, "queue.append", map[string][]string{"paths": filtered})
-	if err != nil {
-		return err
-	}
-	all, _ := readCurrentQueue(env)
-	all = appendUnique(all, filtered)
-	return queueSave(env, all)
+	_, err := ipcOK(env, "queue.append", map[string][]string{"paths": filtered})
+	return err
 }
 
 func CmdQueuePlay(env paths.Env, exe string, args []string) error {
@@ -366,14 +355,11 @@ func CmdQueuePlay(env paths.Env, exe string, args []string) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	_, err := IPC(env, "queue.replace", map[string]interface{}{
+	_, err := ipcOK(env, "queue.replace", map[string]interface{}{
 		"paths":      pathsList,
 		"start_path": start,
 	})
-	if err != nil {
-		return err
-	}
-	return queueSave(env, pathsList)
+	return err
 }
 
 func savePlayerState(env paths.Env) error {
@@ -426,15 +412,16 @@ func resumeSaved(env paths.Env, exe string, playing bool) error {
 	return nil
 }
 
-func queueSave(env paths.Env, pathsList []string) error {
-	if err := env.EnsureDirs(); err != nil {
-		return err
+// ipcOK is IPC that also fails when the daemon rejects the request.
+func ipcOK(env paths.Env, method string, params interface{}) (ipc.Response, error) {
+	resp, err := IPC(env, method, params)
+	if err != nil {
+		return resp, err
 	}
-	return playlist.SaveCurrent(playlist.EnvFrom(env), pathsList)
-}
-
-func readCurrentQueue(env paths.Env) ([]string, error) {
-	return playlist.ReadCurrentPaths(playlist.EnvFrom(env))
+	if !resp.OK {
+		return resp, fmt.Errorf("%s", resp.Error)
+	}
+	return resp, nil
 }
 
 func CmdQueueExtend(env paths.Env, exe string, jsonOut bool) error {
@@ -452,14 +439,11 @@ func CmdQueueExtend(env paths.Env, exe string, jsonOut bool) error {
 		return fmt.Errorf("evoplayer: cannot extend queue while shuffle is on")
 	}
 	pEnv := playlist.EnvFrom(env)
-	result, added, merged, atEnd, err := playlist.ExtendCurrent(pEnv, st.Path)
+	result, added, _, atEnd, err := playlist.ExtendCurrent(pEnv, st.Path)
 	if err != nil {
 		return err
 	}
-	if _, err := IPC(env, "queue.append", map[string][]string{"paths": added}); err != nil {
-		return err
-	}
-	if err := playlist.SaveCurrent(pEnv, merged); err != nil {
+	if _, err := ipcOK(env, "queue.append", map[string][]string{"paths": added}); err != nil {
 		return err
 	}
 	if atEnd {
@@ -475,35 +459,25 @@ func CmdQueueExtend(env paths.Env, exe string, jsonOut bool) error {
 func CmdQueueUpNext(env paths.Env, exe string, args []string) error {
 	jsonOut := false
 	limit := 5
-	for _, a := range args {
-		switch a {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
 		case "--json":
 			jsonOut = true
 		case "--limit":
-			continue
-		default:
-			if strings.HasPrefix(a, "-") {
-				continue
-			}
-		}
-	}
-	for i, a := range args {
-		if a == "--limit" && i+1 < len(args) {
-			if n, err := strconv.Atoi(args[i+1]); err == nil && n > 0 {
-				limit = n
+			if i+1 < len(args) {
+				i++
+				if n, err := strconv.Atoi(args[i]); err == nil && n > 0 {
+					limit = n
+				}
 			}
 		}
 	}
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	limitArg := limit
-	resp, err := IPC(env, "queue.up_next", map[string]any{"limit": limitArg})
+	resp, err := ipcOK(env, "queue.up_next", map[string]any{"limit": limit})
 	if err != nil {
 		return err
-	}
-	if !resp.OK {
-		return fmt.Errorf("%s", resp.Error)
 	}
 	var items []library.Track
 	raw, err := json.Marshal(resp.Data)
@@ -524,19 +498,4 @@ func CmdQueueUpNext(env paths.Env, exe string, args []string) error {
 		fmt.Println(line)
 	}
 	return nil
-}
-
-func appendUnique(base, add []string) []string {
-	seen := make(map[string]struct{}, len(base))
-	for _, p := range base {
-		seen[p] = struct{}{}
-	}
-	for _, p := range add {
-		if _, ok := seen[p]; ok {
-			continue
-		}
-		base = append(base, p)
-		seen[p] = struct{}{}
-	}
-	return base
 }

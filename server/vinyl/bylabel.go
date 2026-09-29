@@ -11,6 +11,11 @@ import (
 
 const defaultRoot = "/mnt/external/music/dubstep/vinyl"
 
+var (
+	releaseRe = regexp.MustCompile(`^[a-z]+\d`)
+	labelRe   = regexp.MustCompile(`^([a-z]+)\d`)
+)
+
 type Move struct {
 	Src   string
 	Dest  string
@@ -30,6 +35,7 @@ func ByLabel(root string, execute bool) (Result, int) {
 	}
 	info, err := os.Stat(root)
 	if err != nil || !info.IsDir() {
+		fmt.Fprintf(os.Stderr, "error: not a directory: %s\n", root)
 		return Result{}, 1
 	}
 	entries, err := os.ReadDir(root)
@@ -55,12 +61,6 @@ func ByLabel(root string, execute bool) (Result, int) {
 		dest := filepath.Join(root, label, name)
 		if pathExists(dest) {
 			result.Skipped = append(result.Skipped, fmt.Sprintf("%s -> %s/ (destination exists)", name, label))
-			continue
-		}
-		srcClean, _ := filepath.EvalSymlinks(src)
-		destClean, _ := filepath.EvalSymlinks(dest)
-		if srcClean != "" && srcClean == destClean {
-			result.Skipped = append(result.Skipped, fmt.Sprintf("%s -> %s/ (already in place)", name, label))
 			continue
 		}
 		result.Moves = append(result.Moves, Move{Src: src, Dest: dest, Label: label})
@@ -155,8 +155,7 @@ func isReleaseFolder(name string) bool {
 	if name == "dubstep_collection_9" {
 		return true
 	}
-	matched, _ := regexp.MatchString(`^[a-z]+\d`, name)
-	return matched
+	return releaseRe.MatchString(name)
 }
 
 func getLabel(name string) string {
@@ -169,8 +168,7 @@ func getLabel(name string) string {
 	if name == "dubstep_collection_9" {
 		return "_misc"
 	}
-	re := regexp.MustCompile(`^([a-z]+)\d`)
-	if m := re.FindStringSubmatch(name); len(m) > 1 {
+	if m := labelRe.FindStringSubmatch(name); len(m) > 1 {
 		return m[1]
 	}
 	return ""

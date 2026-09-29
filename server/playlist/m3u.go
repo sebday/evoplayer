@@ -22,11 +22,15 @@ func readM3UPaths(path string) ([]string, error) {
 	}
 	defer f.Close()
 	var paths []string
+	dir := filepath.Dir(path)
 	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		line := strings.TrimSpace(strings.TrimSuffix(sc.Text(), "\r"))
+	for first := true; sc.Scan(); first = false {
+		line := library.M3UEntry(sc.Text(), first)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
+		}
+		if !filepath.IsAbs(line) {
+			line = filepath.Join(dir, line)
 		}
 		if st, err := os.Stat(line); err != nil || st.IsDir() {
 			continue
@@ -92,28 +96,12 @@ func writeM3U(path string, paths []string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".m3u-*")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.WriteString("#EXTM3U\n"); err != nil {
-		_ = tmp.Close()
-		_ = os.Remove(tmpName)
-		return err
-	}
+	var b strings.Builder
+	b.WriteString("#EXTM3U\n")
 	for _, p := range paths {
-		if _, err := tmp.WriteString(p + "\n"); err != nil {
-			_ = tmp.Close()
-			_ = os.Remove(tmpName)
-			return err
-		}
+		b.WriteString(p + "\n")
 	}
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpName)
-		return err
-	}
-	return os.Rename(tmpName, path)
+	return library.WriteFileAtomic(path, []byte(b.String()), 0o644)
 }
 
 func likedPathsForGenre(env Env, genre string) ([]string, error) {
@@ -130,7 +118,7 @@ func likedPathsForGenre(env Env, genre string) ([]string, error) {
 	}
 	paths := make([]string, 0)
 	for p := range likes {
-		if genreFromPath(env.MusicRoot, p) != genre {
+		if library.GenreFromPath(env.MusicRoot, p) != genre {
 			continue
 		}
 		if st, err := os.Stat(p); err != nil || st.IsDir() {
@@ -143,16 +131,4 @@ func likedPathsForGenre(env Env, genre string) ([]string, error) {
 	}
 	sort.Strings(paths)
 	return paths, nil
-}
-
-func genreFromPath(root, path string) string {
-	rel, err := filepath.Rel(root, path)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return ""
-	}
-	parts := strings.Split(rel, string(os.PathSeparator))
-	if len(parts) > 0 {
-		return parts[0]
-	}
-	return ""
 }

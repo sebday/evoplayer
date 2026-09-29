@@ -1,6 +1,10 @@
 package library
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/sebday/evoplayer/server/config"
+)
 
 // GuessFolderFromCandidates maps free-text genre or tag strings to a library folder.
 func GuessFolderFromCandidates(env Env, names ...string) string {
@@ -20,7 +24,7 @@ func GuessFolderFromCandidates(env Env, names ...string) string {
 }
 
 func guessFolderFromText(env Env, raw string) string {
-	n := NormalizeGenreKey(raw)
+	n := config.NormalizeGenreKey(raw)
 	if n == "" {
 		return ""
 	}
@@ -33,7 +37,7 @@ func guessFolderFromText(env Env, raw string) string {
 
 // GuessFolderName maps free text to a canonical library folder name without checking disk.
 func GuessFolderName(raw string) string {
-	return guessFolderNormalized(NormalizeGenreKey(raw))
+	return guessFolderNormalized(config.NormalizeGenreKey(raw))
 }
 
 func guessFolderNormalized(n string) string {

@@ -12,7 +12,7 @@ import (
 
 func CmdJSONLog(env paths.Env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: evoplayer jsonlog <scrobble-recent|queue-up-next|merge-tracks>")
+		return fmt.Errorf("usage: evoplayer jsonlog <scrobble-recent|queue-up-next>")
 	}
 	switch args[0] {
 	case "scrobble-recent":
@@ -35,12 +35,6 @@ func CmdJSONLog(env paths.Env, args []string) error {
 			return err
 		}
 		return printJSONRows(rows)
-	case "merge-tracks":
-		if len(args) < 5 {
-			return fmt.Errorf("usage: evoplayer jsonlog merge-tracks <base.json> <workdir> <count> <out>")
-		}
-		count, _ := strconv.Atoi(args[3])
-		return jsonlog.MergeTrackCache(args[1], args[2], count, args[4])
 	default:
 		return fmt.Errorf("unknown jsonlog command: %s", args[0])
 	}

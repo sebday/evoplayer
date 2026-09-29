@@ -6,6 +6,7 @@ import (
 
 	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
+	"github.com/sebday/evoplayer/server/playlist"
 )
 
 func CmdSort(env paths.Env, args []string) error {
@@ -26,6 +27,15 @@ func CmdSort(env paths.Env, args []string) error {
 	}
 	rel := strings.TrimPrefix(strings.TrimPrefix(folder, env.MusicRoot), "/")
 	res, err := library.SortFolder(library.EnvFrom(env), rel)
+	if len(res.Moves) > 0 {
+		moves := make(map[string]string, len(res.Moves))
+		for _, m := range res.Moves {
+			moves[m.From] = m.To
+		}
+		if perr := playlist.OnTracksMoved(playlist.EnvFrom(env), moves); perr != nil && err == nil {
+			err = perr
+		}
+	}
 	if err != nil {
 		return err
 	}

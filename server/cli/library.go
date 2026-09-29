@@ -40,8 +40,8 @@ func CmdMeta(env paths.Env, args []string) error {
 func CmdBrowse(env paths.Env, args []string) error {
 	opt := library.BrowseOptions{}
 	jsonOut := false
-	for _, a := range args {
-		switch a {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; a {
 		case "--json":
 			jsonOut = true
 		case "--queue":
@@ -49,24 +49,18 @@ func CmdBrowse(env paths.Env, args []string) error {
 		case "--paths-only":
 			opt.QueuePathsOnly = true
 		case "--offset":
-			continue
+			if i+1 < len(args) {
+				i++
+				fmt.Sscanf(args[i], "%d", &opt.Offset)
+			}
 		case "--limit":
-			continue
+			if i+1 < len(args) {
+				i++
+				fmt.Sscanf(args[i], "%d", &opt.Limit)
+			}
 		default:
 			if !strings.HasPrefix(a, "-") && opt.Rel == "" {
 				opt.Rel = a
-			}
-		}
-	}
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--offset":
-			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &opt.Offset)
-			}
-		case "--limit":
-			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &opt.Limit)
 			}
 		}
 	}

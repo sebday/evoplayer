@@ -2,7 +2,6 @@ package library
 
 import (
 	"database/sql"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,28 +28,26 @@ type Track struct {
 	DurationLabel string  `json:"duration_label,omitempty"`
 }
 
-func tagGenreForPath(path, fallback string) string {
-	tag, err := tags.ReadTags(path)
-	if err == nil {
-		if g := strings.TrimSpace(tag.Genre); g != "" {
-			return g
-		}
+func trackFromProbe(path, genre string, probed tags.ProbeResult) Track {
+	return Track{
+		Path:     path,
+		Genre:    genre,
+		Title:    probed.Tag.Title,
+		Artist:   probed.Tag.Artist,
+		Album:    probed.Tag.Album,
+		Year:     probed.Tag.Year,
+		Label:    probed.Tag.Label,
+		Duration: probed.Duration,
 	}
-	return fallback
-}
-
-func applyTagGenreIfEmpty(row *Track) {
-	if row == nil || row.Path == "" {
-		return
-	}
-	if strings.TrimSpace(row.Genre) != "" {
-		return
-	}
-	row.Genre = tagGenreForPath(row.Path, row.Genre)
 }
 
 func applyTagGenre(row *Track) {
-	applyTagGenreIfEmpty(row)
+	if row == nil || row.Path == "" || strings.TrimSpace(row.Genre) != "" {
+		return
+	}
+	if tag, err := tags.ReadTags(row.Path); err == nil {
+		row.Genre = strings.TrimSpace(tag.Genre)
+	}
 }
 
 func Meta(env Env, path string, playlist string) (Track, error) {
@@ -63,30 +60,32 @@ func Meta(env Env, path string, playlist string) (Track, error) {
 	db, err := EnsureDB(env)
 	if err == nil {
 		if row, err := trackByPath(db, env, path); err == nil {
-			enrichTrackAssets(env, &row)
 			row.Playlist = playlist
 			row.DurationLabel = playback.FormatTime(row.Duration)
 			return row, nil
 		}
 	}
-	row := trackFromTagsCache(env, path)
-	if row.Title == "" {
-		if tag, err := tags.ReadTags(path); err == nil {
-			row.Title = tag.Title
-			row.Artist = tag.Artist
-			row.Album = tag.Album
-			row.Year = tag.Year
-			row.Label = tag.Label
-		}
-	}
-	applyTagGenre(&row)
-	if row.Title == "" {
-		row.Title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	}
+	row := trackFromFileTags(env, path)
 	enrichTrackAssets(env, &row)
 	row.Playlist = playlist
 	row.DurationLabel = playback.FormatTime(row.Duration)
 	return row, nil
+}
+
+func trackFromFileTags(env Env, path string) Track {
+	row := Track{Path: path, Liked: isLiked(env, path)}
+	if tag, err := tags.ReadTags(path); err == nil {
+		row.Title = tag.Title
+		row.Artist = tag.Artist
+		row.Album = tag.Album
+		row.Year = tag.Year
+		row.Label = tag.Label
+		row.Genre = strings.TrimSpace(tag.Genre)
+	}
+	if row.Title == "" {
+		row.Title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	}
+	return row
 }
 
 func trackByPath(db *sql.DB, env Env, path string) (Track, error) {
@@ -108,31 +107,6 @@ FROM tracks WHERE path=? LIMIT 1`, path).Scan(
 	enrichTrackAssets(env, &row)
 	applyTagGenre(&row)
 	return row, nil
-}
-
-func trackFromTagsCache(env Env, path string) Track {
-	matches, _ := filepath.Glob(filepath.Join(env.TracksCacheDir, "*.tags.json"))
-	for _, cache := range matches {
-		raw, err := os.ReadFile(cache)
-		if err != nil {
-			continue
-		}
-		var items []Track
-		if json.Unmarshal(raw, &items) != nil {
-			continue
-		}
-		for _, item := range items {
-			if item.Path == path {
-				enrichTrackAssets(env, &item)
-				if isLiked(env, path) {
-					item.Liked = true
-				}
-				applyTagGenre(&item)
-				return item
-			}
-		}
-	}
-	return Track{Path: path}
 }
 
 func isLiked(env Env, path string) bool {

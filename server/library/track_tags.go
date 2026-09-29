@@ -76,7 +76,7 @@ func UpdateTrackTags(env Env, path string, patch TrackTagsPatch) (Track, error) 
 	probed, _ := tags.Probe(path)
 	genre := strings.TrimSpace(probed.Tag.Genre)
 	if genre == "" {
-		genre = genreFromPath(env.MusicRoot, path)
+		genre = GenreFromPath(env.MusicRoot, path)
 	}
 	item := Track{
 		Path:     path,

@@ -4,11 +4,11 @@ import "testing"
 
 func TestGuessFolderName(t *testing.T) {
 	cases := map[string]string{
-		"Deep Dubstep":  "dubstep",
-		"Jungle / DnB":  "drum&bass",
-		"Pop":           "hiphop",
-		"Innamind":      "dubstep",
-		"drum & bass":   "drum&bass",
+		"Deep Dubstep":    "dubstep",
+		"Jungle / DnB":    "drum&bass",
+		"Pop":             "hiphop",
+		"Innamind":        "dubstep",
+		"drum & bass":     "drum&bass",
 		"UK Funky/Breaks": "garage",
 	}
 	for in, want := range cases {

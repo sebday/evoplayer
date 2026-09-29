@@ -9,12 +9,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	id3v2 "github.com/bogem/id3v2"
 )
 
 const minYear = 1985
-const maxYear = 2026
 
 var audioExts = map[string]struct{}{
 	".mp3": {}, ".mp2": {}, ".m4a": {},
@@ -57,7 +57,8 @@ func StandardizePath(musicRoot, target string) (any, int, error) {
 	}
 	if info.IsDir() {
 		result := DirResult{Root: path}
-		err = filepath.WalkDir(path, func(p string, d os.DirEntry, walkErr error) error {
+		// The trailing separator makes WalkDir follow a symlinked root (e.g. ~/music -> /mnt/...).
+		err = filepath.WalkDir(path+string(os.PathSeparator), func(p string, d os.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
@@ -126,40 +127,25 @@ func standardizeFile(musicRoot, path string) FileResult {
 }
 
 func readTags(path string) TagMap {
-	out := TagMap{
-		"title": "", "artist": "", "genre": "", "album": "",
-		"year": "", "publisher": "", "catalognumber": "",
-	}
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
+	var info TagInfo
+	switch strings.ToLower(filepath.Ext(path)) {
 	case ".mp3", ".mp2":
-		tag, err := id3v2.Open(path, id3v2.Options{Parse: true})
-		if err != nil {
-			break
-		}
-		defer tag.Close()
-		out["title"] = strings.TrimSpace(tag.Title())
-		out["artist"] = strings.TrimSpace(firstNonEmpty(tag.Artist(), textFrame(tag, "TPE2")))
-		out["genre"] = strings.TrimSpace(tag.Genre())
-		out["album"] = strings.TrimSpace(tag.Album())
-		out["publisher"] = strings.TrimSpace(textFrame(tag, "TPUB"))
-		out["year"] = yearFromText(firstNonEmpty(textFrame(tag, "TDRC"), textFrame(tag, "TYER")))
-		for _, frame := range tag.GetFrames("TXXX") {
-			if user, ok := frame.(id3v2.UserDefinedTextFrame); ok {
-				desc := strings.ToLower(user.Description)
-				if desc == "catalognumber" || desc == "catalog" || desc == "catalogue" {
-					out["catalognumber"] = strings.TrimSpace(user.Value)
-					break
-				}
-			}
-		}
+		info, _ = readID3(path)
 	case ".m4a":
-		readM4ATags(path, out)
+		info, _ = readFFProbe(path)
 	}
-	if out["title"] == "" {
-		out["title"] = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	if info.Title == "" {
+		info.Title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	}
-	return out
+	return TagMap{
+		"title":         info.Title,
+		"artist":        info.Artist,
+		"genre":         info.Genre,
+		"album":         info.Album,
+		"year":          info.Year,
+		"publisher":     info.Label,
+		"catalognumber": info.CatalogNumber,
+	}
 }
 
 func textFrame(tag *id3v2.Tag, id string) string {
@@ -171,49 +157,6 @@ func textFrame(tag *id3v2.Tag, id string) string {
 		return text.Text
 	}
 	return fmt.Sprint(frame)
-}
-
-func readM4ATags(path string, out TagMap) {
-	cmd := exec.Command("ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", path)
-	raw, err := cmd.Output()
-	if err != nil {
-		return
-	}
-	var payload struct {
-		Format struct {
-			Tags map[string]string `json:"tags"`
-		} `json:"format"`
-	}
-	if json.Unmarshal(raw, &payload) != nil {
-		return
-	}
-	tags := payload.Format.Tags
-	lookup := map[string]string{}
-	for k, v := range tags {
-		lookup[strings.ToLower(k)] = strings.TrimSpace(v)
-	}
-	pick := func(keys ...string) string {
-		for _, key := range keys {
-			if val := lookup[strings.ToLower(key)]; val != "" {
-				return val
-			}
-		}
-		return ""
-	}
-	out["title"] = pick("title", "titl", "©nam")
-	out["artist"] = pick("artist", "album_artist", "albumartist", "©art")
-	out["genre"] = pick("genre", "©gen")
-	out["album"] = pick("album", "©alb")
-	out["year"] = yearFromText(pick("date", "year", "©day"))
-	out["publisher"] = pick("label", "publisher", "organization", "tpub")
-	out["catalognumber"] = pick("catalognumber", "catalog", "catalogue")
-}
-
-func yearFromText(raw string) string {
-	if m := regexp.MustCompile(`(\d{4})`).FindStringSubmatch(raw); len(m) > 1 {
-		return m[1]
-	}
-	return ""
 }
 
 // Write updates ID3/MP4 tags on path. Keys: title, artist, album, year, genre, publisher, catalognumber.
@@ -277,6 +220,7 @@ func writeMP3Tags(path string, targets map[string]string) bool {
 			}
 		}
 		tag.AddUserDefinedTextFrame(id3v2.UserDefinedTextFrame{
+			Encoding:    tag.DefaultEncoding(),
 			Description: "CATALOGNUMBER",
 			Value:       v,
 		})
@@ -312,7 +256,7 @@ func writeM4ATags(path string, targets map[string]string) bool {
 	if v, ok := targets["catalognumber"]; ok {
 		add("CATALOGNUMBER", v)
 	}
-	tmp, err := os.CreateTemp("", "evo-tag-*"+filepath.Ext(path))
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".evo-tag-*"+filepath.Ext(path))
 	if err != nil {
 		return false
 	}
@@ -322,6 +266,9 @@ func writeM4ATags(path string, targets map[string]string) bool {
 	if err := exec.Command("ffmpeg", args...).Run(); err != nil {
 		os.Remove(tmpPath)
 		return false
+	}
+	if st, err := os.Stat(path); err == nil {
+		_ = os.Chmod(tmpPath, st.Mode().Perm())
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
@@ -372,60 +319,73 @@ func targetTags(musicRoot, path string, tags TagMap) TagMap {
 }
 
 func validYear(y int) bool {
-	return y >= minYear && y <= maxYear
+	return y >= minYear && y <= time.Now().Year()+1
 }
 
-func yearFromFilename(stem string) int {
-	patterns := []struct {
-		re   *regexp.Regexp
-		conv func([]string) (int, bool)
-	}{
-		{regexp.MustCompile(`^(20\d{2})-(\d{2})-(\d{2})`), func(m []string) (int, bool) {
-			y, _ := strconv.Atoi(m[1])
-			mo, _ := strconv.Atoi(m[2])
-			d, _ := strconv.Atoi(m[3])
-			return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 1 && d <= 31
-		}},
-		{regexp.MustCompile(`(?:^|[-_])(\d{4})(\d{2})(\d{2})$`), func(m []string) (int, bool) {
-			y, _ := strconv.Atoi(m[1])
-			mo, _ := strconv.Atoi(m[2])
-			d, _ := strconv.Atoi(m[3])
-			return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 1 && d <= 31
-		}},
-		{regexp.MustCompile(`(\d{2})[.-](\d{2})[.-](20\d{2})`), func(m []string) (int, bool) {
-			y, _ := strconv.Atoi(m[3])
-			mo, _ := strconv.Atoi(m[2])
-			d, _ := strconv.Atoi(m[1])
-			return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 1 && d <= 31
-		}},
-		{regexp.MustCompile(`(\d{2})\.(\d{2})\.(\d{2})$`), func(m []string) (int, bool) {
-			d, _ := strconv.Atoi(m[1])
-			mo, _ := strconv.Atoi(m[2])
-			yy, _ := strconv.Atoi(m[3])
-			y := 2000 + yy
-			if yy >= 70 {
-				y = 1900 + yy
-			}
-			return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 0 && d <= 31
-		}},
-		{regexp.MustCompile(`(?:^|[-_])(\d{2})[.-](\d{2})[.-](\d{2})(?:\D|$)`), func(m []string) (int, bool) {
-			yy, _ := strconv.Atoi(m[1])
-			mo, _ := strconv.Atoi(m[2])
-			d, _ := strconv.Atoi(m[3])
-			y := 2000 + yy
-			if yy >= 70 {
-				y = 1900 + yy
-			}
-			return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 0 && d <= 31
-		}},
-		{regexp.MustCompile(`(\d{2})(\d{2})(\d{4})$`), func(m []string) (int, bool) {
-			y, _ := strconv.Atoi(m[3])
-			mo, _ := strconv.Atoi(m[2])
-			d, _ := strconv.Atoi(m[1])
-			return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 1 && d <= 31
-		}},
-	}
-	for _, p := range patterns {
+var (
+	pathYearPrefixRe = regexp.MustCompile(`^(19\d{2}|20\d{2})_`)
+	pathYearTokenRe  = regexp.MustCompile(`(?:^|[-_])(19\d{2}|20\d{2})(?:\D|$)`)
+	parenYearRe      = regexp.MustCompile(`\((19\d{2}|20\d{2})\)`)
+	catYearTokenRe   = regexp.MustCompile(`^(19|20)\d{2}$`)
+	catTokenRe       = regexp.MustCompile(`^[A-Z0-9]{3,16}$`)
+	upperLetterRe    = regexp.MustCompile(`[A-Z]`)
+	digitRe          = regexp.MustCompile(`\d`)
+	tokenSepRe       = regexp.MustCompile(`[-_]`)
+)
+
+var filenameYearPatterns = []struct {
+	re   *regexp.Regexp
+	conv func([]string) (int, bool)
+}{
+	{regexp.MustCompile(`^(20\d{2})-(\d{2})-(\d{2})`), func(m []string) (int, bool) {
+		y, _ := strconv.Atoi(m[1])
+		mo, _ := strconv.Atoi(m[2])
+		d, _ := strconv.Atoi(m[3])
+		return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 1 && d <= 31
+	}},
+	{regexp.MustCompile(`(?:^|[-_])(\d{4})(\d{2})(\d{2})$`), func(m []string) (int, bool) {
+		y, _ := strconv.Atoi(m[1])
+		mo, _ := strconv.Atoi(m[2])
+		d, _ := strconv.Atoi(m[3])
+		return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 1 && d <= 31
+	}},
+	{regexp.MustCompile(`(\d{2})[.-](\d{2})[.-](20\d{2})`), func(m []string) (int, bool) {
+		y, _ := strconv.Atoi(m[3])
+		mo, _ := strconv.Atoi(m[2])
+		d, _ := strconv.Atoi(m[1])
+		return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 1 && d <= 31
+	}},
+	{regexp.MustCompile(`(\d{2})\.(\d{2})\.(\d{2})$`), func(m []string) (int, bool) {
+		d, _ := strconv.Atoi(m[1])
+		mo, _ := strconv.Atoi(m[2])
+		yy, _ := strconv.Atoi(m[3])
+		y := 2000 + yy
+		if yy >= 70 {
+			y = 1900 + yy
+		}
+		return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 0 && d <= 31
+	}},
+	{regexp.MustCompile(`(?:^|[-_])(\d{2})[.-](\d{2})[.-](\d{2})(?:\D|$)`), func(m []string) (int, bool) {
+		yy, _ := strconv.Atoi(m[1])
+		mo, _ := strconv.Atoi(m[2])
+		d, _ := strconv.Atoi(m[3])
+		y := 2000 + yy
+		if yy >= 70 {
+			y = 1900 + yy
+		}
+		return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 0 && d <= 31
+	}},
+	{regexp.MustCompile(`(\d{2})(\d{2})(\d{4})$`), func(m []string) (int, bool) {
+		y, _ := strconv.Atoi(m[3])
+		mo, _ := strconv.Atoi(m[2])
+		d, _ := strconv.Atoi(m[1])
+		return y, validYear(y) && mo >= 1 && mo <= 12 && d >= 1 && d <= 31
+	}},
+}
+
+// YearFromText extracts a calendar year from free text (title, filename stem, etc.).
+func YearFromText(stem string) int {
+	for _, p := range filenameYearPatterns {
 		if m := p.re.FindStringSubmatch(stem); m != nil {
 			if y, ok := p.conv(m); ok {
 				return y
@@ -440,7 +400,7 @@ func resolvePathYear(musicRoot, path string) int {
 	if err != nil {
 		rel = filepath.Base(path)
 	}
-	if y := yearFromFilename(strings.TrimSuffix(rel, filepath.Ext(rel))); y > 0 {
+	if y := YearFromText(strings.TrimSuffix(rel, filepath.Ext(rel))); y > 0 {
 		return y
 	}
 	parts := strings.Split(rel, string(os.PathSeparator))
@@ -452,12 +412,12 @@ func resolvePathYear(musicRoot, path string) int {
 		}
 	}
 	for _, part := range parts {
-		if m := regexp.MustCompile(`^(19\d{2}|20\d{2})_`).FindStringSubmatch(part); len(m) > 1 {
+		if m := pathYearPrefixRe.FindStringSubmatch(part); len(m) > 1 {
 			if y, _ := strconv.Atoi(m[1]); validYear(y) {
 				return y
 			}
 		}
-		if m := regexp.MustCompile(`(?:^|[-_])(19\d{2}|20\d{2})(?:\D|$)`).FindStringSubmatch(part); len(m) > 1 {
+		if m := pathYearTokenRe.FindStringSubmatch(part); len(m) > 1 {
 			if y, _ := strconv.Atoi(m[1]); validYear(y) {
 				return y
 			}
@@ -478,7 +438,7 @@ func resolveYear(musicRoot, path string, tags TagMap) int {
 	if y := resolvePathYear(musicRoot, path); validYear(y) {
 		return y
 	}
-	if m := regexp.MustCompile(`\((19\d{2}|20\d{2})\)`).FindStringSubmatch(stem); len(m) > 1 {
+	if m := parenYearRe.FindStringSubmatch(stem); len(m) > 1 {
 		if y, _ := strconv.Atoi(m[1]); validYear(y) {
 			return y
 		}
@@ -545,22 +505,15 @@ func vinylLabelName(folder string) string {
 }
 
 func vinylCatalogFromFolder(releaseFolder string) string {
-	isYearToken := func(tok string) bool {
-		matched, _ := regexp.MatchString(`^(19|20)\d{2}$`, tok)
-		return matched
-	}
 	isCatToken := func(tok string) bool {
 		tok = strings.ToUpper(tok)
-		matched, _ := regexp.MatchString(`^[A-Z0-9]{3,16}$`, tok)
-		if !matched || isYearToken(tok) {
+		if !catTokenRe.MatchString(tok) || catYearTokenRe.MatchString(tok) {
 			return false
 		}
-		hasLetter, _ := regexp.MatchString(`[A-Z]`, tok)
-		hasDigit, _ := regexp.MatchString(`\d`, tok)
-		return hasLetter && hasDigit
+		return upperLetterRe.MatchString(tok) && digitRe.MatchString(tok)
 	}
 	score := func(tok string) int {
-		digits := len(regexp.MustCompile(`\d`).FindAllString(tok, -1))
+		digits := len(digitRe.FindAllString(tok, -1))
 		return digits*10 + len(tok)
 	}
 	first := releaseFolder
@@ -573,12 +526,12 @@ func vinylCatalogFromFolder(releaseFolder string) string {
 	candidates := []string{}
 	if strings.Contains(first, "_") {
 		tail := first[strings.LastIndex(first, "_")+1:]
-		digits := len(regexp.MustCompile(`\d`).FindAllString(tail, -1))
+		digits := len(digitRe.FindAllString(tail, -1))
 		if isCatToken(tail) && digits >= 2 {
 			candidates = append(candidates, strings.ToUpper(tail))
 		}
 	}
-	for _, tok := range regexp.MustCompile(`[-_]`).Split(releaseFolder, -1) {
+	for _, tok := range tokenSepRe.Split(releaseFolder, -1) {
 		if isCatToken(tok) {
 			candidates = append(candidates, strings.ToUpper(tok))
 		}

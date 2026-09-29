@@ -15,27 +15,23 @@ func CmdPlaylist(env paths.Env, args []string) error {
 	name := ""
 	sub := ""
 	positional := []string{}
-	for _, a := range args {
-		switch a {
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; a {
 		case "--json":
 			jsonOut = true
-		case "--offset", "--limit":
-			continue
-		default:
-			if !strings.HasPrefix(a, "-") {
-				positional = append(positional, a)
-			}
-		}
-	}
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
 		case "--offset":
 			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &offset)
+				i++
+				fmt.Sscanf(args[i], "%d", &offset)
 			}
 		case "--limit":
 			if i+1 < len(args) {
-				fmt.Sscanf(args[i+1], "%d", &limit)
+				i++
+				fmt.Sscanf(args[i], "%d", &limit)
+			}
+		default:
+			if !strings.HasPrefix(a, "-") {
+				positional = append(positional, a)
 			}
 		}
 	}

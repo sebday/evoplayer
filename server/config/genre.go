@@ -87,11 +87,11 @@ func GenreAliases(path string) (map[string]string, error) {
 		if canon == "" {
 			continue
 		}
-		key := normalizeGenreConfigKey(alias)
+		key := NormalizeGenreKey(alias)
 		if key == "" {
 			continue
 		}
-		out[key] = normalizeGenreConfigKey(canon)
+		out[key] = NormalizeGenreKey(canon)
 	}
 	return out, nil
 }
@@ -115,7 +115,7 @@ func GenreFolders(path string) (map[string]string, error) {
 		if folder == "" {
 			continue
 		}
-		key := normalizeGenreConfigKey(canon)
+		key := NormalizeGenreKey(canon)
 		if key == "" {
 			continue
 		}
@@ -148,7 +148,7 @@ func PlaylistFolders(path string) (map[string]string, error) {
 			continue
 		}
 		out[strings.ToLower(title)] = folder
-		out[normalizeGenreConfigKey(title)] = folder
+		out[NormalizeGenreKey(title)] = folder
 	}
 	return out, nil
 }
@@ -166,37 +166,40 @@ func PlaylistFolder(path, playlistTitle string) string {
 	if folder, ok := folders[strings.ToLower(title)]; ok {
 		return folder
 	}
-	return folders[normalizeGenreConfigKey(title)]
+	return folders[NormalizeGenreKey(title)]
 }
 
 // SeedGenreConfig writes default [genres] and [genre_aliases] when missing.
 func SeedGenreConfig(path string) error {
-	data, err := Load(path)
+	doc, err := loadDoc(path)
 	if err != nil {
 		return err
 	}
 	changed := false
-	if data["genres"] == nil {
-		data["genres"] = map[string]any{}
+	if _, ok := doc["genres"].(map[string]any); !ok {
+		genres := map[string]any{}
 		for canon, folder := range DefaultGenreFolders() {
-			data["genres"][canon] = folder
+			genres[canon] = folder
 		}
+		doc["genres"] = genres
 		changed = true
 	}
-	if data["genre_aliases"] == nil {
-		data["genre_aliases"] = map[string]any{}
+	if _, ok := doc["genre_aliases"].(map[string]any); !ok {
+		aliases := map[string]any{}
 		for alias, canon := range DefaultGenreAliases() {
-			data["genre_aliases"][alias] = canon
+			aliases[alias] = canon
 		}
+		doc["genre_aliases"] = aliases
 		changed = true
 	}
 	if !changed {
 		return nil
 	}
-	return write(path, data)
+	return write(path, doc)
 }
 
-func normalizeGenreConfigKey(s string) string {
+// NormalizeGenreKey folds genre names for fuzzy folder matching.
+func NormalizeGenreKey(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.ReplaceAll(s, "&", " and ")
 	var b strings.Builder
