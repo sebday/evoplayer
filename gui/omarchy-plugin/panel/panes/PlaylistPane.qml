@@ -97,6 +97,23 @@ Fieldset {
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
             ScrollBar.vertical: ThinScrollBar {}
+            WheelHandler {
+                blocking: true
+                onWheel: function(event) {
+                    var dy = event.pixelDelta.y
+                    if (dy)
+                        dy *= 2
+                    else
+                        dy = event.angleDelta.y / 4
+                    var maxY = Math.max(0, list.contentHeight - list.height)
+                    var y = list.contentY - dy
+                    if (y < 0)
+                        y = 0
+                    if (y > maxY)
+                        y = maxY
+                    list.contentY = y
+                }
+            }
             model: view.shownPlaylist ? view.shownTracks : view.queue
             onHeightChanged: view.playlistPage = Math.max(1, Math.floor(height / pane.rowH))
             onContentYChanged: {
