@@ -120,6 +120,14 @@ func resolveSeed(client *Client, seed Seed) (*Track, error) {
 	return client.MatchTrack(probed.Tag.Artist, probed.Tag.Title, probed.Duration)
 }
 
+func artworkThumb(track Track) string {
+	url := strings.TrimSpace(track.ArtworkURL)
+	if url == "" {
+		url = strings.TrimSpace(track.User.AvatarURL)
+	}
+	return strings.NewReplacer("-large", "-t300x300", "-t500x500", "-t300x300", "-original", "-t300x300").Replace(url)
+}
+
 func similarTrack(track Track) SimilarTrack {
 	dur := 0.0
 	if track.Duration > 0 {
@@ -130,7 +138,7 @@ func similarTrack(track Track) SimilarTrack {
 		Title:     strings.TrimSpace(track.Title),
 		Artist:    strings.TrimSpace(track.User.Username),
 		Duration:  dur,
-		Artwork:   strings.TrimSpace(track.ArtworkURL),
+		Artwork:   artworkThumb(track),
 		Permalink: strings.TrimSpace(track.PermalinkURL),
 	}
 }

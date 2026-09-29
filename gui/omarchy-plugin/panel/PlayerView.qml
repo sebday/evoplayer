@@ -2263,7 +2263,7 @@ Item {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: Math.min(parent.height, Math.max(160, parent.width - browsePane.width - root.paneGap * 2 - 200))
+                width: Math.min(parent.height, Math.max(160, parent.width - browsePane.width - root.paneGap * 2 - 420))
                 view: root
             }
         }

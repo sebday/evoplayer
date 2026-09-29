@@ -402,9 +402,29 @@ Fieldset {
                     anchors.rightMargin: 8
                     spacing: 8
 
+                    Rectangle {
+                        id: discoverCover
+                        width: pane.artSide
+                        height: width
+                        radius: 2
+                        anchors.verticalCenter: parent.verticalCenter
+                        color: selected ? Theme.background : Theme.mantle
+                        clip: true
+
+                        Image {
+                            anchors.fill: parent
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: true
+                            sourceSize.width: 72
+                            sourceSize.height: 72
+                            source: view.safeArtURL(modelData.artwork)
+                        }
+                    }
+
                     Text {
                         textFormat: Text.PlainText
-                        width: Math.max(40, parent.width - Math.ceil(term.advanceWidth("♥")) - Math.ceil(term.advanceWidth("000:00")) - 16)
+                        width: Math.max(40, parent.width - discoverCover.width - Math.ceil(term.advanceWidth("♥")) - Math.ceil(term.advanceWidth("000:00")) - 24)
                         text: view.trackLabel(modelData)
                         elide: Text.ElideRight
                         color: selected ? Theme.background : (mark !== "" ? Theme.good : Theme.foreground)

@@ -28,7 +28,8 @@ type Track struct {
 	Policy       string `json:"policy"`
 	Streamable   *bool  `json:"streamable"`
 	User         struct {
-		Username string `json:"username"`
+		Username  string `json:"username"`
+		AvatarURL string `json:"avatar_url"`
 	} `json:"user"`
 	Media struct {
 		Transcodings []Transcoding `json:"transcodings"`

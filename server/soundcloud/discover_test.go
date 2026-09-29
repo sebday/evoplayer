@@ -8,16 +8,11 @@ import (
 
 func TestPickMatchDurationAndTitle(t *testing.T) {
 	tracks := []Track{
-		{ID: 1, Title: "Other Song", Duration: 180000, User: struct {
-			Username string `json:"username"`
-		}{Username: "Someone"}},
-		{ID: 2, Title: "Night Drive (Original Mix)", Duration: 200000, User: struct {
-			Username string `json:"username"`
-		}{Username: "Ada"}},
-		{ID: 3, Title: "Night Drive", Duration: 400000, Policy: "SNIP", User: struct {
-			Username string `json:"username"`
-		}{Username: "Ada"}},
+		scTrack(1, "Someone", "Other Song", 180000),
+		scTrack(2, "Ada", "Night Drive (Original Mix)", 200000),
+		scTrack(3, "Ada", "Night Drive", 400000),
 	}
+	tracks[2].Policy = "SNIP"
 	got, err := pickMatch(tracks, "Ada", "Night Drive", 201)
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +26,8 @@ func TestPickMatchRejectsWrongArtist(t *testing.T) {
 	tracks := []Track{{
 		ID: 2, Title: "B2. The Prodigy - Charly (Original Mix)", Duration: 239000,
 		User: struct {
-			Username string `json:"username"`
+			Username  string `json:"username"`
+			AvatarURL string `json:"avatar_url"`
 		}{Username: "Alisa Lee"},
 	}}
 	if _, err := pickMatch(tracks, "The Prodigy", "Charly (Original Mix)", 239); err == nil {
@@ -43,7 +39,8 @@ func TestPickMatchRejectsDuration(t *testing.T) {
 	tracks := []Track{{
 		ID: 2, Title: "Night Drive", Duration: 400000,
 		User: struct {
-			Username string `json:"username"`
+			Username  string `json:"username"`
+			AvatarURL string `json:"avatar_url"`
 		}{Username: "Ada"},
 	}}
 	if _, err := pickMatch(tracks, "Ada", "Night Drive", 200); err == nil {
@@ -55,6 +52,20 @@ func scTrack(id int64, user, title string, ms int64) Track {
 	t := Track{ID: id, Title: title, Duration: ms}
 	t.User.Username = user
 	return t
+}
+
+func TestArtworkThumb(t *testing.T) {
+	art := scTrack(1, "NOISIA", "Meditation", 1)
+	art.ArtworkURL = "https://i1.sndcdn.com/artworks-abc-large.jpg"
+	art.User.AvatarURL = "https://i1.sndcdn.com/avatars-xyz-large.jpg"
+	if got := artworkThumb(art); got != "https://i1.sndcdn.com/artworks-abc-t300x300.jpg" {
+		t.Fatalf("artwork = %s", got)
+	}
+	missing := scTrack(2, "NOISIA", "Meditation", 1)
+	missing.User.AvatarURL = "https://i1.sndcdn.com/avatars-xyz-t500x500.jpg"
+	if got := artworkThumb(missing); got != "https://i1.sndcdn.com/avatars-xyz-t300x300.jpg" {
+		t.Fatalf("avatar = %s", got)
+	}
 }
 
 func TestArtistTokens(t *testing.T) {
