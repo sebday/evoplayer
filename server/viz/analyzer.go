@@ -72,9 +72,10 @@ type Analyzer struct {
 	punchEnv          float64
 	delayFn           func() int
 	bassSkip          int
+	paused            bool
 
 	tickStop chan struct{}
-	tickWG   sync.WaitGroup
+	tickDone chan struct{}
 }
 
 func NewAnalyzer(sampleRate float64) *Analyzer {
@@ -177,32 +178,37 @@ func (a *Analyzer) resetProcessingLocked() {
 
 func (a *Analyzer) stopTicker() {
 	a.mu.Lock()
-	stop := a.tickStop
-	a.tickStop = nil
+	stop, done := a.tickStop, a.tickDone
+	a.tickStop, a.tickDone = nil, nil
 	a.mu.Unlock()
+	haltTicker(stop, done)
+}
+
+// startTicker swaps in a fresh ticker under one lock so concurrent callers
+// never orphan a running loop.
+func (a *Analyzer) startTicker() {
+	a.mu.Lock()
+	oldStop, oldDone := a.tickStop, a.tickDone
+	a.tickStop, a.tickDone = nil, nil
+	if a.wanted {
+		stop, done := make(chan struct{}), make(chan struct{})
+		a.tickStop, a.tickDone = stop, done
+		interval := a.emitMin
+		go func() {
+			defer close(done)
+			a.tickLoop(stop, interval)
+		}()
+	}
+	a.mu.Unlock()
+	haltTicker(oldStop, oldDone)
+}
+
+func haltTicker(stop, done chan struct{}) {
 	if stop == nil {
 		return
 	}
 	close(stop)
-	a.tickWG.Wait()
-}
-
-func (a *Analyzer) startTicker() {
-	a.stopTicker()
-	a.mu.Lock()
-	if !a.wanted {
-		a.mu.Unlock()
-		return
-	}
-	stop := make(chan struct{})
-	a.tickStop = stop
-	interval := a.emitMin
-	a.tickWG.Add(1)
-	a.mu.Unlock()
-	go func() {
-		defer a.tickWG.Done()
-		a.tickLoop(stop, interval)
-	}()
+	<-done
 }
 
 func (a *Analyzer) tickLoop(stop <-chan struct{}, interval time.Duration) {
@@ -221,7 +227,7 @@ func (a *Analyzer) tickLoop(stop <-chan struct{}, interval time.Duration) {
 			interval = a.emitMin
 			var emit []float32
 			var fn func([]float32)
-			if a.ringFilled >= BassFFTSize {
+			if a.paused || a.ringFilled >= BassFFTSize {
 				a.analyzeLocked()
 				a.frameHadSignal = false
 				emit, fn = a.emitLocked()
@@ -245,13 +251,6 @@ func clampPresentationDelay(samples int) int {
 	return samples
 }
 
-func (a *Analyzer) SetPresentationDelay(samples int) {
-	samples = clampPresentationDelay(samples)
-	a.mu.Lock()
-	a.presentationDelay = samples
-	a.mu.Unlock()
-}
-
 func (a *Analyzer) SetDelayFunc(fn func() int) {
 	a.mu.Lock()
 	a.delayFn = fn
@@ -271,10 +270,12 @@ func (a *Analyzer) ResetTrack() {
 	a.mu.Unlock()
 }
 
-func (a *Analyzer) Wanted() bool {
+// SetPaused makes the ticker decay the bars instead of analyzing the ring,
+// which is frozen while the output is paused.
+func (a *Analyzer) SetPaused(on bool) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.wanted
+	a.paused = on
+	a.mu.Unlock()
 }
 
 func (a *Analyzer) SetWanted(on bool) {
@@ -304,10 +305,6 @@ func (a *Analyzer) SetOnUpdate(fn func([]float32)) {
 func (a *Analyzer) Snapshot() []float32 {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.wanted && a.ringFilled >= BassFFTSize {
-		a.analyzeLocked()
-		a.frameHadSignal = false
-	}
 	out := make([]float32, BarCount)
 	copy(out, a.display)
 	return out
@@ -427,8 +424,7 @@ func (a *Analyzer) delayedPunchStatsLocked() (rms, peak float64) {
 	return rms, peak
 }
 
-func (a *Analyzer) applyPunchLocked() {
-	rms, peak := a.delayedPunchStatsLocked()
+func (a *Analyzer) applyPunchLocked(rms, peak float64) {
 	raw := clampFloat(rms*3.0+peak*0.25, 0, 1)
 	rate := punchRelease
 	if raw > a.punchEnv {
@@ -449,6 +445,13 @@ func (a *Analyzer) applyPunchLocked() {
 }
 
 func (a *Analyzer) analyzeLocked() {
+	if a.paused {
+		clear(a.raw)
+		a.applyCavaDynamicsLocked(false)
+		a.applyMonstercatLocked()
+		a.applyPunchLocked(0, 0)
+		return
+	}
 	a.refreshDelayLocked()
 	a.fillFFTLocked(FFTSize, a.window, a.re, a.im)
 	a.bassSkip++
@@ -470,7 +473,7 @@ func (a *Analyzer) analyzeLocked() {
 
 	a.applyCavaDynamicsLocked(a.frameHadSignal)
 	a.applyMonstercatLocked()
-	a.applyPunchLocked()
+	a.applyPunchLocked(a.delayedPunchStatsLocked())
 }
 
 func (a *Analyzer) applyCavaDynamicsLocked(hadSignal bool) {

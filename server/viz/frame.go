@@ -2,8 +2,6 @@ package viz
 
 import (
 	"encoding/binary"
-	"errors"
-	"io"
 	"math"
 	"os"
 	"sync"
@@ -13,8 +11,6 @@ const (
 	frameMagic = 0x45565053 // EVPS
 	frameMaxN  = 512
 )
-
-var errFrame = errors.New("invalid spectrum frame")
 
 func FramePath(socketPath string) string {
 	if socketPath == "" {
@@ -48,34 +44,6 @@ func encodeFrame(buf []byte, levels []float32) []byte {
 	}
 	binary.LittleEndian.PutUint32(buf[off:off+4], seq)
 	return buf
-}
-
-func decodeFrame(b []byte, dst []float64) ([]float64, error) {
-	if len(b) < 16 {
-		return nil, errFrame
-	}
-	if binary.LittleEndian.Uint32(b[0:4]) != frameMagic {
-		return nil, errFrame
-	}
-	seq := binary.LittleEndian.Uint32(b[4:8])
-	n := int(binary.LittleEndian.Uint16(b[8:10]))
-	if n < 1 || n > frameMaxN || len(b) < 16+n*4 {
-		return nil, errFrame
-	}
-	end := 12 + n*4
-	if binary.LittleEndian.Uint32(b[end:end+4]) != seq {
-		return nil, errFrame
-	}
-	if cap(dst) < n {
-		dst = make([]float64, n)
-	}
-	dst = dst[:n]
-	off := 12
-	for i := 0; i < n; i++ {
-		dst[i] = float64(math.Float32frombits(binary.LittleEndian.Uint32(b[off : off+4])))
-		off += 4
-	}
-	return dst, nil
 }
 
 func WriteFrame(path string, levels []float32) error {
@@ -130,43 +98,4 @@ func (w *FrameWriter) Close() error {
 	err := w.f.Close()
 	w.f = nil
 	return err
-}
-
-// FrameReader reuses scratch buffers so the TUI painter can poll without
-// allocating a new file copy every tick.
-type FrameReader struct {
-	scratch []byte
-	levels  []float64
-}
-
-func (r *FrameReader) Read(path string) ([]float64, error) {
-	if path == "" {
-		return nil, errFrame
-	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	st, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	n := int(st.Size())
-	if n < 16 {
-		return nil, errFrame
-	}
-	if cap(r.scratch) < n {
-		r.scratch = make([]byte, n)
-	}
-	r.scratch = r.scratch[:n]
-	if _, err := io.ReadFull(f, r.scratch); err != nil {
-		return nil, err
-	}
-	levels, err := decodeFrame(r.scratch, r.levels)
-	if err != nil {
-		return nil, err
-	}
-	r.levels = levels
-	return levels, nil
 }

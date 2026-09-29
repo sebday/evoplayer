@@ -26,6 +26,5 @@ type StreamSeekCloser interface {
 type StreamSeeker interface {
 	StreamSeekCloser
 	Len() int
-	Position() int
 	Seek(p int) error
 }

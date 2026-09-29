@@ -50,15 +50,15 @@ func Build(path, outPath string) error {
 	groupPeak := 0
 	groupSumSq := 0.0
 	totalSamples := 0
+	carry := 0
 
 	for {
-		n, readErr := stdout.Read(buf)
-		if n > 0 {
-			chunk := buf[:n]
-			if len(chunk)%2 != 0 {
-				chunk = chunk[:len(chunk)-1]
-			}
-			for i := 0; i+1 < len(chunk); i += 2 {
+		n, readErr := stdout.Read(buf[carry:])
+		n += carry
+		end := n &^ 1
+		if end > 0 {
+			chunk := buf[:end]
+			for i := 0; i < len(chunk); i += 2 {
 				sample := int16(binary.LittleEndian.Uint16(chunk[i : i+2]))
 				abs := int(sample)
 				if abs < 0 {
@@ -77,6 +77,10 @@ func Build(path, outPath string) error {
 					groupSumSq = 0
 				}
 			}
+		}
+		carry = n - end
+		if carry > 0 {
+			buf[0] = buf[end]
 		}
 		if readErr == io.EOF {
 			break

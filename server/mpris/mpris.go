@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/godbus/dbus/v5/introspect"
@@ -16,6 +17,7 @@ type Bridge struct {
 	conn     *dbus.Conn
 	mu       sync.RWMutex
 	status   playback.Status
+	statusAt time.Time
 	snapshot func() playback.Status
 	onToggle func() error
 	onStop   func()
@@ -145,41 +147,26 @@ func (b *Bridge) Close() {
 }
 
 func (b *Bridge) Sync(st playback.Status) {
+	now := time.Now()
 	b.mu.Lock()
-	prev := b.status
-	b.status = st
+	prev, prevAt := b.status, b.statusAt
+	b.status, b.statusAt = st, now
 	b.mu.Unlock()
-	b.emitPlayerChanges(prev, st)
-}
-
-func (b *Bridge) emitPlayerChanges(prev, next playback.Status) {
-	statusCh, metadataCh, canCh := playerNotifyDelta(playerNotifyFrom(prev), playerNotifyFrom(next))
-	if !statusCh && !metadataCh && !canCh {
-		return
-	}
 	if b.conn == nil {
 		return
 	}
-	changed := map[string]dbus.Variant{}
-	if statusCh {
-		changed["PlaybackStatus"] = dbus.MakeVariant(playbackStatusOf(next.State))
+	if changed := playerChanges(prev, st); len(changed) > 0 {
+		_ = b.conn.Emit(
+			dbus.ObjectPath(basePath),
+			"org.freedesktop.DBus.Properties.PropertiesChanged",
+			"org.mpris.MediaPlayer2.Player",
+			changed,
+			[]string{},
+		)
 	}
-	if metadataCh {
-		changed["Metadata"] = dbus.MakeVariant(metadataFrom(next))
+	if seeked(prev, st, now.Sub(prevAt)) {
+		_ = b.conn.Emit(dbus.ObjectPath(basePath), "org.mpris.MediaPlayer2.Player.Seeked", int64(st.Position*1e6))
 	}
-	if canCh {
-		can := next.Path != ""
-		changed["CanPlay"] = dbus.MakeVariant(can)
-		changed["CanPause"] = dbus.MakeVariant(can)
-		changed["CanSeek"] = dbus.MakeVariant(can)
-	}
-	_ = b.conn.Emit(
-		dbus.ObjectPath(basePath),
-		"org.freedesktop.DBus.Properties.PropertiesChanged",
-		"org.mpris.MediaPlayer2.Player",
-		changed,
-		[]string{},
-	)
 }
 
 func (b *Bridge) current() playback.Status {
@@ -210,7 +197,7 @@ func (b *Bridge) PlaybackStatus() (string, *dbus.Error) {
 	return playbackStatusOf(b.current().State), nil
 }
 
-func (b *Bridge) LoopStatus() (string, *dbus.Error) { return "None", nil }
+func (b *Bridge) LoopStatus() (string, *dbus.Error) { return loopStatusOf(b.current()), nil }
 func (b *Bridge) Rate() (float64, *dbus.Error)      { return 1.0, nil }
 func (b *Bridge) Shuffle() (bool, *dbus.Error)      { return b.current().Shuffle, nil }
 func metadataFrom(st playback.Status) map[string]dbus.Variant {
@@ -247,14 +234,7 @@ func (b *Bridge) Metadata() (map[string]dbus.Variant, *dbus.Error) {
 }
 
 func (b *Bridge) Volume() (float64, *dbus.Error) {
-	v := float64(b.current().Volume) / 100.0
-	if v < 0 {
-		v = 0
-	}
-	if v > 1 {
-		v = 1
-	}
-	return v, nil
+	return volumeOf(b.current()), nil
 }
 
 func (b *Bridge) Position() (int64, *dbus.Error) {
@@ -374,12 +354,13 @@ const introXML = `<node>
     <method name="Seek"><arg direction="in" type="x" name="Offset"/></method>
     <method name="SetPosition"><arg direction="in" type="o" name="TrackId"/><arg direction="in" type="x" name="Position"/></method>
     <method name="OpenUri"><arg direction="in" type="s" name="Uri"/></method>
+    <signal name="Seeked"><arg type="x" name="Position"/></signal>
     <property name="PlaybackStatus" type="s" access="read"/>
-    <property name="LoopStatus" type="s" access="readwrite"/>
-    <property name="Rate" type="d" access="readwrite"/>
-    <property name="Shuffle" type="b" access="readwrite"/>
+    <property name="LoopStatus" type="s" access="read"/>
+    <property name="Rate" type="d" access="read"/>
+    <property name="Shuffle" type="b" access="read"/>
     <property name="Metadata" type="a{sv}" access="read"/>
-    <property name="Volume" type="d" access="readwrite"/>
+    <property name="Volume" type="d" access="read"/>
     <property name="Position" type="x" access="read"/>
     <property name="MinimumRate" type="d" access="read"/>
     <property name="MaximumRate" type="d" access="read"/>

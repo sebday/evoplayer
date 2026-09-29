@@ -13,7 +13,7 @@ const (
 
 // BoundStream wraps a decoder with a fixed-capacity PCM ring and a background
 // pump. Decode runs only as fast as playback consumes, capped at boundedBufferSamples.
-func BoundStream(inner StreamSeekCloser) StreamSeekCloser {
+func BoundStream(inner StreamSeeker) StreamSeeker {
 	if inner == nil {
 		return nil
 	}
@@ -26,7 +26,7 @@ func BoundStream(inner StreamSeekCloser) StreamSeekCloser {
 }
 
 type boundedStream struct {
-	inner StreamSeekCloser
+	inner StreamSeeker
 	ring  *pcmRing
 
 	mu       sync.Mutex
@@ -51,17 +51,7 @@ func (b *boundedStream) Err() error {
 }
 
 func (b *boundedStream) Len() int {
-	if seeker, ok := b.inner.(StreamSeeker); ok {
-		return seeker.Len()
-	}
-	return 0
-}
-
-func (b *boundedStream) Position() int {
-	if seeker, ok := b.inner.(StreamSeeker); ok {
-		return seeker.Position()
-	}
-	return 0
+	return b.inner.Len()
 }
 
 func (b *boundedStream) Seek(p int) error {
@@ -73,10 +63,8 @@ func (b *boundedStream) Seek(p int) error {
 	b.mu.Unlock()
 
 	b.haltPump()
-	if seeker, ok := b.inner.(StreamSeeker); ok {
-		if err := seeker.Seek(p); err != nil {
-			return err
-		}
+	if err := b.inner.Seek(p); err != nil {
+		return err
 	}
 	b.startPump()
 	return nil

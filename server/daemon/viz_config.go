@@ -63,17 +63,18 @@ func mergeVizPatch(base viz.Config, patch map[string]any) viz.Config {
 }
 
 func (d *Daemon) persistVizConfig(cfg viz.Config) error {
-	fields := map[string]string{
-		"sensitivity":     strconv.Itoa(cfg.Sensitivity),
-		"autosens":        strconv.Itoa(cfg.Autosens),
-		"noise_reduction": strconv.Itoa(cfg.NoiseReduction),
-		"monstercat":      strconv.FormatFloat(cfg.Monstercat, 'f', -1, 64),
-		"frame_rate":      strconv.Itoa(cfg.FrameRate),
-		"low_cutoff":      strconv.Itoa(cfg.LowCutoff),
-		"high_cutoff":     strconv.Itoa(cfg.HighCutoff),
+	cfg = d.Actor.VizAnalyzer().NormalizeConfig(cfg)
+	fields := [][2]string{
+		{"sensitivity", strconv.Itoa(cfg.Sensitivity)},
+		{"autosens", strconv.Itoa(cfg.Autosens)},
+		{"noise_reduction", strconv.Itoa(cfg.NoiseReduction)},
+		{"monstercat", strconv.FormatFloat(cfg.Monstercat, 'f', -1, 64)},
+		{"frame_rate", strconv.Itoa(cfg.FrameRate)},
+		{"low_cutoff", strconv.Itoa(cfg.LowCutoff)},
+		{"high_cutoff", strconv.Itoa(cfg.HighCutoff)},
 	}
-	for key, val := range fields {
-		if err := config.Set(d.Env.MusicConfig, "viz", key, val); err != nil {
+	for _, f := range fields {
+		if err := config.Set(d.Env.MusicConfig, "viz", f[0], f[1]); err != nil {
 			return err
 		}
 	}

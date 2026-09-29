@@ -20,8 +20,8 @@ type PlayerOutput struct {
 	player *oto.Player
 	stopCh chan struct{}
 	playWG sync.WaitGroup
-
-	submittedSamples atomic.Int64
+	volume float64
+	paused atomic.Bool
 }
 
 const (
@@ -47,45 +47,38 @@ func (o *PlayerOutput) PresentationDelaySamples() int {
 const maxPCMReadSamples = 2048 // ~43ms at 48kHz; matches beep-era pull granularity
 
 type pcmReader struct {
-	stream           Streamer
-	mu               *sync.Mutex
-	done             bool
-	submittedSamples *atomic.Int64
+	stream  Streamer
+	mu      *sync.Mutex
+	done    atomic.Bool
+	samples [][2]float64
 }
 
 func (r *pcmReader) Read(p []byte) (int, error) {
-	if r.done {
+	if r.done.Load() {
 		return 0, io.EOF
 	}
-	if len(p) < 8 {
+	if len(p) < stereoF32Bytes {
 		return 0, nil
 	}
-	maxSamples := len(p) / 8
-	if maxSamples > maxPCMReadSamples {
-		maxSamples = maxPCMReadSamples
+	maxSamples := min(len(p)/stereoF32Bytes, maxPCMReadSamples)
+	if cap(r.samples) < maxSamples {
+		r.samples = make([][2]float64, maxSamples)
 	}
-	samples := make([][2]float64, maxSamples)
-	if r.mu != nil {
-		r.mu.Lock()
-	}
+	samples := r.samples[:maxSamples]
+	r.mu.Lock()
 	n, ok := r.stream.Stream(samples)
 	err := r.stream.Err()
-	if r.mu != nil {
-		r.mu.Unlock()
-	}
+	r.mu.Unlock()
 	if err != nil {
 		return 0, err
 	}
 	if n == 0 && !ok {
-		r.done = true
+		r.done.Store(true)
 		return 0, io.EOF
 	}
 	for i := 0; i < n; i++ {
 		binary.LittleEndian.PutUint32(p[i*8:], math.Float32bits(float32(samples[i][0])))
 		binary.LittleEndian.PutUint32(p[i*8+4:], math.Float32bits(float32(samples[i][1])))
-	}
-	if r.submittedSamples != nil {
-		r.submittedSamples.Add(int64(n))
 	}
 	return n * 8, nil
 }
@@ -118,20 +111,10 @@ func (o *PlayerOutput) Clear() {
 	player := o.player
 	o.player = nil
 	o.mu.Unlock()
-	o.submittedSamples.Store(0)
 	o.playWG.Wait()
 	if player != nil {
 		player.Close()
 	}
-}
-
-// ReanchorPresentation resets the sample counter so seek targets stay consistent with submitted audio.
-func (o *PlayerOutput) ReanchorPresentation(seconds float64, sampleRate SampleRate) {
-	if sampleRate <= 0 {
-		sampleRate = outputSampleRate
-	}
-	delay := int64(o.PresentationDelaySamples())
-	o.submittedSamples.Store(int64(seconds*float64(sampleRate)) + delay)
 }
 
 func (o *PlayerOutput) Close() {
@@ -141,6 +124,36 @@ func (o *PlayerOutput) Close() {
 	o.mu.Unlock()
 }
 
+// SetVolume sets linear gain; it applies to the current and future players.
+func (o *PlayerOutput) SetVolume(volume float64) {
+	o.mu.Lock()
+	o.volume = volume
+	player := o.player
+	o.mu.Unlock()
+	if player != nil {
+		player.SetVolume(volume)
+	}
+}
+
+// SetPaused pauses or resumes the current player in place, keeping its buffer.
+func (o *PlayerOutput) SetPaused(paused bool) {
+	o.mu.Lock()
+	player := o.player
+	o.mu.Unlock()
+	if paused {
+		o.paused.Store(true)
+		if player != nil {
+			player.Pause()
+		}
+		return
+	}
+	if player != nil {
+		player.Play()
+	}
+	o.paused.Store(false)
+}
+
+// Play replaces the current player. Callers serialize Play and SetPaused.
 func (o *PlayerOutput) Play(stream Streamer, streamMu *sync.Mutex, onEnd func()) error {
 	if err := o.Init(); err != nil {
 		return err
@@ -148,14 +161,18 @@ func (o *PlayerOutput) Play(stream Streamer, streamMu *sync.Mutex, onEnd func())
 	o.Clear()
 
 	stop := make(chan struct{})
-	reader := &pcmReader{stream: stream, mu: streamMu, submittedSamples: &o.submittedSamples}
-	o.submittedSamples.Store(0)
+	reader := &pcmReader{stream: stream, mu: streamMu}
 	player := o.ctx.NewPlayer(reader)
 
 	o.mu.Lock()
+	player.SetVolume(o.volume)
 	o.stopCh = stop
 	o.player = player
 	o.mu.Unlock()
+
+	if !o.paused.Load() {
+		player.Play()
+	}
 
 	o.playWG.Add(1)
 	go func() {
@@ -167,22 +184,16 @@ func (o *PlayerOutput) Play(stream Streamer, streamMu *sync.Mutex, onEnd func())
 			}
 		}()
 
-		player.Play()
 		for {
 			select {
 			case <-stop:
 				return
 			default:
 			}
-			if reader.done {
+			if err := player.Err(); err != nil {
 				return
 			}
-			if !player.IsPlaying() {
-				if err := player.Err(); err != nil {
-					return
-				}
-			}
-			if err := player.Err(); err != nil {
+			if reader.done.Load() && !player.IsPlaying() && !o.paused.Load() {
 				return
 			}
 			time.Sleep(10 * time.Millisecond)

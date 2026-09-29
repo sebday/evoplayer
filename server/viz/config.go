@@ -117,3 +117,8 @@ func (a *Analyzer) Config() Config {
 	defer a.mu.Unlock()
 	return a.cfg
 }
+
+// NormalizeConfig clamps c exactly as ApplyConfig would.
+func (a *Analyzer) NormalizeConfig(c Config) Config {
+	return c.normalized(a.sampleRate)
+}

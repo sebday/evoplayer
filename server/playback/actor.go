@@ -2,7 +2,11 @@ package playback
 
 import (
 	"fmt"
+	"math"
 	"math/rand/v2"
+	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,9 +31,10 @@ type Actor struct {
 	positionSec        float64
 	playbackAnchorSec  float64
 	playbackAnchorTime time.Time
-	stream             StreamSeekCloser
+	stream             StreamSeeker
 	sourceSampleRate   SampleRate
 	notify             func(Status)
+	notifyCh           chan struct{}
 	stopPos            chan struct{}
 	output             PlayerOutput
 	outputOnce         sync.Once
@@ -45,10 +50,11 @@ func NewActor(notify func(Status)) *Actor {
 	a := &Actor{
 		volumePct: 100,
 		notify:    notify,
-		stopPos:   make(chan struct{}, 1),
+		notifyCh:  make(chan struct{}, 1),
 		cmdCh:     make(chan func(), 64),
 		viz:       viz.NewAnalyzer(float64(outputSampleRate)),
 	}
+	a.output.SetVolume(volumeGain(a.volumePct))
 	a.viz.SetDelayFunc(func() int {
 		delay := a.output.PresentationDelaySamples() - vizPaintLeadSamples
 		if delay < 0 {
@@ -57,6 +63,9 @@ func NewActor(notify func(Status)) *Actor {
 		return delay
 	})
 	go a.workerLoop()
+	if notify != nil {
+		go a.notifyLoop()
+	}
 	return a
 }
 
@@ -103,13 +112,17 @@ func (a *Actor) Snapshot() Status {
 	return a.buildStatusLocked()
 }
 
+// emit schedules a notify with the latest status; bursts coalesce into one call.
 func (a *Actor) emit() {
-	a.mu.RLock()
-	st := a.buildStatusLocked()
-	fn := a.notify
-	a.mu.RUnlock()
-	if fn != nil {
-		go fn(st)
+	select {
+	case a.notifyCh <- struct{}{}:
+	default:
+	}
+}
+
+func (a *Actor) notifyLoop() {
+	for range a.notifyCh {
+		a.notify(a.Snapshot())
 	}
 }
 
@@ -133,24 +146,39 @@ func (a *Actor) haltPlayback() {
 	if oldStream != nil {
 		_ = oldStream.Close()
 		a.clearPlayback()
+		if a.viz != nil {
+			a.viz.SetPaused(true)
+		}
 	}
 }
 
-func (a *Actor) volumeGain() float64 {
-	if a.volumePct <= 0 {
+func volumeGain(pct int) float64 {
+	if pct <= 0 {
 		return 0
 	}
-	return (float64(a.volumePct)/100)*6 - 6
+	return math.Pow(2, (float64(pct)/100)*6-6)
 }
 
-func (a *Actor) volumeSilent() bool {
-	return a.volumePct <= 0
+func (a *Actor) applyPaused(paused bool) {
+	a.output.SetPaused(paused)
+	if a.viz != nil {
+		a.viz.SetPaused(paused)
+	}
 }
 
 func (a *Actor) playChain() Streamer {
-	ctrl := pausedStreamer(a.stream, &a.paused)
-	tapped := viz.Tap(ctrl, a.viz)
-	return volumeStreamer(tapped, a.volumeGain, a.volumeSilent)
+	return viz.Tap(a.stream, a.viz)
+}
+
+func (a *Actor) livePositionLocked() float64 {
+	if a.paused {
+		return a.positionSec
+	}
+	pos := a.playbackAnchorSec + time.Since(a.playbackAnchorTime).Seconds()
+	if a.durationSec > 0 && pos > a.durationSec {
+		pos = a.durationSec
+	}
+	return pos
 }
 
 func (a *Actor) Stop() {
@@ -194,38 +222,32 @@ func (a *Actor) buildStatusLocked() Status {
 	return st.WithLabels()
 }
 
+func supportedPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if IsSupportedPath(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func indexOrFirst(paths []string, want string) int {
+	return max(slices.Index(paths, want), 0)
+}
+
 func (a *Actor) ReplaceQueue(paths []string, startPath string) error {
 	return a.dispatchErr(func() error {
-		filtered := make([]string, 0, len(paths))
-		for _, p := range paths {
-			if IsSupportedPath(p) {
-				filtered = append(filtered, p)
-			}
-		}
+		filtered := supportedPaths(paths)
 		if len(filtered) == 0 {
 			return nil
 		}
-		idx := 0
-		for i, p := range filtered {
-			if p == startPath {
-				idx = i
-				break
-			}
-		}
+		idx := indexOrFirst(filtered, startPath)
 		a.mu.Lock()
 		if a.path != "" && a.path == startPath && !a.paused &&
-			len(filtered) == len(a.queue) && a.index == idx {
-			same := true
-			for i := range filtered {
-				if filtered[i] != a.queue[i] {
-					same = false
-					break
-				}
-			}
-			if same {
-				a.mu.Unlock()
-				return nil
-			}
+			a.index == idx && slices.Equal(filtered, a.queue) {
+			a.mu.Unlock()
+			return nil
 		}
 		a.queue = filtered
 		a.index = idx
@@ -241,37 +263,17 @@ func (a *Actor) ReplaceQueue(paths []string, startPath string) error {
 // possible, or reset to 0.
 func (a *Actor) SetQueue(paths []string, startPath string) error {
 	return a.dispatchErr(func() error {
-		filtered := make([]string, 0, len(paths))
-		for _, p := range paths {
-			if IsSupportedPath(p) {
-				filtered = append(filtered, p)
-			}
-		}
+		filtered := supportedPaths(paths)
 		if len(filtered) == 0 {
 			return nil
 		}
-		idx := 0
-		if startPath != "" {
-			for i, p := range filtered {
-				if p == startPath {
-					idx = i
-					break
-				}
-			}
-		} else {
-			a.mu.Lock()
-			cur := a.path
-			a.mu.Unlock()
-			for i, p := range filtered {
-				if p == cur {
-					idx = i
-					break
-				}
-			}
-		}
 		a.mu.Lock()
+		want := startPath
+		if want == "" {
+			want = a.path
+		}
 		a.queue = filtered
-		a.index = idx
+		a.index = indexOrFirst(filtered, want)
 		a.shuffleOrd = nil
 		a.bumpQueueRevLocked()
 		a.mu.Unlock()
@@ -294,13 +296,7 @@ func (a *Actor) UpNextPaths(limit int) []string {
 		if len(a.shuffleOrd) != len(a.queue) {
 			a.shuffleOrd = shuffledOrder(len(a.queue), a.index)
 		}
-		pos := 0
-		for i, qi := range a.shuffleOrd {
-			if qi == a.index {
-				pos = i
-				break
-			}
-		}
+		pos := max(slices.Index(a.shuffleOrd, a.index), 0)
 		for i := pos + 1; i < len(a.shuffleOrd) && len(out) < limit; i++ {
 			out = append(out, a.queue[a.shuffleOrd[i]])
 		}
@@ -321,13 +317,7 @@ func (a *Actor) PlayPathInQueue(path string) error {
 			return fmt.Errorf("unsupported path: %s", path)
 		}
 		a.mu.Lock()
-		idx := -1
-		for i, p := range a.queue {
-			if p == path {
-				idx = i
-				break
-			}
-		}
+		idx := slices.Index(a.queue, path)
 		if idx < 0 {
 			a.mu.Unlock()
 			return fmt.Errorf("path not in queue")
@@ -353,27 +343,27 @@ func (a *Actor) RelocatePath(from, to string) error {
 	return a.dispatchErr(func() error {
 		a.mu.Lock()
 		changed := false
-		playing := false
 		for i, p := range a.queue {
 			if p == from {
 				a.queue[i] = to
 				changed = true
 			}
 		}
-		if a.path == from {
-			a.path = to
-			playing = true
-		}
 		if changed {
 			a.bumpQueueRevLocked()
 		}
-		pos := a.positionSec
+		current := a.path == from
+		loaded := current && a.stream != nil
+		if current {
+			a.path = to
+		}
+		pos := a.livePositionLocked()
 		paused := a.paused
 		a.mu.Unlock()
-		if playing && !paused {
-			return a.loadCurrentAt(pos, false)
+		if loaded {
+			return a.loadPath(to, pos, paused)
 		}
-		if changed || playing {
+		if changed || current {
 			a.emit()
 		}
 		return nil
@@ -393,11 +383,7 @@ func (a *Actor) bumpQueueRevLocked() {
 func (a *Actor) Append(paths []string) {
 	a.dispatch(func() {
 		a.mu.Lock()
-		for _, p := range paths {
-			if IsSupportedPath(p) {
-				a.queue = append(a.queue, p)
-			}
-		}
+		a.queue = append(a.queue, supportedPaths(paths)...)
 		a.bumpQueueRevLocked()
 		a.mu.Unlock()
 		a.emit()
@@ -446,18 +432,16 @@ func (a *Actor) Toggle() error {
 			a.mu.Unlock()
 			return a.loadCurrentAt(pos, false)
 		}
-		if !a.paused {
-			pos := a.playbackAnchorSec + time.Since(a.playbackAnchorTime).Seconds()
-			if a.durationSec > 0 && pos > a.durationSec {
-				pos = a.durationSec
-			}
-			a.positionSec = pos
-			a.playbackAnchorSec = pos
-		} else {
+		if a.paused {
 			a.playbackAnchorTime = time.Now()
+		} else {
+			a.positionSec = a.livePositionLocked()
+			a.playbackAnchorSec = a.positionSec
 		}
 		a.paused = !a.paused
+		paused := a.paused
 		a.mu.Unlock()
+		a.applyPaused(paused)
 		a.emit()
 		return nil
 	})
@@ -498,7 +482,7 @@ func (a *Actor) Prev() error {
 		}
 		if a.positionSec > 3 {
 			a.mu.Unlock()
-			return a.restartPlaybackFrom(0)
+			return a.seekPlayback(0)
 		}
 		a.detached = false
 		a.index = a.nextIndexLocked(-1)
@@ -526,15 +510,11 @@ func (a *Actor) PlayDetached(path string) error {
 
 func (a *Actor) SetVolume(pct int) {
 	a.dispatch(func() {
-		if pct < 0 {
-			pct = 0
-		}
-		if pct > 100 {
-			pct = 100
-		}
 		a.mu.Lock()
-		a.volumePct = pct
+		a.volumePct = min(max(pct, 0), 100)
+		pct = a.volumePct
 		a.mu.Unlock()
+		a.output.SetVolume(volumeGain(pct))
 		a.emit()
 	})
 }
@@ -542,14 +522,10 @@ func (a *Actor) SetVolume(pct int) {
 func (a *Actor) AdjustVolume(delta int) {
 	a.dispatch(func() {
 		a.mu.Lock()
-		a.volumePct += delta
-		if a.volumePct < 0 {
-			a.volumePct = 0
-		}
-		if a.volumePct > 100 {
-			a.volumePct = 100
-		}
+		a.volumePct = min(max(a.volumePct+delta, 0), 100)
+		pct := a.volumePct
 		a.mu.Unlock()
+		a.output.SetVolume(volumeGain(pct))
 		a.emit()
 	})
 }
@@ -577,35 +553,13 @@ func (a *Actor) SetShuffle(on bool) {
 	})
 }
 
-func (a *Actor) syncVizDelay() {
-	if a.viz == nil || !a.viz.Wanted() {
-		return
-	}
-	delay := a.output.PresentationDelaySamples() - vizPaintLeadSamples
-	if delay < 0 {
-		delay = 0
-	}
-	a.viz.SetPresentationDelay(delay)
-}
-
 func (a *Actor) Restore(paths []string, startPath string, position float64) error {
 	return a.dispatchErr(func() error {
-		filtered := make([]string, 0, len(paths))
-		for _, p := range paths {
-			if IsSupportedPath(p) {
-				filtered = append(filtered, p)
-			}
-		}
+		filtered := supportedPaths(paths)
 		if len(filtered) == 0 {
 			return nil
 		}
-		idx := 0
-		for i, p := range filtered {
-			if p == startPath {
-				idx = i
-				break
-			}
-		}
+		idx := indexOrFirst(filtered, startPath)
 		path := filtered[idx]
 		if position < 0 {
 			position = 0
@@ -652,17 +606,8 @@ func (a *Actor) loadPath(path string, position float64, paused bool) error {
 	if err != nil {
 		return err
 	}
+	durationSec := float64(stream.Len()) / float64(format.SampleRate)
 
-	durationSec := DurationForPath(path)
-	if durationSec <= 0 {
-		if seeker, ok := stream.(StreamSeeker); ok && seeker.Len() > 0 {
-			durationSec = float64(seeker.Len()) / float64(format.SampleRate)
-		}
-	}
-
-	if a.viz != nil {
-		a.viz.ResetTrack()
-	}
 	a.mu.Lock()
 	oldStream := a.stream
 	a.resetPlaybackLocked()
@@ -692,9 +637,12 @@ func (a *Actor) loadPath(path string, position float64, paused bool) error {
 		return fmt.Errorf("audio output init: %w", err)
 	}
 
+	if a.viz != nil {
+		a.viz.ResetTrack()
+	}
+	a.applyPaused(paused)
 	done := make(chan struct{})
-	chain := a.playChain()
-	if err := a.output.Play(chain, &a.playMu, func() { close(done) }); err != nil {
+	if err := a.output.Play(a.playChain(), &a.playMu, func() { close(done) }); err != nil {
 		a.mu.Lock()
 		a.resetPlaybackLocked()
 		a.mu.Unlock()
@@ -706,7 +654,6 @@ func (a *Actor) loadPath(path string, position float64, paused bool) error {
 	a.mu.Lock()
 	a.startPositionLoopLocked()
 	a.mu.Unlock()
-	a.syncVizDelay()
 	if position > 0 {
 		_ = a.seekPlayback(position)
 	} else {
@@ -715,10 +662,6 @@ func (a *Actor) loadPath(path string, position float64, paused bool) error {
 
 	go a.watchPlaybackEnd(path, loadGen, done)
 	return nil
-}
-
-func (a *Actor) restartPlaybackFrom(seconds float64) error {
-	return a.seekPlayback(seconds)
 }
 
 func (a *Actor) seekPlayback(seconds float64) error {
@@ -749,54 +692,38 @@ func (a *Actor) seekPlayback(seconds float64) error {
 	samples := int(seconds * float64(srcRate))
 	a.mu.Unlock()
 
-	restartPlay := false
-	var loadGen uint64
-	if seeker, ok := stream.(StreamSeeker); ok {
-		if samples < 0 {
-			samples = 0
-		}
-		if max := seeker.Len(); max > 0 && samples > max {
-			samples = max
-		}
-		// Seeking restarts the decoder. That looks like EOF to the current
-		// reader, so invalidate the end watcher before the read loop notices.
-		a.mu.Lock()
-		a.loadGen++
-		loadGen = a.loadGen
-		a.mu.Unlock()
-		a.playMu.Lock()
-		err := seeker.Seek(samples)
-		a.playMu.Unlock()
-		if err != nil {
-			return err
-		}
-		seconds = float64(samples) / float64(srcRate)
-		restartPlay = true
+	if max := stream.Len(); max > 0 && samples > max {
+		samples = max
 	}
+	// Seeking restarts the decoder. That looks like EOF to the current
+	// reader, so invalidate the end watcher before the read loop notices.
+	a.mu.Lock()
+	a.loadGen++
+	loadGen := a.loadGen
+	a.mu.Unlock()
+	a.playMu.Lock()
+	err := stream.Seek(samples)
+	a.playMu.Unlock()
+	if err != nil {
+		return err
+	}
+	seconds = float64(samples) / float64(srcRate)
 
-	if restartPlay {
-		done := make(chan struct{})
-		if err := a.output.Play(a.playChain(), &a.playMu, func() { close(done) }); err != nil {
-			return err
-		}
-		go a.watchPlaybackEnd(path, loadGen, done)
+	if a.viz != nil {
+		a.viz.ResetTrack()
 	}
+	done := make(chan struct{})
+	if err := a.output.Play(a.playChain(), &a.playMu, func() { close(done) }); err != nil {
+		return err
+	}
+	go a.watchPlaybackEnd(path, loadGen, done)
 
 	a.mu.Lock()
 	a.positionSec = seconds
 	a.playbackAnchorSec = seconds
 	a.playbackAnchorTime = time.Now()
-	if restartPlay {
-		a.startPositionLoopLocked()
-	}
+	a.startPositionLoopLocked()
 	a.mu.Unlock()
-	if srcRate <= 0 {
-		srcRate = outputSampleRate
-	}
-	a.output.ReanchorPresentation(seconds, srcRate)
-	if a.viz != nil {
-		a.viz.ResetTrack()
-	}
 	a.emit()
 	return nil
 }
@@ -841,13 +768,7 @@ func (a *Actor) nextIndexLocked(step int) int {
 		if len(a.shuffleOrd) != len(a.queue) {
 			a.shuffleOrd = shuffledOrder(len(a.queue), a.index)
 		}
-		pos := 0
-		for i, idx := range a.shuffleOrd {
-			if idx == a.index {
-				pos = i
-				break
-			}
-		}
+		pos := max(slices.Index(a.shuffleOrd, a.index), 0)
 		pos += step
 		if pos < 0 {
 			pos = len(a.shuffleOrd) - 1
@@ -880,16 +801,14 @@ func (a *Actor) startPositionLoopLocked() {
 				return
 			case <-ticker.C:
 				a.mu.Lock()
-				if a.path != "" && !a.paused {
-					pos := a.playbackAnchorSec + time.Since(a.playbackAnchorTime).Seconds()
-					if a.durationSec > 0 && pos > a.durationSec {
-						pos = a.durationSec
-					}
-					a.positionSec = pos
+				playing := a.path != "" && !a.paused
+				if playing {
+					a.positionSec = a.livePositionLocked()
 				}
 				a.mu.Unlock()
-				a.syncVizDelay()
-				a.emit()
+				if playing {
+					a.emit()
+				}
 			}
 		}
 	}()
@@ -906,34 +825,16 @@ func titleFromPath(path string) string {
 	if path == "" {
 		return ""
 	}
-	base := path
-	if i := len(base) - 1; i >= 0 {
-		for j := i; j >= 0; j-- {
-			if base[j] == '/' {
-				base = base[j+1:]
-				break
-			}
-		}
-	}
-	if dot := len(base) - 1; dot > 0 {
-		for i := dot; i >= 0; i-- {
-			if base[i] == '.' {
-				return base[:i]
-			}
-		}
-	}
-	return base
+	return strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 }
 
 func shuffledOrder(n, current int) []int {
 	if n <= 0 {
 		return nil
 	}
-	ord := make([]int, n)
-	for i := range ord {
-		ord[i] = i
+	ord := rand.Perm(n)
+	if i := slices.Index(ord, current); i > 0 {
+		ord[0], ord[i] = ord[i], ord[0]
 	}
-	r := rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), uint64(current+1)))
-	r.Shuffle(len(ord), func(i, j int) { ord[i], ord[j] = ord[j], ord[i] })
 	return ord
 }

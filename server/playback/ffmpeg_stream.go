@@ -16,13 +16,13 @@ type ffmpegDecoder struct {
 	mu              sync.Mutex
 	cmd             *exec.Cmd
 	stdout          io.ReadCloser
+	buf             []byte
 	durationSamples int
-	positionSamples int
 	err             error
 	closed          bool
 }
 
-func openFFmpegDecoder(path string) (StreamSeekCloser, Format, error) {
+func openFFmpegDecoder(path string) (StreamSeeker, Format, error) {
 	if !ffmpegAvailable() {
 		return nil, Format{}, fmt.Errorf("ffmpeg not available")
 	}
@@ -65,7 +65,6 @@ func (d *ffmpegDecoder) start(seekSec float64) error {
 	}
 	d.cmd = cmd
 	d.stdout = stdout
-	d.positionSamples = int(seekSec * float64(ffmpegSampleRate))
 	d.err = nil
 	return nil
 }
@@ -82,31 +81,28 @@ func (d *ffmpegDecoder) killProcess() {
 	d.cmd = nil
 }
 
-func (d *ffmpegDecoder) Stream(samples [][2]float64) (n int, ok bool) {
+func (d *ffmpegDecoder) Stream(samples [][2]float64) (int, bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.err != nil || d.closed || d.stdout == nil {
 		return 0, false
 	}
-	var scratch [8]byte
-	for i := range samples {
-		_, err := io.ReadFull(d.stdout, scratch[:])
-		if err == io.EOF {
-			return n, n > 0
-		}
-		if err != nil {
-			d.err = err
-			return n, n > 0
-		}
-		l := math.Float32frombits(binary.LittleEndian.Uint32(scratch[0:4]))
-		r := math.Float32frombits(binary.LittleEndian.Uint32(scratch[4:8]))
-		samples[i][0] = float64(l)
-		samples[i][1] = float64(r)
-		d.positionSamples++
-		n++
-		ok = true
+	need := len(samples) * stereoF32Bytes
+	if cap(d.buf) < need {
+		d.buf = make([]byte, need)
 	}
-	return n, ok
+	buf := d.buf[:need]
+	read, err := io.ReadFull(d.stdout, buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		d.err = err
+	}
+	n := read / stereoF32Bytes
+	for i := 0; i < n; i++ {
+		frame := buf[i*stereoF32Bytes:]
+		samples[i][0] = float64(math.Float32frombits(binary.LittleEndian.Uint32(frame[0:4])))
+		samples[i][1] = float64(math.Float32frombits(binary.LittleEndian.Uint32(frame[4:8])))
+	}
+	return n, n > 0
 }
 
 func (d *ffmpegDecoder) Err() error {
@@ -119,12 +115,6 @@ func (d *ffmpegDecoder) Len() int {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.durationSamples
-}
-
-func (d *ffmpegDecoder) Position() int {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.positionSamples
 }
 
 func (d *ffmpegDecoder) Seek(p int) error {
