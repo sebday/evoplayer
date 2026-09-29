@@ -114,9 +114,9 @@ evoplayer placement log|undo-plan [--json] [--undoable] [--limit N]
 
 ```bash
 evoplayer scrobble auth|token|nowplaying|submit|recent|touch …
-evoplayer lastfm auth-session|scrobble-api|recording-mbid …
+evoplayer lastfm recording-mbid …
 evoplayer history report [--json] [--week N] [--limit N]
-evoplayer jsonlog scrobble-recent|queue-up-next|merge-tracks …
+evoplayer jsonlog scrobble-recent|queue-up-next …
 ```
 
 ### Config and viz
@@ -139,3 +139,14 @@ evoplayer viz stream --fps 30
 The music library is a tree of folders. Set the root with `evoplayer config set paths.root /path/to/music` (stored as `[paths] root` in `~/.config/evoplayer/music.toml`). Genre tag aliases for import live in the same file under `[genre_aliases]` (canonical keys like `drumandbass`) and `[genres]` (folder names like `drum&bass`). If unset or that folder is missing, evoplayer uses `~/music` or `~/Music`.
 
 A genre tag is only a hint for which of those folders to use. Untagged downloads stay in `.incoming` until you pick a folder; import then moves the file into that folder (`youtube/` or `mixes/` plus year for long mixes).
+
+## Credentials
+
+The daemon loads secrets from `pass` once at startup, under `omarchy/` (override with `EVOPLAYER_PASS_PREFIX`), unless the environment variable is already set:
+
+| Variable | pass entry | Used for |
+|----------|------------|----------|
+| `LASTFM_API_KEY`, `LASTFM_API_SECRET`, `LASTFM_SESSION_KEY` | `lastfm/api-key`, `lastfm/api-secret`, `lastfm/session-key` | Scrobbling (the daemon is the only scrobbler; failed submits retry from `scrobble-pending.json`) |
+| `DISCOGS_TOKEN` | `discogs/token` | Discogs cover search |
+
+The SoundCloud token comes from Brave/Chromium cookies or pass. Daemon startup output goes to `daemon.log` in the state directory.

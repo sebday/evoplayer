@@ -60,6 +60,10 @@ Optional follow-up for live visualization:
 {"id": 2, "method": "viz.subscribe"}
 ```
 
+Viz subscriptions belong to the connection that sent them and end when it closes, so keep one connection open for the lifetime of the visualizer.
+
+Slow methods (`library.*` scans, `discover.*`) run off the connection's read loop, so their responses can arrive out of order. Match responses by `id`.
+
 ## Events
 
 | Event | Payload |
@@ -130,9 +134,9 @@ Successful mutations may return `{ "queue_revision": N }` in `data`.
 
 | Method | Description |
 |--------|-------------|
-| `viz.subscribe` | Enable analyzer tap + `viz` events |
-| `viz.unsubscribe` | Disable when last client unsubscribes |
-| `spectrum.get` | One-shot `{ "ok": true, "levels": [...], "sequence": N }` |
+| `viz.subscribe` | Enable analyzer tap + `viz` events for this connection |
+| `viz.unsubscribe` | Release this connection's subscription; the analyzer stops with the last one |
+| `spectrum.get` | Latest analyzed frame `{ "ok": true, "levels": [...], "sequence": N }` |
 | `viz.config` / `viz.config.set` / `viz.config.apply` | CAVA-style analyzer settings |
 
 CLI stream (NDJSON frames):
