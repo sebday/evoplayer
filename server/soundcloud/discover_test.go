@@ -51,6 +51,62 @@ func TestPickMatchRejectsDuration(t *testing.T) {
 	}
 }
 
+func scTrack(id int64, user, title string, ms int64) Track {
+	t := Track{ID: id, Title: title, Duration: ms}
+	t.User.Username = user
+	return t
+}
+
+func TestArtistTokens(t *testing.T) {
+	got := artistTokens("Noisia Maldini And Vegas feat. MC X")
+	want := []string{"noisia", "maldini", "vegas"}
+	if len(got) != len(want) {
+		t.Fatalf("tokens = %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("tokens = %v", got)
+		}
+	}
+}
+
+func TestLooseMatchAcceptsLabelUpload(t *testing.T) {
+	tracks := []Track{
+		scTrack(1, "Bad Taste Recordings", "Noisia, Maldini And Vegas - Meditation", 426000),
+		scTrack(2, "Random", "Vindication Of Hope", 3668000),
+	}
+	if _, err := pickMatch(tracks, "Noisia Maldini And Vegas", "Meditation", 425.6); err == nil {
+		t.Fatal("strict match should reject a label upload")
+	}
+	got := pickLooseMatch(tracks, artistTokens("Noisia Maldini And Vegas"), "Meditation", 425.6)
+	if got == nil || got.ID != 1 {
+		t.Fatalf("got %+v, want label upload", got)
+	}
+}
+
+func TestLooseMatchPrefersArtistUploadAndRejectsMashup(t *testing.T) {
+	tracks := []Track{
+		scTrack(1, "Bone", "Noisia & Electric Six - Meditation At The Gay Bar [MASHUP]", 109000),
+		scTrack(2, "Bad Taste Recordings", "Noisia, Maldini And Vegas - Meditation", 426000),
+		scTrack(3, "NOISIA", "Meditation", 426000),
+		scTrack(4, "Nautic", "Noisia & Bad Company - Meditation", 432000),
+	}
+	got := pickLooseMatch(tracks, artistTokens("Noisia Maldini And Vegas"), "Meditation", 425.6)
+	if got == nil || got.ID != 3 {
+		t.Fatalf("got %+v, want artist upload", got)
+	}
+	if pickLooseMatch(tracks[:1], artistTokens("Noisia"), "Meditation", 425.6) != nil {
+		t.Fatal("mashup with a different length should not match")
+	}
+}
+
+func TestLooseMatchNeedsDuration(t *testing.T) {
+	tracks := []Track{scTrack(1, "NOISIA", "Meditation", 426000)}
+	if pickLooseMatch(tracks, artistTokens("Noisia"), "Meditation", 0) != nil {
+		t.Fatal("loose match without a local duration should be refused")
+	}
+}
+
 func TestListableDropsSnippetAndDRM(t *testing.T) {
 	snip := Track{ID: 1, Policy: "SNIP"}
 	if listable(&snip) {

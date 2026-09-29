@@ -155,17 +155,126 @@ func (c *Client) Track(id int64) (*Track, error) {
 }
 
 // MatchTrack searches SoundCloud for artist and title. When durationSec is
-// known, the hit must be within a few seconds.
+// known, the hit must be within a few seconds. A strict uploader match wins;
+// otherwise label and repost uploads that name the artist are accepted, and
+// narrower queries are tried before giving up.
 func (c *Client) MatchTrack(artist, title string, durationSec float64) (*Track, error) {
-	q := strings.TrimSpace(strings.TrimSpace(artist) + " " + strings.TrimSpace(title))
-	if q == "" {
+	artist = strings.TrimSpace(artist)
+	title = strings.TrimSpace(title)
+	full := strings.TrimSpace(artist + " " + title)
+	if full == "" {
 		return nil, fmt.Errorf("soundcloud: nothing to match")
 	}
-	tracks, err := c.SearchTracks(q, 10)
-	if err != nil {
-		return nil, err
+	tokens := artistTokens(artist)
+	queries := []string{full}
+	if title != "" {
+		if len(tokens) > 0 {
+			queries = append(queries, title+" "+tokens[0])
+		}
+		queries = append(queries, title)
 	}
-	return pickMatch(tracks, artist, title, durationSec)
+	var pool []Track
+	var searchErr error
+	tried := map[string]bool{}
+	for i, q := range queries {
+		if tried[q] {
+			continue
+		}
+		tried[q] = true
+		tracks, err := c.SearchTracks(q, 20)
+		if err != nil {
+			searchErr = err
+			continue
+		}
+		if i == 0 {
+			if best, err := pickMatch(tracks, artist, title, durationSec); err == nil {
+				return best, nil
+			}
+		}
+		pool = append(pool, tracks...)
+		if best := pickLooseMatch(pool, tokens, title, durationSec); best != nil {
+			return best, nil
+		}
+	}
+	if len(pool) == 0 && searchErr != nil {
+		return nil, searchErr
+	}
+	return nil, fmt.Errorf("soundcloud: no matching track for %s", strings.Trim(artist+" - "+title, " -"))
+}
+
+var artistStopwords = map[string]bool{
+	"and": true, "the": true, "feat": true, "featuring": true, "vs": true, "with": true,
+}
+
+// artistTokens splits an artist tag like "Noisia Maldini And Vegas" into the
+// names SoundCloud may credit on their own.
+func artistTokens(artist string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, tok := range strings.Split(tags.Slugify(artist), "_") {
+		if len(tok) < 3 || artistStopwords[tok] || seen[tok] {
+			continue
+		}
+		seen[tok] = true
+		out = append(out, tok)
+	}
+	return out
+}
+
+func pickLooseMatch(tracks []Track, tokens []string, title string, durationSec float64) *Track {
+	wantTitle := tags.Slugify(stripMix(title))
+	if wantTitle == "" || len(tokens) == 0 || durationSec <= 1 {
+		return nil
+	}
+	var best *Track
+	bestScore := 0
+	for i := range tracks {
+		track := &tracks[i]
+		if !listable(track) {
+			continue
+		}
+		score, ok := scoreLooseMatch(track, tokens, wantTitle, durationSec)
+		if !ok || score <= bestScore {
+			continue
+		}
+		bestScore = score
+		cp := *track
+		best = &cp
+	}
+	return best
+}
+
+func scoreLooseMatch(track *Track, tokens []string, wantTitle string, durationSec float64) (int, bool) {
+	if track.Duration <= 0 || math.Abs(durationSec-float64(track.Duration)/1000) > durationSlackSec {
+		return 0, false
+	}
+	gotTitle := tags.Slugify(stripMix(track.Title))
+	score := 0
+	switch {
+	case gotTitle == wantTitle:
+		score = 4
+	case strings.Contains("_"+gotTitle+"_", "_"+wantTitle+"_"):
+		score = 2
+	default:
+		return 0, false
+	}
+	uploader := "_" + tags.Slugify(track.User.Username) + "_"
+	named := "_" + gotTitle + "_"
+	credited := false
+	for _, tok := range tokens {
+		switch {
+		case strings.Contains(uploader, "_"+tok+"_"):
+			score += 2
+			credited = true
+		case strings.Contains(named, "_"+tok+"_"):
+			score++
+			credited = true
+		}
+	}
+	if !credited {
+		return 0, false
+	}
+	return score, true
 }
 
 // SearchTracks returns SoundCloud track results for a query.
