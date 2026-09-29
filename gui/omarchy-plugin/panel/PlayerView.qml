@@ -2052,6 +2052,8 @@ Item {
     function applyEq(data) {
         if (!data)
             return
+        if (err === "request failed")
+            err = ""
         eqEnabled = data.enabled !== false
         eqPreamp = Number(data.preamp) || 0
         var next = []
@@ -2113,7 +2115,10 @@ Item {
         var bands = []
         for (var i = 0; i < 10; i++)
             bands.push(Number((eqBands || [])[i]) || 0)
-        ipc("eq.set", { enabled: eqEnabled, preamp: eqPreamp, bands: bands }, null)
+        ipc("eq.set", { enabled: eqEnabled, preamp: eqPreamp, bands: bands }, function() {
+            if (root.err === "request failed")
+                root.err = ""
+        })
     }
 
     function syncViz() {
