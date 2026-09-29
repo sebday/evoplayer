@@ -1,11 +1,13 @@
-# evo.evoplayer
+# evo.player
 
-Omarchy shell plugin `evo.evoplayer`.
+Omarchy shell plugin `evo.player`. The bar icon is the volume control. Left click opens now playing and recent scrobbles. While Brave is playing, that title is shown beside the icon.
+
+This plugin replaces the built-in media service (`clonedFrom: omarchy.media`), so `omarchy-shell media playPause` hits evoplayer.
 
 ## Removing
 
 ```bash
-omarchy plugin remove evo.evoplayer
+omarchy plugin remove evo.player
 ```
 
 That deletes the plugin directory. It does not delete:

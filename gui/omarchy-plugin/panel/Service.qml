@@ -9,6 +9,22 @@ Item {
 
     property var shell: null
     property var player: ({})
+
+    Loader {
+        id: mediaLoader
+        source: Qt.resolvedUrl("../media/Service.qml")
+        onLoaded: item.shell = Qt.binding(function() { return root.shell })
+    }
+
+    readonly property var media: mediaLoader.item
+    readonly property var activePlayer: media ? media.activePlayer : null
+    readonly property bool bravePlaying: !!(media && media.bravePlaying)
+
+    function runAction(action, showFeedback, targetKey) {
+        if (!media || typeof media.runAction !== "function")
+            return false
+        return media.runAction(action, showFeedback, targetKey)
+    }
     property var vizLevels: []
     property int vizRevision: 0
     property int vizSequence: 0

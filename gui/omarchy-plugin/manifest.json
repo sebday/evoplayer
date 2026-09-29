@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "id": "evo.evoplayer",
+  "id": "evo.player",
   "name": "Evoplayer",
   "version": "0.1.0",
   "author": "seb",
@@ -14,9 +14,12 @@
   },
   "barWidget": {
     "displayName": "Player",
-    "description": "Now playing and transport",
+    "description": "Volume, now playing, and scrobble history",
     "category": "Media",
     "allowMultiple": false,
     "defaultSection": "center"
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.media"
   }
 }

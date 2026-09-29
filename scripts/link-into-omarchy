@@ -6,7 +6,7 @@ EVOPLAYER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCAL_BIN="${HOME}/.local/bin"
 EVOPLAYER_LIB="${HOME}/.local/lib/evoplayer"
 BUILD_DIR="${EVOPLAYER_ROOT}/.build"
-PLUGIN_DST="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/evo.evoplayer"
+PLUGIN_DST="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/evo.player"
 SHELL_JSON="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/shell.json"
 DESKTOP_DST="${XDG_DATA_HOME:-$HOME/.local/share}/applications/evoplayer.desktop"
 
@@ -76,14 +76,13 @@ path = sys.argv[1]
 with open(path, encoding="utf-8") as f:
     cfg = json.load(f)
 plugins = cfg.setdefault("plugins", [])
-if not any(p.get("id") == "evo.evoplayer" for p in plugins):
-    plugins.append({"id": "evo.evoplayer"})
+if not any(p.get("id") == "evo.player" for p in plugins):
+    plugins.append({"id": "evo.player"})
 bar = cfg.setdefault("bar", {})
 layout = bar.setdefault("layout", {})
 center = layout.setdefault("center", [])
-if not any(w.get("id") == "evo.evoplayer" for w in center):
-    idx = next((i for i, w in enumerate(center) if w.get("id") == "evo.media"), len(center))
-    center.insert(idx, {"id": "evo.evoplayer"})
+if not any(w.get("id") == "evo.player" for w in center):
+    center.append({"id": "evo.player"})
 with open(path, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
     f.write("\n")
@@ -97,7 +96,7 @@ echo ""
 echo "run: evoplayer"
 echo "backend: evoplayer serve"
 echo "reload shell plugins: omarchy-shell shell rescanPlugins"
-echo "toggle panel: omarchy-shell shell toggle evo.evoplayer '{}'"
+echo "toggle panel: omarchy-shell shell toggle evo.player '{}'"
 echo ""
 echo "optional autostart (~/.config/hypr/autostart.lua):"
 echo '  o.launch_on_start("evoplayer serve")'

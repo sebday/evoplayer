@@ -26,7 +26,7 @@ func CmdGUI(env paths.Env, exe string) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	cmd := exec.Command("omarchy-shell", "shell", "toggle", "evo.evoplayer", "{}")
+	cmd := exec.Command("omarchy-shell", "shell", "toggle", "evo.player", "{}")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

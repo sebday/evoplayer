@@ -10,7 +10,7 @@ Item {
     property var shell: null
     property var host: null
 
-    readonly property var service: shell && shell.serviceFor ? shell.serviceFor("evo.evoplayer") : null
+    readonly property var service: shell && shell.serviceFor ? shell.serviceFor("evo.player") : null
     readonly property var player: service && service.player ? service.player : ({})
     readonly property string trackPath: String(player.path || "")
     readonly property bool playing: String(player.state || "") === "playing"

@@ -1,3 +1,3 @@
 .pragma library
 
-var pluginId = "evo.evoplayer"
+var pluginId = "evo.player"
