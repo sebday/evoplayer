@@ -170,11 +170,7 @@ Fieldset {
                 textFormat: Text.PlainText
                 width: parent.width
                 elide: Text.ElideRight
-                text: {
-                    var rel = view.nowRelease()
-                    var t = view.lcd(view.shownPosition)
-                    return rel ? rel + "   " + t : t
-                }
+                text: view.nowRelease()
                 color: Theme.foreground
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeS

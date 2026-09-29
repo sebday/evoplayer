@@ -12,6 +12,37 @@ Item {
     property string positionText: ""
     property string durationText: ""
 
+    Text {
+        id: positionLabel
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        text: root.positionText
+        color: Theme.foreground
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSizeXs
+    }
+
+    Text {
+        id: durationLabel
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        textFormat: Text.PlainText
+        text: root.durationText
+        color: Theme.foreground
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSizeXs
+    }
+
+    Item {
+        id: waveHost
+        anchors.left: positionLabel.right
+        anchors.right: durationLabel.left
+        anchors.leftMargin: 10
+        anchors.rightMargin: 10
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+
     Canvas {
         id: wave
         anchors.fill: parent
@@ -67,34 +98,6 @@ Item {
         color: Theme.foreground
     }
 
-    Text {
-        anchors.left: parent.left
-        anchors.leftMargin: 4
-        anchors.bottom: parent.verticalCenter
-        anchors.bottomMargin: 3
-        z: 2
-        textFormat: Text.PlainText
-        text: root.positionText
-        color: Theme.foreground
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSizeXs
-    }
-
-    Text {
-        anchors.right: parent.right
-        anchors.rightMargin: 4
-        anchors.bottom: parent.verticalCenter
-        anchors.bottomMargin: 3
-        z: 2
-        textFormat: Text.PlainText
-        text: root.durationText
-        color: Theme.foreground
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSizeXs
-    }
-
-    signal seekRequested(real fraction)
-
     MouseArea {
         anchors.fill: parent
         z: 3
@@ -110,6 +113,9 @@ Item {
             root.seekRequested(fraction)
         }
     }
+    }
+
+    signal seekRequested(real fraction)
 
     onPeaksChanged: wave.requestPaint()
     onProgressChanged: wave.requestPaint()

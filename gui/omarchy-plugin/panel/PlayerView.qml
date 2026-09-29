@@ -175,18 +175,6 @@ Item {
         })
     }
 
-    function lcd(sec) {
-        if (!trackPath && seekPreview < 0)
-            return "00:00"
-        var total = Math.max(0, Math.floor(Number(sec) || 0))
-        var min = Math.floor(total / 60)
-        var s = total % 60
-        var ss = (s < 10 ? "0" : "") + s
-        if (min > 99)
-            return min + ":" + ss
-        return (min < 10 ? "0" : "") + min + ":" + ss
-    }
-
     function clock(sec) {
         var total = Math.max(0, Math.floor(Number(sec) || 0))
         if (total <= 0)
