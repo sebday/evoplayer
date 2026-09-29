@@ -42,41 +42,85 @@ Item {
         return Number((view.eqBands || [])[index - 1]) || 0
     }
 
-    Row {
+    component EqButton: Rectangle {
+        id: btn
+        property string label: ""
+        property bool lit: false
+        property bool armed: false
+        property bool dim: false
+        signal clicked()
+
+        width: Math.max(24, btnLabel.implicitWidth + 16)
+        height: 20
+        radius: 4
+        anchors.verticalCenter: parent.verticalCenter
+        color: armed ? Theme.fillUrgentSubtle : (lit ? Theme.fillAccentSubtle : "transparent")
+        border.width: 1
+        border.color: armed ? Theme.liked : (lit ? Theme.good : Theme.inactiveBorder)
+
+        Text {
+            id: btnLabel
+            textFormat: Text.PlainText
+            anchors.centerIn: parent
+            text: btn.label
+            color: btn.armed ? Theme.liked : (btn.lit ? Theme.good : (btn.dim ? Theme.muted : Theme.foreground))
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSizeS
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: btn.clicked()
+        }
+    }
+
+    Item {
         id: head
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
-        height: 18
-        spacing: 16
+        height: 22
 
-        Text {
-            textFormat: Text.PlainText
-            text: view.eqEnabled ? "on" : "off"
-            color: view.eqEnabled ? Theme.good : Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeS
-            anchors.verticalCenter: parent.verticalCenter
+        Row {
+            anchors.left: parent.left
+            height: parent.height
+            spacing: 8
 
-            MouseArea {
-                anchors.fill: parent
-                anchors.margins: -4
+            EqButton {
+                label: view.eqEnabled ? "on" : "off"
+                lit: view.eqEnabled
+                dim: !view.eqEnabled
                 onClicked: view.toggleEqEnabled()
+            }
+
+            EqButton {
+                label: "flat"
+                onClicked: view.resetEq()
             }
         }
 
-        Text {
-            textFormat: Text.PlainText
-            text: "flat"
-            color: Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeS
-            anchors.verticalCenter: parent.verticalCenter
+        Row {
+            anchors.right: parent.right
+            height: parent.height
+            spacing: 8
 
-            MouseArea {
-                anchors.fill: parent
-                anchors.margins: -4
-                onClicked: view.resetEq()
+            EqButton {
+                label: "save"
+                armed: view.eqSaveArmed
+                onClicked: view.eqSaveArmed = !view.eqSaveArmed
+            }
+
+            Repeater {
+                model: 3
+
+                EqButton {
+                    required property int index
+                    label: String(index + 1)
+                    armed: view.eqSaveArmed
+                    lit: view.eqPresetActive(index + 1)
+                    dim: !(view.eqPresets || [])[index]
+                    onClicked: view.pickEqPreset(index + 1)
+                }
             }
         }
     }

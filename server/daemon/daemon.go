@@ -62,6 +62,8 @@ type Daemon struct {
 	discoverMu        sync.Mutex
 	discoverByID      map[int64]soundcloud.SimilarResult
 	discoverByPath    map[string]int64
+	eqMu              sync.Mutex
+	eqPresets         [eqPresetCount]*playback.EQConfig
 }
 
 const jobShutdownGrace = 10 * time.Second
@@ -483,7 +485,18 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		go func() { d.Actor.SetRepeat(p.On) }()
 		return nil, nil
 	case "eq.get":
-		return d.eqView(), nil
+		return d.eqGet(), nil
+	case "eq.preset.load", "eq.preset.save":
+		var p struct {
+			Slot int `json:"slot"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		if req.Method == "eq.preset.save" {
+			return d.saveEQPreset(p.Slot)
+		}
+		return d.loadEQPreset(p.Slot)
 	case "eq.set":
 		patch := map[string]any{}
 		if len(req.Params) > 0 {
@@ -491,20 +504,13 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 				return nil, err
 			}
 		}
-		d.Actor.SetEQ(patchEQ(d.Actor.EQConfig(), patch))
-		if err := d.persistEQ(); err != nil {
-			return nil, err
-		}
-		return d.eqView(), nil
+		return d.updateEQ(func(cfg playback.EQConfig) playback.EQConfig {
+			return patchEQ(cfg, patch)
+		})
 	case "eq.reset":
-		cfg := d.Actor.EQConfig()
-		cfg.Preamp = 0
-		cfg.Gains = [10]float64{}
-		d.Actor.SetEQ(cfg)
-		if err := d.persistEQ(); err != nil {
-			return nil, err
-		}
-		return d.eqView(), nil
+		return d.updateEQ(func(cfg playback.EQConfig) playback.EQConfig {
+			return playback.EQConfig{Enabled: cfg.Enabled}
+		})
 	case "viz.config":
 		return d.vizConfigView(), nil
 	case "viz.config.apply":

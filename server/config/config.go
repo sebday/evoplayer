@@ -121,6 +121,23 @@ func Set(path, section, key, value string) error {
 	return write(path, doc)
 }
 
+// SetAll writes several keys of one section in a single rewrite.
+func SetAll(path, section string, fields [][2]string) error {
+	doc, err := loadDoc(path)
+	if err != nil {
+		return err
+	}
+	sec := docSection(doc, section)
+	for _, f := range fields {
+		sec[f[0]] = f[1]
+	}
+	if sc, ok := doc["soundcloud"].(map[string]any); ok {
+		delete(sc, "likes_url")
+		delete(sc, "oauth_token")
+	}
+	return write(path, doc)
+}
+
 func PruneDerived(path string) error {
 	doc, err := loadDoc(path)
 	if err != nil {

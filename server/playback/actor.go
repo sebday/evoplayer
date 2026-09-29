@@ -169,23 +169,14 @@ func (a *Actor) applyPaused(paused bool) {
 }
 
 func (a *Actor) playChain() Streamer {
-	src := Streamer(a.stream)
-	if a.eq != nil {
-		src = a.eq.Wrap(src)
-	}
-	return viz.Tap(src, a.viz)
+	return viz.Tap(a.eq.Wrap(a.stream), a.viz)
 }
 
 func (a *Actor) SetEQ(cfg EQConfig) {
-	if a.eq != nil {
-		a.eq.SetConfig(cfg)
-	}
+	a.eq.SetConfig(cfg)
 }
 
 func (a *Actor) EQConfig() EQConfig {
-	if a.eq == nil {
-		return FlatEQ()
-	}
 	return a.eq.Config()
 }
 
@@ -659,9 +650,7 @@ func (a *Actor) loadPath(path string, position float64, paused bool) error {
 	if a.viz != nil {
 		a.viz.ResetTrack()
 	}
-	if a.eq != nil {
-		a.eq.Reset()
-	}
+	a.eq.Reset()
 	a.applyPaused(paused)
 	done := make(chan struct{})
 	if err := a.output.Play(a.playChain(), &a.playMu, func() { close(done) }); err != nil {
@@ -734,9 +723,7 @@ func (a *Actor) seekPlayback(seconds float64) error {
 	if a.viz != nil {
 		a.viz.ResetTrack()
 	}
-	if a.eq != nil {
-		a.eq.Reset()
-	}
+	a.eq.Reset()
 	done := make(chan struct{})
 	if err := a.output.Play(a.playChain(), &a.playMu, func() { close(done) }); err != nil {
 		return err

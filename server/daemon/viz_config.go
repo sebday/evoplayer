@@ -73,10 +73,5 @@ func (d *Daemon) persistVizConfig(cfg viz.Config) error {
 		{"low_cutoff", strconv.Itoa(cfg.LowCutoff)},
 		{"high_cutoff", strconv.Itoa(cfg.HighCutoff)},
 	}
-	for _, f := range fields {
-		if err := config.Set(d.Env.MusicConfig, "viz", f[0], f[1]); err != nil {
-			return err
-		}
-	}
-	return nil
+	return config.SetAll(d.Env.MusicConfig, "viz", fields)
 }

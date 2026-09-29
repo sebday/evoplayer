@@ -10,7 +10,6 @@ const (
 	eqQ         = 1.1
 	eqMinDB     = -12
 	eqMaxDB     = 12
-	eqSampleHz  = 48000
 )
 
 // EQFreqs are the graphic-EQ centers, low to high.
@@ -24,11 +23,6 @@ type EQConfig struct {
 	Enabled bool
 	Preamp  float64
 	Gains   [eqBandCount]float64
-}
-
-// FlatEQ is on, with every slider at 0 dB.
-func FlatEQ() EQConfig {
-	return EQConfig{Enabled: true}
 }
 
 // EQ is a 10-band peaking equalizer plus preamp. SetConfig applies on the next sample.
@@ -77,7 +71,7 @@ func (e *EQ) Reset() {
 }
 
 func (e *EQ) Wrap(src Streamer) Streamer {
-	if src == nil || e == nil {
+	if src == nil {
 		return src
 	}
 	return &eqStreamer{src: src, eq: e}
@@ -91,8 +85,11 @@ func (e *EQ) rebuild() {
 			continue
 		}
 		flat = false
+		e.bands[i].setPeaking(float64(outputSampleRate), EQFreqs[i], eqQ, gain)
+		if e.bypass || !e.live[i] {
+			e.bands[i].reset()
+		}
 		e.live[i] = true
-		e.bands[i].setPeaking(eqSampleHz, EQFreqs[i], eqQ, gain)
 	}
 	e.bypass = !e.enabled || flat
 }

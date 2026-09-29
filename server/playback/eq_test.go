@@ -48,12 +48,12 @@ func TestEQClampsGain(t *testing.T) {
 }
 
 func measureDB(eq *EQ, freq float64) float64 {
-	const rate = eqSampleHz
+	const rate = int(outputSampleRate)
 	const amp = 0.1
 	n := rate / 2
 	samples := make([][2]float64, n)
 	for i := range samples {
-		s := amp * math.Sin(2*math.Pi*freq*float64(i)/rate)
+		s := amp * math.Sin(2*math.Pi*freq*float64(i)/float64(rate))
 		samples[i] = [2]float64{s, s}
 	}
 	eq.Reset()
@@ -61,7 +61,7 @@ func measureDB(eq *EQ, freq float64) float64 {
 	skip := rate / 10
 	var inSum, outSum float64
 	for i := skip; i < n; i++ {
-		s := amp * math.Sin(2*math.Pi*freq*float64(i)/rate)
+		s := amp * math.Sin(2*math.Pi*freq*float64(i)/float64(rate))
 		inSum += s * s
 		outSum += samples[i][0] * samples[i][0]
 	}

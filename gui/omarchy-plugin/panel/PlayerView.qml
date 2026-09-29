@@ -80,6 +80,8 @@ Item {
     property real eqPreamp: 0
     property var eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     property int eqIdx: 0
+    property var eqPresets: [null, null, null]
+    property bool eqSaveArmed: false
     property var peaks: []
     property real seekPreview: -1
 
@@ -186,6 +188,8 @@ Item {
                     failed()
                 return
             }
+            if (root.err === "request failed")
+                root.err = ""
             if (done)
                 done(msg ? msg.data : null)
         })
@@ -403,7 +407,9 @@ Item {
                 { key: "↑↓", label: "gain" },
                 { key: "0", label: "flat" },
                 { key: "r", label: "reset" },
-                { key: "e", label: "on/off" }
+                { key: "e", label: "on/off" },
+                { key: "1-3", label: "preset" },
+                { key: "s", label: "save" }
             ]
         if (mode === "help" || mode === "tags")
             return []
@@ -2052,8 +2058,6 @@ Item {
     function applyEq(data) {
         if (!data)
             return
-        if (err === "request failed")
-            err = ""
         eqEnabled = data.enabled !== false
         eqPreamp = Number(data.preamp) || 0
         var next = []
@@ -2063,6 +2067,7 @@ Item {
             next.push(Number(row.gain) || 0)
         }
         eqBands = next
+        eqPresets = data.presets || [null, null, null]
     }
 
     function toggleEq() {
@@ -2070,8 +2075,40 @@ Item {
             closeMode()
             return
         }
+        eqSaveArmed = false
         pushOverlay("eq")
         loadEq()
+    }
+
+    function eqPresetActive(slot) {
+        var p = (eqPresets || [])[slot - 1]
+        if (!p || !eqEnabled)
+            return false
+        if (Math.abs((Number(p[0]) || 0) - eqPreamp) >= 0.05)
+            return false
+        for (var i = 0; i < 10; i++) {
+            if (Math.abs((Number(p[i + 1]) || 0) - (Number((eqBands || [])[i]) || 0)) >= 0.05)
+                return false
+        }
+        return true
+    }
+
+    function pickEqPreset(slot) {
+        eqSend.stop()
+        if (eqSaveArmed) {
+            eqSaveArmed = false
+            ipc("eq.set", { enabled: eqEnabled, preamp: eqPreamp, bands: eqBands }, function() {
+                root.ipc("eq.preset.save", { slot: slot }, function(data) {
+                    root.applyEq(data)
+                })
+            })
+            return
+        }
+        if (!(eqPresets || [])[slot - 1])
+            return
+        ipc("eq.preset.load", { slot: slot }, function(data) {
+            root.applyEq(data)
+        })
     }
 
     function toggleEqEnabled() {
@@ -2112,13 +2149,7 @@ Item {
     }
 
     function sendEq() {
-        var bands = []
-        for (var i = 0; i < 10; i++)
-            bands.push(Number((eqBands || [])[i]) || 0)
-        ipc("eq.set", { enabled: eqEnabled, preamp: eqPreamp, bands: bands }, function() {
-            if (root.err === "request failed")
-                root.err = ""
-        })
+        ipc("eq.set", { enabled: eqEnabled, preamp: eqPreamp, bands: eqBands }, null)
     }
 
     function syncViz() {
@@ -2288,6 +2319,10 @@ Item {
     }
 
     function clickBrowse(index) {
+        if (mode === "eq") {
+            eqSaveArmed = false
+            closeMode()
+        }
         browseIdx = index
         pane = searchQuery ? "search" : "browse"
         syncSettingsMode()
@@ -2358,11 +2393,14 @@ Item {
         var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
 
         if (mode === "eq") {
+            if (key === Qt.Key_Escape && eqSaveArmed) { eqSaveArmed = false; return true }
             if (key === Qt.Key_Escape) { onEsc(); return true }
+            if (text === "1" || text === "2" || text === "3") { pickEqPreset(Number(text)); return true }
+            if (text === "s" || text === "S") { eqSaveArmed = !eqSaveArmed; return true }
             if (key === Qt.Key_Left) { eqIdx = Math.max(0, eqIdx - 1); return true }
             if (key === Qt.Key_Right) { eqIdx = Math.min(10, eqIdx + 1); return true }
             if (key === Qt.Key_Up) { nudgeEq(shift ? 3 : 1); return true }
-            if (key === Qt.Key_Down) { nudgeEq(shift ? -3 : 1); return true }
+            if (key === Qt.Key_Down) { nudgeEq(shift ? -3 : -1); return true }
             if (text === "0") { setEqGain(eqIdx, 0); return true }
             if (text === "r" || text === "R") { resetEq(); return true }
             if (text === "e" || text === "E") { toggleEqEnabled(); return true }

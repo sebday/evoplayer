@@ -29,6 +29,8 @@ func capabilities() map[string]any {
 			{"name": "eq.get", "params": nil},
 			{"name": "eq.set", "params": map[string]string{"enabled": "bool", "preamp": "number", "bands": "[10]number"}},
 			{"name": "eq.reset", "params": nil},
+			{"name": "eq.preset.load", "params": map[string]string{"slot": "int"}},
+			{"name": "eq.preset.save", "params": map[string]string{"slot": "int"}},
 			{"name": "viz.subscribe", "params": nil},
 			{"name": "viz.unsubscribe", "params": nil},
 			{"name": "viz.config", "params": nil},
