@@ -121,6 +121,7 @@ func New(env paths.Env) *Daemon {
 		d.broadcastViz(levels)
 	})
 	_ = d.applyVizConfig()
+	_ = d.applyEQConfig()
 	d.jobs.SetOnChange(func() {
 		d.broadcastJob()
 	})
@@ -481,6 +482,29 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		}
 		go func() { d.Actor.SetRepeat(p.On) }()
 		return nil, nil
+	case "eq.get":
+		return d.eqView(), nil
+	case "eq.set":
+		patch := map[string]any{}
+		if len(req.Params) > 0 {
+			if err := json.Unmarshal(req.Params, &patch); err != nil {
+				return nil, err
+			}
+		}
+		d.Actor.SetEQ(patchEQ(d.Actor.EQConfig(), patch))
+		if err := d.persistEQ(); err != nil {
+			return nil, err
+		}
+		return d.eqView(), nil
+	case "eq.reset":
+		cfg := d.Actor.EQConfig()
+		cfg.Preamp = 0
+		cfg.Gains = [10]float64{}
+		d.Actor.SetEQ(cfg)
+		if err := d.persistEQ(); err != nil {
+			return nil, err
+		}
+		return d.eqView(), nil
 	case "viz.config":
 		return d.vizConfigView(), nil
 	case "viz.config.apply":

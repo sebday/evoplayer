@@ -3,3 +3,4 @@ HelpOverlay 1.0 HelpOverlay.qml
 TagEditor 1.0 TagEditor.qml
 MovePicker 1.0 MovePicker.qml
 DownloadOverlay 1.0 DownloadOverlay.qml
+EqOverlay 1.0 EqOverlay.qml

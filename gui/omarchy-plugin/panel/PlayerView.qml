@@ -76,6 +76,10 @@ Item {
 
     property bool vizOn: true
     property bool vizSubscribed: false
+    property bool eqEnabled: true
+    property real eqPreamp: 0
+    property var eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    property int eqIdx: 0
     property var peaks: []
     property real seekPreview: -1
 
@@ -160,6 +164,7 @@ Item {
         }
         syncViz()
         loadWave()
+        loadEq()
     }
 
     function deactivate() {
@@ -356,6 +361,8 @@ Item {
             return "cover"
         if (mode === "download")
             return "download"
+        if (mode === "eq")
+            return "eq"
         var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
         if (q)
             return "search (" + ((searchHits && searchHits.length) || 0) + ")"
@@ -390,6 +397,14 @@ Item {
             }
             return withSync
         }
+        if (mode === "eq")
+            return [
+                { key: "←→", label: "band" },
+                { key: "↑↓", label: "gain" },
+                { key: "0", label: "flat" },
+                { key: "r", label: "reset" },
+                { key: "e", label: "on/off" }
+            ]
         if (mode === "help" || mode === "tags")
             return []
         if (mode === "discover")
@@ -2015,6 +2030,92 @@ Item {
         syncViz()
     }
 
+    function eqHot() {
+        if (!eqEnabled)
+            return false
+        if (Math.abs(eqPreamp) >= 0.05)
+            return true
+        var bands = eqBands || []
+        for (var i = 0; i < bands.length; i++) {
+            if (Math.abs(Number(bands[i]) || 0) >= 0.05)
+                return true
+        }
+        return false
+    }
+
+    function loadEq() {
+        ipc("eq.get", {}, function(data) {
+            root.applyEq(data)
+        })
+    }
+
+    function applyEq(data) {
+        if (!data)
+            return
+        eqEnabled = data.enabled !== false
+        eqPreamp = Number(data.preamp) || 0
+        var next = []
+        var src = data.bands || []
+        for (var i = 0; i < 10; i++) {
+            var row = src[i] || {}
+            next.push(Number(row.gain) || 0)
+        }
+        eqBands = next
+    }
+
+    function toggleEq() {
+        if (mode === "eq") {
+            closeMode()
+            return
+        }
+        pushOverlay("eq")
+        loadEq()
+    }
+
+    function toggleEqEnabled() {
+        eqEnabled = !eqEnabled
+        eqSend.restart()
+    }
+
+    function setEqGain(index, db) {
+        db = Math.round(db)
+        if (db < -12)
+            db = -12
+        if (db > 12)
+            db = 12
+        if (index <= 0)
+            eqPreamp = db
+        else {
+            var bands = (eqBands || []).slice()
+            while (bands.length < 10)
+                bands.push(0)
+            bands[index - 1] = db
+            eqBands = bands
+        }
+        eqSend.restart()
+    }
+
+    function nudgeEq(delta) {
+        var cur = eqIdx <= 0 ? eqPreamp : Number((eqBands || [])[eqIdx - 1]) || 0
+        setEqGain(eqIdx, cur + delta)
+    }
+
+    function resetEq() {
+        eqSend.stop()
+        eqPreamp = 0
+        eqBands = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        ipc("eq.reset", {}, function(data) {
+            root.applyEq(data)
+        })
+    }
+
+    function sendEq() {
+        var bands = []
+        for (var i = 0; i < 10; i++)
+            bands.push(Number((eqBands || [])[i]) || 0)
+        ipc("eq.set", { enabled: eqEnabled, preamp: eqPreamp, bands: bands }, null)
+    }
+
     function syncViz() {
         if (!service || !service.ipcCall)
             return
@@ -2251,6 +2352,20 @@ Item {
         var shift = (event.modifiers & Qt.ShiftModifier) !== 0
         var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
 
+        if (mode === "eq") {
+            if (key === Qt.Key_Escape) { onEsc(); return true }
+            if (key === Qt.Key_Left) { eqIdx = Math.max(0, eqIdx - 1); return true }
+            if (key === Qt.Key_Right) { eqIdx = Math.min(10, eqIdx + 1); return true }
+            if (key === Qt.Key_Up) { nudgeEq(shift ? 3 : 1); return true }
+            if (key === Qt.Key_Down) { nudgeEq(shift ? -3 : 1); return true }
+            if (text === "0") { setEqGain(eqIdx, 0); return true }
+            if (text === "r" || text === "R") { resetEq(); return true }
+            if (text === "e" || text === "E") { toggleEqEnabled(); return true }
+            if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && shift)) { cycleFocus(-1); return true }
+            if (key === Qt.Key_Tab) { cycleFocus(1); return true }
+            if (key === Qt.Key_Return || key === Qt.Key_Enter) { return true }
+            return false
+        }
         if (mode === "tags") {
             if (key === Qt.Key_Escape) { closeMode(); return true }
             if (key === Qt.Key_Up || key === Qt.Key_Backtab || (key === Qt.Key_Tab && shift)) { moveTag(-1); return true }
@@ -2420,6 +2535,12 @@ Item {
         id: searchTimer
         interval: 180
         onTriggered: root.runSearch()
+    }
+
+    Timer {
+        id: eqSend
+        interval: 80
+        onTriggered: root.sendEq()
     }
 
     Timer {

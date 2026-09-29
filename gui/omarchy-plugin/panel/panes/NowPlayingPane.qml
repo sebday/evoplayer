@@ -291,6 +291,18 @@ Fieldset {
                         onClicked: view.toggleViz()
                     }
                 }
+                Text {
+                    textFormat: Text.PlainText
+                    text: "EQ"
+                    color: view.eqHot() ? Theme.good : Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                    anchors.verticalCenter: parent.verticalCenter
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: view.toggleEq()
+                    }
+                }
             }
         }
 

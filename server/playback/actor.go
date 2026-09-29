@@ -44,6 +44,7 @@ type Actor struct {
 	resumePos          float64
 	cmdCh              chan func()
 	viz                *viz.Analyzer
+	eq                 *EQ
 }
 
 func NewActor(notify func(Status)) *Actor {
@@ -53,6 +54,7 @@ func NewActor(notify func(Status)) *Actor {
 		notifyCh:  make(chan struct{}, 1),
 		cmdCh:     make(chan func(), 64),
 		viz:       viz.NewAnalyzer(float64(outputSampleRate)),
+		eq:        NewEQ(),
 	}
 	a.output.SetVolume(volumeGain(a.volumePct))
 	a.viz.SetDelayFunc(func() int {
@@ -167,7 +169,24 @@ func (a *Actor) applyPaused(paused bool) {
 }
 
 func (a *Actor) playChain() Streamer {
-	return viz.Tap(a.stream, a.viz)
+	src := Streamer(a.stream)
+	if a.eq != nil {
+		src = a.eq.Wrap(src)
+	}
+	return viz.Tap(src, a.viz)
+}
+
+func (a *Actor) SetEQ(cfg EQConfig) {
+	if a.eq != nil {
+		a.eq.SetConfig(cfg)
+	}
+}
+
+func (a *Actor) EQConfig() EQConfig {
+	if a.eq == nil {
+		return FlatEQ()
+	}
+	return a.eq.Config()
 }
 
 func (a *Actor) livePositionLocked() float64 {
@@ -640,6 +659,9 @@ func (a *Actor) loadPath(path string, position float64, paused bool) error {
 	if a.viz != nil {
 		a.viz.ResetTrack()
 	}
+	if a.eq != nil {
+		a.eq.Reset()
+	}
 	a.applyPaused(paused)
 	done := make(chan struct{})
 	if err := a.output.Play(a.playChain(), &a.playMu, func() { close(done) }); err != nil {
@@ -711,6 +733,9 @@ func (a *Actor) seekPlayback(seconds float64) error {
 
 	if a.viz != nil {
 		a.viz.ResetTrack()
+	}
+	if a.eq != nil {
+		a.eq.Reset()
 	}
 	done := make(chan struct{})
 	if err := a.output.Play(a.playChain(), &a.playMu, func() { close(done) }); err != nil {

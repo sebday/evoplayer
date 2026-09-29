@@ -535,6 +535,13 @@ Fieldset {
             view: pane.view
         }
 
+        EqOverlay {
+            anchors.fill: parent
+            anchors.topMargin: errLine.height
+            visible: view.mode === "eq"
+            view: pane.view
+        }
+
         DownloadOverlay {
             parent: pane
             anchors.fill: parent
