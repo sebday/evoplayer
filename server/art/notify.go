@@ -1,7 +1,6 @@
 package art
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -30,10 +29,7 @@ func NotifyCache(env paths.Env, trackPath string) (string, error) {
 		return "", err
 	}
 	if st, err := os.Stat(dest); err == nil && !st.IsDir() {
-		if sameFileBytes(art, dest) {
-			return dest, nil
-		}
-		_ = os.Remove(dest)
+		return dest, nil
 	}
 	tmp := dest + ".tmp"
 	if err := copyFile(art, tmp); err != nil {
@@ -59,18 +55,6 @@ func fileHash(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func sameFileBytes(a, b string) bool {
-	ab, err := os.ReadFile(a)
-	if err != nil {
-		return false
-	}
-	bb, err := os.ReadFile(b)
-	if err != nil {
-		return false
-	}
-	return bytes.Equal(ab, bb)
-}
-
 func copyFile(src, dest string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -81,7 +65,9 @@ func copyFile(src, dest string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
 	_, err = io.Copy(out, in)
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
 	return err
 }

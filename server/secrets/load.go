@@ -6,10 +6,11 @@ import (
 	"strings"
 )
 
-var lastfmKeys = map[string]string{
+var passEnvKeys = map[string]string{
 	"LASTFM_API_KEY":     "lastfm/api-key",
 	"LASTFM_API_SECRET":  "lastfm/api-secret",
 	"LASTFM_SESSION_KEY": "lastfm/session-key",
+	"DISCOGS_TOKEN":      "discogs/token",
 }
 
 func passPrefix() string {
@@ -27,7 +28,7 @@ func Load() {
 	if _, err := exec.LookPath("pass"); err != nil {
 		return
 	}
-	for envKey, rel := range lastfmKeys {
+	for envKey, rel := range passEnvKeys {
 		if os.Getenv(envKey) != "" {
 			continue
 		}
@@ -43,8 +44,8 @@ func Load() {
 	}
 }
 
+// LastfmConfigured reports whether Last.fm credentials are in the environment; call Load first.
 func LastfmConfigured() bool {
-	Load()
 	return os.Getenv("LASTFM_API_KEY") != "" &&
 		os.Getenv("LASTFM_API_SECRET") != "" &&
 		os.Getenv("LASTFM_SESSION_KEY") != ""

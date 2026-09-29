@@ -79,8 +79,8 @@ func APICall(p ScrobbleParams) error {
 	if dur, err := strconv.ParseFloat(p.Duration, 64); err == nil && dur > 0 {
 		params["duration"] = strconv.Itoa(int(dur))
 	}
-	if p.Timestamp != "" {
-		if ts, err := strconv.ParseFloat(p.Timestamp, 64); err == nil {
+	if p.Method == "track.scrobble" {
+		if ts, err := strconv.ParseFloat(p.Timestamp, 64); err == nil && ts > 0 {
 			params["timestamp"] = strconv.Itoa(int(ts))
 		}
 	}
@@ -122,9 +122,8 @@ func APICall(p ScrobbleParams) error {
 	}
 	if p.Method == "track.scrobble" {
 		scrobblesBody, _ := resp["scrobbles"].(map[string]any)
-		raw := scrobblesBody["scrobble"]
 		var rows []map[string]any
-		switch v := raw.(type) {
+		switch v := scrobblesBody["scrobble"].(type) {
 		case map[string]any:
 			rows = []map[string]any{v}
 		case []any:
@@ -135,11 +134,14 @@ func APICall(p ScrobbleParams) error {
 			}
 		}
 		for _, row := range rows {
-			if attr, ok := row["@attr"].(map[string]any); ok {
-				if msg, ok := attr["ignoredMessage"].(string); ok && msg != "" {
-					return fmt.Errorf("evoplayer: last.fm ignored scrobble: %s", msg)
-				}
+			msg, _ := row["ignoredMessage"].(map[string]any)
+			if code, ok := msg["code"]; ok && fmt.Sprint(code) != "0" {
+				return fmt.Errorf("evoplayer: last.fm ignored scrobble (code %v): %v", code, msg["#text"])
 			}
+		}
+		attr, _ := scrobblesBody["@attr"].(map[string]any)
+		if ignored, ok := attr["ignored"]; ok && fmt.Sprint(ignored) != "0" {
+			return fmt.Errorf("evoplayer: last.fm ignored scrobble")
 		}
 	}
 	return nil

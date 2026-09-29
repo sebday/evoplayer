@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/sebday/evoplayer/server/syncarchive"
 	"github.com/sebday/evoplayer/server/tags"
+	"github.com/sebday/evoplayer/server/ytdlp"
 )
 
 type ytdlpFlatEntry struct {
@@ -28,55 +29,30 @@ type ytdlpFlatPlaylist struct {
 }
 
 func ytdlpFlatEntries(ctx context.Context, pageURL, oauthToken, clientID string) ([]ytdlpFlatEntry, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	bin, err := exec.LookPath("yt-dlp")
+	bin, err := ytdlp.Bin()
 	if err != nil {
 		return nil, err
 	}
-	try := func(extra []string) ([]ytdlpFlatEntry, error) {
-		base := ytDlpSoundcloudBaseArgs(oauthToken, clientID, "-", false)
-		base = removeOutTemplate(base)
-		args := append([]string{"-J", "--flat-playlist"}, base...)
-		args = append(args, pageURL)
-		if len(extra) > 0 {
-			args = append(extra, args...)
-		}
-		cmd := exec.CommandContext(ctx, bin, args...)
-		outBytes, err := cmd.Output()
-		if err != nil {
-			return nil, err
-		}
-		return parseFlatPlaylist(outBytes)
+	base, cleanup, err := ytDlpArgs(oauthToken, clientID)
+	if err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(oauthToken) != "" {
-		if entries, err := try(nil); err == nil {
-			return entries, nil
+	defer cleanup()
+	var lastErr error
+	for _, browser := range cookieOrder(oauthToken) {
+		out, err := ytdlp.Output(ctx, bin, slices.Concat(base, ytdlp.CookieArgs(browser), []string{"-J", "--flat-playlist", "--", pageURL}))
+		if err == nil {
+			var entries []ytdlpFlatEntry
+			if entries, err = parseFlatPlaylist(out); err == nil {
+				return entries, nil
+			}
 		}
-	}
-	for _, browser := range []string{"brave", "chromium"} {
-		if entries, err := try([]string{"--cookies-from-browser", browser}); err == nil {
-			return entries, nil
+		lastErr = err
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 	}
-	return try(nil)
-}
-
-func removeOutTemplate(args []string) []string {
-	out := make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		if args[i] == "-o" {
-			i++
-			continue
-		}
-		if args[i] == "-f" {
-			i++
-			continue
-		}
-		out = append(out, args[i])
-	}
-	return out
+	return nil, lastErr
 }
 
 func parseFlatPlaylist(raw []byte) ([]ytdlpFlatEntry, error) {

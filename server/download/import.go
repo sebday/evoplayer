@@ -11,9 +11,6 @@ import (
 
 // ImportLibraryIncoming normalizes audio in .incoming and moves files into the library.
 func ImportLibraryIncoming(ctx context.Context, env paths.Env, rep jobs.Reporter) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if rep == nil {
 		rep = jobs.NopReporter
 	}

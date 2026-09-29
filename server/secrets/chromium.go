@@ -174,7 +174,7 @@ func cookiePlaintext(plain []byte) string {
 		candidates = [][]byte{plain[32:], plain}
 	}
 	for _, raw := range candidates {
-		if tok := normalizeSoundcloudOAuth(string(raw)); tok != "" {
+		if tok := matchSoundcloudOAuth(string(raw)); tok != "" {
 			return tok
 		}
 	}

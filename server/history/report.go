@@ -18,31 +18,30 @@ func Generate(p Params) (*Report, error) {
 	}
 	allTime := p.WeekFrom == "" || p.WeekFrom == "0" || p.WeekFrom == "overall"
 	if allTime {
-		if cached, err := loadCachedOverall(p.CacheDir); err == nil && cached != nil {
-			cached.User = p.User
-			attachRecap(cached, p.CacheDir)
-			return cached, nil
+		cachePath := filepath.Join(p.CacheDir, "overall.json")
+		if cacheFresh(cachePath) {
+			if cached, err := loadCachedOverall(p.CacheDir); err == nil && cached != nil {
+				cached.User = p.User
+				attachRecap(cached, p.CacheDir)
+				return cached, nil
+			}
 		}
 		var report *Report
+		cacheable := true
 		if p.APIKey != "" && p.User != "" {
-			r, err := lastfmOverallReport(p.APIKey, p.User, p.Limit)
-			if err != nil {
-				report = scrobbleFallbackAlltime(p.ScrobbleLog, p.Limit)
-			} else {
-				report = r
-			}
-		} else {
-			report = scrobbleFallbackAlltime(p.ScrobbleLog, p.Limit)
+			var err error
+			report, err = lastfmOverallReport(p.APIKey, p.User, p.Limit)
+			cacheable = err == nil
+		}
+		if report == nil {
+			report = scrobbleFallback(p.ScrobbleLog, 0, 0, p.Limit)
 		}
 		report.User = p.User
 		attachRecap(report, p.CacheDir)
-		if err := os.MkdirAll(p.CacheDir, 0o755); err != nil {
-			return nil, err
+		if !cacheable {
+			return report, nil
 		}
-		if err := writeJSON(filepath.Join(p.CacheDir, "overall.json"), report); err != nil {
-			return nil, err
-		}
-		return report, nil
+		return report, writeCache(p.CacheDir, cachePath, report)
 	}
 
 	weeks := []WeekInfo{}
@@ -68,34 +67,47 @@ func Generate(p Params) (*Report, error) {
 	endTS := startTS + 7*86400
 
 	cachePath := filepath.Join(p.CacheDir, "week-"+strconv.Itoa(startTS)+".json")
-	if cached, err := loadCachedReport(p.CacheDir, startTS); err == nil && cached != nil {
-		cached.AvailableWeeks = weeks
-		attachRecap(cached, p.CacheDir)
-		return cached, nil
+	if int64(endTS) <= time.Now().Unix() || cacheFresh(cachePath) {
+		if cached, err := loadCachedReport(p.CacheDir, startTS); err == nil && cached != nil {
+			cached.AvailableWeeks = weeks
+			attachRecap(cached, p.CacheDir)
+			return cached, nil
+		}
 	}
-	_ = cachePath
 
 	var report *Report
+	cacheable := true
 	if p.APIKey != "" && p.User != "" {
-		r, err := lastfmWeekReport(p.APIKey, p.User, startTS, endTS, p.Limit)
-		if err != nil {
-			report = scrobbleFallback(p.ScrobbleLog, startTS, endTS, p.Limit)
-		} else {
-			report = r
-		}
-	} else {
+		var err error
+		report, err = lastfmWeekReport(p.APIKey, p.User, startTS, endTS, p.Limit)
+		cacheable = err == nil
+	}
+	if report == nil {
 		report = scrobbleFallback(p.ScrobbleLog, startTS, endTS, p.Limit)
 	}
 	report.User = p.User
 	report.AvailableWeeks = weeks
 	attachRecap(report, p.CacheDir)
-	if err := os.MkdirAll(p.CacheDir, 0o755); err != nil {
-		return nil, err
+	if !cacheable {
+		return report, nil
 	}
-	if err := writeJSON(filepath.Join(p.CacheDir, "week-"+strconv.Itoa(startTS)+".json"), report); err != nil {
-		return nil, err
+	return report, writeCache(p.CacheDir, cachePath, report)
+}
+
+// liveCacheTTL bounds how long reports that can still change (all time, the
+// current week) are served from cache.
+const liveCacheTTL = 15 * time.Minute
+
+func cacheFresh(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && time.Since(st.ModTime()) < liveCacheTTL
+}
+
+func writeCache(dir, path string, report *Report) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
 	}
-	return report, nil
+	return writeJSON(path, report)
 }
 
 func emptyReportBody(

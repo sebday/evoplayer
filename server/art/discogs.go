@@ -21,6 +21,8 @@ var (
 	discogsFitInRe      = regexp.MustCompile(`/fit-in/[0-9]+x[0-9]+/`)
 	discogsReleaseIDRe  = regexp.MustCompile(`discogs\.com/release/([0-9]+)`)
 	discogsReleaseAPIRe = regexp.MustCompile(`api\.discogs\.com/releases/([0-9]+)`)
+	discogsArtistIDRe   = regexp.MustCompile(`discogs\.com/artists?/([0-9]+)`)
+	discogsArtistAPIRe  = regexp.MustCompile(`api\.discogs\.com/artists/([0-9]+)`)
 )
 
 // sizedDiscogsURL only upgrades legacy /fit-in/WxH/ thumbs. Signed i.discogs.com
@@ -37,23 +39,6 @@ func sizedDiscogsURL(raw string, size int) string {
 	return discogsFitInRe.ReplaceAllString(raw, fit)
 }
 
-// PreviewURL picks a Discogs image URL for preview and apply. Full release URIs
-// that combine /fit-in/ with /rs:fit/ are often rejected by the CDN; the uri150
-// thumb still works and is upscaled when saved.
-func PreviewURL(r Result) string {
-	url := strings.TrimSpace(r.URL)
-	thumb := strings.TrimSpace(r.Thumb)
-	if url != "" && strings.Contains(url, "/fit-in/") && strings.Contains(url, "/rs:fit/") {
-		if thumb != "" {
-			return thumb
-		}
-	}
-	if url != "" {
-		return sizedDiscogsURL(url, PreviewSize)
-	}
-	return sizedDiscogsURL(thumb, PreviewSize)
-}
-
 type discogsSearchRow struct {
 	Title       string `json:"title"`
 	Year        string `json:"year"`
@@ -63,10 +48,7 @@ type discogsSearchRow struct {
 }
 
 func discogsArtistIDFromQuery(q string) string {
-	for _, re := range []*regexp.Regexp{
-		regexp.MustCompile(`discogs\.com/artists?/([0-9]+)`),
-		regexp.MustCompile(`api\.discogs\.com/artists/([0-9]+)`),
-	} {
+	for _, re := range []*regexp.Regexp{discogsArtistIDRe, discogsArtistAPIRe} {
 		if m := re.FindStringSubmatch(q); len(m) > 1 {
 			return m[1]
 		}
@@ -348,5 +330,9 @@ func discogsGet(u string) ([]byte, error) {
 	if token := discogsToken(); token != "" {
 		req.Header.Set("Authorization", "Discogs token="+token)
 	}
-	return httpDo(req)
+	body, err := httpDo(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "evoplayer: warn: discogs: %v\n", err)
+	}
+	return body, err
 }

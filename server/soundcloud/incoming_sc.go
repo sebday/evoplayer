@@ -1,6 +1,7 @@
 package soundcloud
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -111,7 +112,7 @@ func buildIncomingSCIndex(env library.Env, oauth, setsURL string) (map[string]st
 
 	client := NewClient("", oauth)
 	fmt.Fprintln(os.Stderr, "evoplayer: fetching likes...")
-	likes, err := client.LikesTracksProgressCtx(nil, nil)
+	likes, err := client.LikesTracksProgressCtx(context.Background(), nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -136,7 +137,7 @@ func buildIncomingSCIndex(env library.Env, oauth, setsURL string) (map[string]st
 		keyToMeta[key] = meta
 	}
 
-	sets, err := ytdlpFlatEntries(nil, setsURL, oauth, "")
+	sets, err := ytdlpFlatEntries(context.Background(), setsURL, oauth, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -160,7 +161,7 @@ func buildIncomingSCIndex(env library.Env, oauth, setsURL string) (map[string]st
 		}
 		playlistFolder[title] = folder
 
-		tracks, err := ytdlpFlatEntries(nil, plURL, oauth, "")
+		tracks, err := ytdlpFlatEntries(context.Background(), plURL, oauth, "")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: warn: playlist %q: %v\n", title, err)
 			continue

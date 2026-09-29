@@ -13,9 +13,9 @@ import (
 const apiBase = "https://api-v2.soundcloud.com"
 
 var (
-	clientIDRe       = regexp.MustCompile(`client_id=([a-zA-Z0-9]+)`)
-	clientIDJSRe     = regexp.MustCompile(`client_id:"([a-zA-Z0-9]+)"`)
-	scriptAssetJSRe  = regexp.MustCompile(`https://a-v2\.sndcdn\.com/assets/[^"'\s]+\.js`)
+	clientIDRe      = regexp.MustCompile(`client_id=([a-zA-Z0-9]+)`)
+	clientIDJSRe    = regexp.MustCompile(`client_id:"([a-zA-Z0-9]+)"`)
+	scriptAssetJSRe = regexp.MustCompile(`https://a-v2\.sndcdn\.com/assets/[^"'\s]+\.js`)
 )
 
 type Client struct {

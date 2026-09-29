@@ -1,7 +1,6 @@
 package youtube
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +17,7 @@ import (
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/syncarchive"
 	"github.com/sebday/evoplayer/server/tags"
+	"github.com/sebday/evoplayer/server/ytdlp"
 )
 
 type ProgressFunc func(phase string, percent int)
@@ -79,9 +78,6 @@ func defaultGenre(musicConfig string) string {
 }
 
 func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress ProgressFunc) (string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	report := func(phase string, pct int) {
 		if progress != nil {
 			progress(phase, pct)
@@ -98,7 +94,7 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
 		return "", err
 	}
-	bin, err := lookYtDlp()
+	bin, err := ytdlp.Bin()
 	if err != nil {
 		return "", fmt.Errorf("youtube: yt-dlp is required")
 	}
@@ -141,8 +137,13 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 		return "", err
 	}
 	report("convert", 0)
-	if err := ffmpegToMP3(ctx, raw, dest, info.Duration, progress); err != nil {
-		os.Remove(dest)
+	var onConvert func(float64)
+	if progress != nil && info.Duration > 0 {
+		onConvert = func(sec float64) {
+			progress("convert", min(100, int(sec/info.Duration*100)))
+		}
+	}
+	if err := ytdlp.ToMP3(ctx, raw, dest, onConvert); err != nil {
 		return "", fmt.Errorf("youtube: convert to mp3: %w", err)
 	}
 
@@ -187,13 +188,9 @@ func (info ytdlpInfo) artist() string {
 	return ""
 }
 
-var lookYtDlp = func() (string, error) {
-	return exec.LookPath("yt-dlp")
-}
-
 func ytdlpDump(ctx context.Context, bin, pageURL string) (ytdlpInfo, string, error) {
 	var last error
-	for _, browser := range cookieBrowsers() {
+	for _, browser := range ytdlp.Browsers() {
 		info, err := ytdlpDumpOnce(ctx, bin, pageURL, browser)
 		if err == nil {
 			return info, browser, nil
@@ -209,14 +206,17 @@ func ytdlpDump(ctx context.Context, bin, pageURL string) (ytdlpInfo, string, err
 func ytdlpFetch(ctx context.Context, bin, pageURL, tmpDir, prefer string, progress ProgressFunc) (string, error) {
 	outTmpl := filepath.Join(tmpDir, "audio.%(ext)s")
 	var last error
-	for _, browser := range cookieBrowserOrder(prefer) {
-		args := append(ytdlpBaseArgs(browser), "-f", "bestaudio/best", "--newline", "-o", outTmpl, pageURL)
-		if err := ytDlpRun(ctx, bin, args, func(line string) {
+	for _, browser := range ytdlp.Browsers(prefer) {
+		args := append(ytdlpBaseArgs(browser), "-f", "bestaudio/best", "--newline", "-o", outTmpl, "--", pageURL)
+		if err := ytdlp.Run(ctx, bin, args, func(line string) {
 			if pct, ok := parseYtDlpPercent(line); ok && progress != nil {
 				progress("download", pct)
 			}
 		}); err != nil {
-			last = err
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			last = fmt.Errorf("youtube: %w", err)
 			continue
 		}
 		matches, _ := filepath.Glob(filepath.Join(tmpDir, "audio.*"))
@@ -233,9 +233,9 @@ func ytdlpFetch(ctx context.Context, bin, pageURL, tmpDir, prefer string, progre
 }
 
 func ytdlpDumpOnce(ctx context.Context, bin, pageURL, browser string) (ytdlpInfo, error) {
-	out, err := ytDlpOutput(ctx, bin, append(ytdlpBaseArgs(browser), "-J", "--skip-download", pageURL))
+	out, err := ytdlp.Output(ctx, bin, append(ytdlpBaseArgs(browser), "-J", "--skip-download", "--", pageURL))
 	if err != nil {
-		return ytdlpInfo{}, err
+		return ytdlpInfo{}, fmt.Errorf("youtube: %w", err)
 	}
 	var info ytdlpInfo
 	if err := json.Unmarshal(out, &info); err != nil {
@@ -248,76 +248,7 @@ func ytdlpDumpOnce(ctx context.Context, bin, pageURL, browser string) (ytdlpInfo
 }
 
 func ytdlpBaseArgs(browser string) []string {
-	args := []string{"--no-playlist", "--no-warnings"}
-	if browser != "" {
-		args = append(args, "--cookies-from-browser", browser)
-	}
-	return args
-}
-
-func cookieBrowsers() []string {
-	return []string{"", "brave", "chromium"}
-}
-
-func cookieBrowserOrder(prefer string) []string {
-	seen := map[string]bool{}
-	out := make([]string, 0, 3)
-	add := func(b string) {
-		if seen[b] {
-			return
-		}
-		seen[b] = true
-		out = append(out, b)
-	}
-	add(prefer)
-	for _, b := range cookieBrowsers() {
-		add(b)
-	}
-	return out
-}
-
-func ytDlpOutput(ctx context.Context, bin string, args []string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
-	out, err := cmd.Output()
-	if err == nil {
-		return out, nil
-	}
-	msg := strings.TrimSpace(err.Error())
-	if exit, ok := err.(*exec.ExitError); ok {
-		if stderr := strings.TrimSpace(string(exit.Stderr)); stderr != "" {
-			msg = lastNonEmptyLine(stderr)
-		}
-	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	return nil, fmt.Errorf("youtube: %s", msg)
-}
-
-func ytDlpRun(ctx context.Context, bin string, args []string, onLine func(string)) error {
-	cmd := exec.CommandContext(ctx, bin, args...)
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	sc := bufio.NewScanner(stderr)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		if onLine != nil {
-			onLine(sc.Text())
-		}
-	}
-	err = cmd.Wait()
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if err != nil {
-		return fmt.Errorf("youtube: %s", err)
-	}
-	return nil
+	return append([]string{"--no-playlist", "--no-warnings"}, ytdlp.CookieArgs(browser)...)
 }
 
 func parseYtDlpPercent(line string) (int, bool) {
@@ -345,54 +276,6 @@ func parseYtDlpPercent(line string) (int, bool) {
 		n = 100
 	}
 	return n, true
-}
-
-func ffmpegToMP3(ctx context.Context, src, dest string, duration float64, progress ProgressFunc) error {
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-		"-i", src, "-codec:a", "libmp3lame", "-q:a", "0",
-		"-progress", "pipe:1", "-nostats", dest)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-	sc := bufio.NewScanner(stdout)
-	for sc.Scan() {
-		line := sc.Text()
-		if !strings.HasPrefix(line, "out_time_ms=") || progress == nil || duration <= 0 {
-			continue
-		}
-		ms, err := strconv.ParseFloat(strings.TrimPrefix(line, "out_time_ms="), 64)
-		if err != nil || ms <= 0 {
-			continue
-		}
-		pct := int(ms / (duration * 1000) * 100)
-		if pct > 100 {
-			pct = 100
-		}
-		if pct < 0 {
-			pct = 0
-		}
-		progress("convert", pct)
-	}
-	err = cmd.Wait()
-	if ctx.Err() != nil {
-		os.Remove(dest)
-		return ctx.Err()
-	}
-	return err
-}
-
-func lastNonEmptyLine(s string) string {
-	lines := strings.Split(s, "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if t := strings.TrimSpace(lines[i]); t != "" {
-			return t
-		}
-	}
-	return strings.TrimSpace(s)
 }
 
 func fetchThumbnail(info ytdlpInfo) ([]byte, string) {

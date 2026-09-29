@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/sebday/evoplayer/server/secrets"
 	"github.com/sebday/evoplayer/server/syncarchive"
 	"github.com/sebday/evoplayer/server/tags"
+	"github.com/sebday/evoplayer/server/ytdlp"
 )
 
 const defaultUser = "seb-day"
@@ -54,15 +54,9 @@ func LoadOptions(env paths.Env) (DownloadOptions, error) {
 	}, nil
 }
 
-func DownloadReportCtx(ctx context.Context, opts DownloadOptions, rep jobs.Reporter) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if rep == nil {
-		rep = jobs.NopReporter
-	}
+func (opts DownloadOptions) prepareIncoming(rep jobs.Reporter) (string, error) {
 	if opts.MusicRoot == "" {
-		return fmt.Errorf("evoplayer: music root not configured")
+		return "", fmt.Errorf("evoplayer: music root not configured")
 	}
 	if opts.OAuthSource != "" {
 		msg := jobs.LogInfof("soundcloud auth from %s", opts.OAuthSource)
@@ -70,7 +64,15 @@ func DownloadReportCtx(ctx context.Context, opts DownloadOptions, rep jobs.Repor
 		rep.Line(msg)
 	}
 	incoming := filepath.Join(opts.MusicRoot, ".incoming")
-	if err := os.MkdirAll(incoming, 0o755); err != nil {
+	return incoming, os.MkdirAll(incoming, 0o755)
+}
+
+func DownloadReportCtx(ctx context.Context, opts DownloadOptions, rep jobs.Reporter) error {
+	if rep == nil {
+		rep = jobs.NopReporter
+	}
+	incoming, err := opts.prepareIncoming(rep)
+	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(opts.StateDir, 0o755); err != nil {
@@ -113,14 +115,7 @@ func DownloadReportCtx(ctx context.Context, opts DownloadOptions, rep jobs.Repor
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		label := strings.TrimSpace(track.User.Username)
-		if title := strings.TrimSpace(track.Title); title != "" {
-			if label != "" {
-				label += " - " + title
-			} else {
-				label = title
-			}
-		}
+		label := trackLabel(track)
 		rep.Progress(jobs.Progress{Phase: label, Done: done, Total: total})
 		dest := trackDestPath(incoming, track)
 		if _, err := os.Stat(dest); err == nil {
@@ -159,9 +154,6 @@ func DownloadReportCtx(ctx context.Context, opts DownloadOptions, rep jobs.Repor
 }
 
 func DownloadTrackURLCtx(ctx context.Context, env paths.Env, pageURL string, rep jobs.Reporter) (string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if rep == nil {
 		rep = jobs.NopReporter
 	}
@@ -169,16 +161,8 @@ func DownloadTrackURLCtx(ctx context.Context, env paths.Env, pageURL string, rep
 	if err != nil {
 		return "", err
 	}
-	if opts.MusicRoot == "" {
-		return "", fmt.Errorf("evoplayer: music root not configured")
-	}
-	if opts.OAuthSource != "" {
-		msg := jobs.LogInfof("soundcloud auth from %s", opts.OAuthSource)
-		fmt.Fprintf(os.Stderr, "evoplayer: %s\n", msg)
-		rep.Line(msg)
-	}
-	incoming := filepath.Join(opts.MusicRoot, ".incoming")
-	if err := os.MkdirAll(incoming, 0o755); err != nil {
+	incoming, err := opts.prepareIncoming(rep)
+	if err != nil {
 		return "", err
 	}
 	client := NewClient(opts.ClientID, opts.OAuthToken)
@@ -190,14 +174,7 @@ func DownloadTrackURLCtx(ctx context.Context, env paths.Env, pageURL string, rep
 	if err != nil {
 		return "", err
 	}
-	label := strings.TrimSpace(track.User.Username)
-	if title := strings.TrimSpace(track.Title); title != "" {
-		if label != "" {
-			label += " - " + title
-		} else {
-			label = title
-		}
-	}
+	label := trackLabel(*track)
 	if archive.HasSC(track.ID) {
 		msg := jobs.LogSkip(label + " (archived)")
 		rep.Line(msg)
@@ -224,9 +201,6 @@ func DownloadTrackURLCtx(ctx context.Context, env paths.Env, pageURL string, rep
 }
 
 func DownloadCollectionURLCtx(ctx context.Context, env paths.Env, pageURL string, rep jobs.Reporter) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if rep == nil {
 		rep = jobs.NopReporter
 	}
@@ -234,16 +208,8 @@ func DownloadCollectionURLCtx(ctx context.Context, env paths.Env, pageURL string
 	if err != nil {
 		return err
 	}
-	if opts.MusicRoot == "" {
-		return fmt.Errorf("evoplayer: music root not configured")
-	}
-	if opts.OAuthSource != "" {
-		msg := jobs.LogInfof("soundcloud auth from %s", opts.OAuthSource)
-		fmt.Fprintf(os.Stderr, "evoplayer: %s\n", msg)
-		rep.Line(msg)
-	}
-	incoming := filepath.Join(opts.MusicRoot, ".incoming")
-	if err := os.MkdirAll(incoming, 0o755); err != nil {
+	incoming, err := opts.prepareIncoming(rep)
+	if err != nil {
 		return err
 	}
 	rep.Progress(jobs.Progress{Phase: "downloading collection"})
@@ -293,21 +259,19 @@ func downloadTrack(ctx context.Context, client *Client, track *Track, dest strin
 		return nil
 	}
 	err := client.DownloadTrackStream(ctx, track, dest)
-	if err != nil {
-		os.Remove(dest)
+	if err != nil && ctx.Err() == nil {
 		if pageURL := strings.TrimSpace(track.PermalinkURL); pageURL != "" {
 			if yerr := downloadYtDlp(ctx, pageURL, dest, client.OAuthToken, client.ClientID); yerr == nil {
 				err = nil
 			} else if isDRMError(yerr) || isDRMError(err) {
-				return fmt.Errorf("drm protected")
+				return ytdlp.ErrDRM
+			} else {
+				err = fmt.Errorf("%w; %v", err, yerr)
 			}
 		}
-		if err != nil {
-			if isDRMError(err) {
-				return fmt.Errorf("drm protected")
-			}
-			return err
-		}
+	}
+	if err != nil {
+		return err
 	}
 	meta := trackMeta(track, opts)
 	if dur := tags.MediaDuration(dest); dur > 0 {
@@ -359,15 +323,7 @@ func trackMeta(track *Track, opts DownloadOptions) map[string]string {
 	return meta
 }
 
-func ffmpegToMP3(ctx context.Context, src, dest string) error {
-	return exec.CommandContext(ctx, "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-		"-i", src, "-codec:a", "libmp3lame", "-q:a", "0", dest).Run()
-}
-
 func NormalizeIncoming(ctx context.Context, musicRoot string) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	incoming := filepath.Join(musicRoot, ".incoming")
 	entries, err := os.ReadDir(incoming)
 	if err != nil {
@@ -389,9 +345,13 @@ func NormalizeIncoming(ctx context.Context, musicRoot string) error {
 		switch ext {
 		case "mp3":
 			continue
-		case "part", "ytdl", "temp", "raw", "jpg", "jpeg", "png", "webp", "gif":
-			mp3 := base + ".mp3"
-			if _, err := os.Stat(mp3); err == nil {
+		case "part", "ytdl", "temp", "raw":
+			if audio.IsAudio(base) {
+				base = strings.TrimSuffix(base, filepath.Ext(base))
+			}
+			fallthrough
+		case "jpg", "jpeg", "png", "webp", "gif":
+			if fileExists(base + ".mp3") {
 				_ = os.Remove(f)
 			}
 			continue
@@ -400,12 +360,15 @@ func NormalizeIncoming(ctx context.Context, musicRoot string) error {
 			continue
 		}
 		mp3 := base + ".mp3"
-		if _, err := os.Stat(mp3); err == nil {
+		if fileExists(mp3) {
 			_ = os.Remove(f)
 			continue
 		}
-		if err := ffmpegToMP3(ctx, f, mp3); err != nil {
-			fmt.Fprintf(os.Stderr, "evoplayer: warn: mp3 convert failed: %s\n", f)
+		if err := ytdlp.ToMP3(ctx, f, mp3, nil); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			fmt.Fprintf(os.Stderr, "evoplayer: warn: mp3 convert failed: %s: %v\n", f, err)
 			continue
 		}
 		_ = os.Remove(f)
@@ -415,9 +378,6 @@ func NormalizeIncoming(ctx context.Context, musicRoot string) error {
 }
 
 func DownloadEnvReportCtx(ctx context.Context, env paths.Env, rep jobs.Reporter) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	opts, err := LoadOptions(env)
 	if err != nil {
 		return err

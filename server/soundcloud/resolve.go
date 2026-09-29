@@ -17,6 +17,7 @@ type Transcoding struct {
 
 type Track struct {
 	ID           int64  `json:"id"`
+	Kind         string `json:"kind"`
 	Title        string `json:"title"`
 	Genre        string `json:"genre"`
 	TagList      string `json:"tag_list"`
@@ -58,6 +59,9 @@ func (c *Client) ResolveURL(pageURL string) (*Track, error) {
 	if track.ID == 0 {
 		return nil, fmt.Errorf("soundcloud: resolve returned no track")
 	}
+	if track.Kind != "" && track.Kind != "track" {
+		return nil, fmt.Errorf("soundcloud: %s is a %s, not a track", pageURL, track.Kind)
+	}
 	return &track, nil
 }
 
@@ -83,7 +87,7 @@ func (c *Client) streamInfoURL(transcodingURL string) (string, error) {
 }
 
 func orderedTranscodings(track *Track) []Transcoding {
-	var progressiveHQ, progressive, hls, encrypted []Transcoding
+	var progressiveHQ, progressive, hls []Transcoding
 	for _, t := range track.Media.Transcodings {
 		switch t.Format.Protocol {
 		case "progressive":
@@ -94,14 +98,11 @@ func orderedTranscodings(track *Track) []Transcoding {
 			}
 		case "hls":
 			hls = append(hls, t)
-		case "cbc-encrypted-hls", "ctr-encrypted-hls":
-			encrypted = append(encrypted, t)
 		}
 	}
 	out := make([]Transcoding, 0, len(track.Media.Transcodings))
 	out = append(out, progressiveHQ...)
 	out = append(out, progressive...)
 	out = append(out, hls...)
-	out = append(out, encrypted...)
 	return out
 }

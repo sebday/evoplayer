@@ -50,17 +50,6 @@ func SCKey(id int64) string {
 	return fmt.Sprintf("sc:%d", id)
 }
 
-func SCKeyString(id string) string {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return ""
-	}
-	if strings.HasPrefix(id, "sc:") {
-		return id
-	}
-	return "sc:" + id
-}
-
 func YTKey(id string) string {
 	id = strings.TrimSpace(id)
 	if id == "" {

@@ -1,6 +1,7 @@
 package art
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -100,8 +101,16 @@ func httpDo(req *http.Request) ([]byte, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
-		return io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	if err != nil {
+		return nil, err
 	}
-	return io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		var payload struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(body, &payload)
+		return nil, fmt.Errorf("art: %s %s: %s %s", req.Method, req.URL.Host, resp.Status, payload.Message)
+	}
+	return body, nil
 }

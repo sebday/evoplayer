@@ -10,36 +10,9 @@ import (
 
 func CmdLastfm(env paths.Env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: evoplayer lastfm <auth-session|scrobble-api|recording-mbid>")
+		return fmt.Errorf("usage: evoplayer lastfm recording-mbid <artist> <title> [album]")
 	}
 	switch args[0] {
-	case "auth-session":
-		if len(args) < 4 {
-			return fmt.Errorf("usage: evoplayer lastfm auth-session <api_key> <secret> <token>")
-		}
-		session, err := lastfm.AuthSession(args[1], args[2], args[3])
-		if err != nil {
-			return err
-		}
-		fmt.Print(session)
-		return nil
-	case "scrobble-api":
-		if len(args) < 12 {
-			return fmt.Errorf("usage: evoplayer lastfm scrobble-api <method> <api_key> <secret> <session> <artist> <title> <album> <duration> <timestamp> <album_artist> <mbid>")
-		}
-		return lastfm.APICall(lastfm.ScrobbleParams{
-			Method:      args[1],
-			APIKey:      args[2],
-			Secret:      args[3],
-			Session:     args[4],
-			Artist:      args[5],
-			Title:       args[6],
-			Album:       args[7],
-			Duration:    args[8],
-			Timestamp:   args[9],
-			AlbumArtist: args[10],
-			MBID:        args[11],
-		})
 	case "recording-mbid":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: evoplayer lastfm recording-mbid <artist> <title> [album]")
@@ -55,7 +28,7 @@ func CmdLastfm(env paths.Env, args []string) error {
 		fmt.Print(mbid)
 		return nil
 	default:
-		return fmt.Errorf("usage: evoplayer lastfm <auth-session|scrobble-api|recording-mbid>")
+		return fmt.Errorf("usage: evoplayer lastfm recording-mbid <artist> <title> [album]")
 	}
 }
 

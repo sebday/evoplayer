@@ -402,9 +402,6 @@ func IsPreviewPath(cacheDir, path string) bool {
 
 // DownloadPreview saves a SoundCloud track into the discover cache.
 func DownloadPreview(ctx context.Context, env paths.Env, id int64, rep jobs.Reporter) (string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if rep == nil {
 		rep = jobs.NopReporter
 	}
@@ -498,9 +495,6 @@ func prunePreviews(dir string, keep int) {
 // Keep moves a cached preview into .incoming, or downloads the permalink when
 // there is no preview.
 func Keep(ctx context.Context, env paths.Env, id int64, rep jobs.Reporter) (string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if rep == nil {
 		rep = jobs.NopReporter
 	}
@@ -574,19 +568,22 @@ func moveFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	tmp := dst + ".part"
+	out, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
 	_, copyErr := io.Copy(out, in)
 	closeErr := out.Close()
-	if copyErr != nil {
-		os.Remove(dst)
-		return copyErr
+	if copyErr == nil {
+		copyErr = closeErr
 	}
-	if closeErr != nil {
-		os.Remove(dst)
-		return closeErr
+	if copyErr == nil {
+		copyErr = os.Rename(tmp, dst)
+	}
+	if copyErr != nil {
+		os.Remove(tmp)
+		return copyErr
 	}
 	return os.Remove(src)
 }

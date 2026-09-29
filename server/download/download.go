@@ -3,8 +3,10 @@ package download
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/sebday/evoplayer/server/jobs"
 	"github.com/sebday/evoplayer/server/paths"
@@ -19,6 +21,7 @@ const (
 	KindSCLikes    = "sc-likes"
 	KindSCPlaylist = "sc-playlist"
 	KindSCArtist   = "sc-artist"
+	KindSCShort    = "sc-short"
 )
 
 // ClassifyURL returns the download kind for a YouTube or SoundCloud URL.
@@ -42,7 +45,11 @@ func ClassifyURL(rawURL string) string {
 		if strings.Trim(u.Path, "/") != "" {
 			return KindYouTube
 		}
-	case "soundcloud.com", "on.soundcloud.com":
+	case "on.soundcloud.com":
+		if strings.Trim(u.Path, "/") != "" {
+			return KindSCShort
+		}
+	case "soundcloud.com", "m.soundcloud.com":
 		return classifySoundCloudPath(strings.Trim(u.Path, "/"))
 	}
 	return ""
@@ -57,7 +64,7 @@ func classifySoundCloudPath(path string) string {
 	switch {
 	case len(parts) == 2 && parts[0] == "you" && parts[1] == "likes":
 		return KindSCLikes
-	case len(parts) == 2 && parts[1] == "likes":
+	case len(parts) == 2 && (parts[1] == "likes" || parts[1] == "sets" || parts[1] == "albums" || parts[1] == "reposts"):
 		return KindSCPlaylist
 	case len(parts) >= 3 && parts[1] == "sets":
 		return KindSCPlaylist
@@ -93,11 +100,16 @@ func NormalizeCollectionURL(rawURL string) string {
 // DownloadFromURLCtx downloads content from a supported URL. Multi-track kinds
 // return an empty path; single-track kinds return the downloaded file path.
 func DownloadFromURLCtx(ctx context.Context, env paths.Env, rawURL string, rep jobs.Reporter, progress youtube.ProgressFunc) (string, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if rep == nil {
 		rep = jobs.NopReporter
+	}
+	if ClassifyURL(rawURL) == KindSCShort {
+		long, err := expandShortLink(ctx, rawURL)
+		if err != nil {
+			return "", err
+		}
+		rep.Line(jobs.LogInfof("short link -> %s", long))
+		rawURL = long
 	}
 	switch ClassifyURL(rawURL) {
 	case KindYouTube:
@@ -137,6 +149,26 @@ func DownloadFromURLCtx(ctx context.Context, env paths.Env, rawURL string, rep j
 	default:
 		return "", fmt.Errorf("evoplayer: unsupported download url (youtube or soundcloud only)")
 	}
+}
+
+// expandShortLink follows an on.soundcloud.com redirect to the canonical page URL.
+func expandShortLink(ctx context.Context, rawURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSpace(rawURL), nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return "", fmt.Errorf("soundcloud: short link: %w", err)
+	}
+	resp.Body.Close()
+	u := *resp.Request.URL
+	u.RawQuery = ""
+	long := u.String()
+	if kind := ClassifyURL(long); kind == "" || kind == KindSCShort {
+		return "", fmt.Errorf("soundcloud: short link %s did not resolve (got %s)", rawURL, long)
+	}
+	return long, nil
 }
 
 func filepathBase(path string) string {

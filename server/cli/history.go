@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/sebday/evoplayer/server/paths"
+	"github.com/sebday/evoplayer/server/secrets"
 )
 
 func CmdHistory(env paths.Env, args []string) error {
@@ -12,6 +13,7 @@ func CmdHistory(env paths.Env, args []string) error {
 	}
 	switch args[0] {
 	case "report":
+		secrets.Load()
 		return CmdHistoryReport(env, args[1:])
 	default:
 		return fmt.Errorf("usage: evoplayer history report")

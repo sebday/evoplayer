@@ -9,9 +9,6 @@ import (
 )
 
 func (c *Client) LikesTracksProgressCtx(ctx context.Context, onPage func(n int)) ([]Track, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if c.OAuthToken == "" {
 		return nil, fmt.Errorf("soundcloud: oauth_token required (brave cookie or pass show %s)", secrets.SoundcloudPassPath())
 	}
@@ -25,10 +22,7 @@ func (c *Client) LikesTracksProgressCtx(ctx context.Context, onPage func(n int))
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		path := next
-		if strings.HasPrefix(path, apiBase) {
-			path = strings.TrimPrefix(path, apiBase)
-		}
+		path := strings.TrimPrefix(next, apiBase)
 		body, err := c.getJSONWithClientID(path)
 		if err != nil {
 			return nil, err

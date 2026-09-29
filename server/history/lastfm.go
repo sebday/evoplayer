@@ -28,13 +28,20 @@ func fetchJSON(rawURL string) (map[string]any, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
 		return nil, err
 	}
 	var out map[string]any
-	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, err
+	jsonErr := json.Unmarshal(body, &out)
+	if code, ok := out["error"]; ok {
+		return nil, fmt.Errorf("last.fm error %v: %v", code, out["message"])
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("last.fm: %s", resp.Status)
+	}
+	if jsonErr != nil {
+		return nil, jsonErr
 	}
 	return out, nil
 }
@@ -172,37 +179,9 @@ func lastfmOverallReport(apiKey, user string, limit int) (*Report, error) {
 
 	hours := round1(float64(playcount) * 3.5 / 60.0)
 
-	recentLimit := limit
-	if recentLimit > 50 {
-		recentLimit = 50
-	}
-	recentData, err := lastfm(apiKey, "user.getRecentTracks", map[string]string{"user": user, "limit": strconv.Itoa(recentLimit)})
+	recent, err := lastfmRecent(apiKey, user, limit)
 	if err != nil {
 		return nil, err
-	}
-	recentTracksBody, _ := recentData["recenttracks"].(map[string]any)
-	recentRaw := asMapSlice(recentTracksBody["track"])
-	recent := make([]map[string]any, 0, len(recentRaw))
-	for _, row := range recentRaw {
-		artist := lastfmFieldText(row["artist"])
-		title := lastfmFieldText(row["name"])
-		album := lastfmFieldText(row["album"])
-		if artist == "" || title == "" {
-			continue
-		}
-		at := ""
-		if date, ok := row["date"].(map[string]any); ok {
-			at = lastfmFieldText(date["#text"])
-		}
-		recent = append(recent, map[string]any{
-			"artist": artist,
-			"title":  title,
-			"album":  album,
-			"at":     at,
-		})
-	}
-	if len(recent) > limit {
-		recent = recent[:limit]
 	}
 	if len(artistRows) > limit {
 		artistRows = artistRows[:limit]
@@ -286,37 +265,9 @@ func lastfmWeekReport(apiKey, user string, startTS, endTS, limit int) (*Report, 
 	}
 	hours := round1(float64(scrobbles) * 3.5 / 60.0)
 
-	recentLimit := limit
-	if recentLimit > 50 {
-		recentLimit = 50
-	}
-	recentData, err := lastfm(apiKey, "user.getRecentTracks", map[string]string{"user": user, "limit": strconv.Itoa(recentLimit)})
+	recent, err := lastfmRecent(apiKey, user, limit)
 	if err != nil {
 		return nil, err
-	}
-	recentTracksBody, _ := recentData["recenttracks"].(map[string]any)
-	recentRaw := asMapSlice(recentTracksBody["track"])
-	recent := make([]map[string]any, 0, len(recentRaw))
-	for _, row := range recentRaw {
-		artist := lastfmFieldText(row["artist"])
-		title := lastfmFieldText(row["name"])
-		album := lastfmFieldText(row["album"])
-		if artist == "" || title == "" {
-			continue
-		}
-		at := ""
-		if date, ok := row["date"].(map[string]any); ok {
-			at = lastfmFieldText(date["#text"])
-		}
-		recent = append(recent, map[string]any{
-			"artist": artist,
-			"title":  title,
-			"album":  album,
-			"at":     at,
-		})
-	}
-	if len(recent) > limit {
-		recent = recent[:limit]
 	}
 	if len(artistRows) > 10 {
 		artistRows = artistRows[:10]
@@ -344,6 +295,37 @@ func lastfmWeekReport(apiKey, user string, startTS, endTS, limit int) (*Report, 
 		TopTracks:  trackRows,
 		Recent:     recent,
 	}, nil
+}
+
+func lastfmRecent(apiKey, user string, limit int) ([]map[string]any, error) {
+	data, err := lastfm(apiKey, "user.getRecentTracks", map[string]string{"user": user, "limit": strconv.Itoa(min(limit, 50))})
+	if err != nil {
+		return nil, err
+	}
+	body, _ := data["recenttracks"].(map[string]any)
+	rows := asMapSlice(body["track"])
+	recent := make([]map[string]any, 0, len(rows))
+	for _, row := range rows {
+		artist := lastfmFieldText(row["artist"])
+		title := lastfmFieldText(row["name"])
+		if artist == "" || title == "" {
+			continue
+		}
+		at := ""
+		if date, ok := row["date"].(map[string]any); ok {
+			at = lastfmFieldText(date["#text"])
+		}
+		recent = append(recent, map[string]any{
+			"artist": artist,
+			"title":  title,
+			"album":  lastfmFieldText(row["album"]),
+			"at":     at,
+		})
+	}
+	if len(recent) > limit {
+		recent = recent[:limit]
+	}
+	return recent, nil
 }
 
 func availableWeeks(apiKey, user string) ([]WeekInfo, error) {

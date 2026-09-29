@@ -42,10 +42,12 @@ func resolveSoundcloud(home string, show passFunc, keyring func(string) []byte) 
 			}
 			seen[key] = true
 			tok, err := tokenFromCookies(store, password)
-			if err != nil || strings.TrimSpace(tok) == "" {
+			if err != nil {
 				continue
 			}
-			return Token{Token: normalizeSoundcloudOAuth(tok), Source: store.Source}
+			if tok = matchSoundcloudOAuth(tok); tok != "" {
+				return Token{Token: tok, Source: store.Source}
+			}
 		}
 	}
 	if show != nil {
@@ -59,18 +61,22 @@ func resolveSoundcloud(home string, show passFunc, keyring func(string) []byte) 
 	return Token{}
 }
 
-func normalizeSoundcloudOAuth(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
+func matchSoundcloudOAuth(s string) string {
 	var best string
 	for _, m := range soundcloudOAuthRe.FindAllString(s, -1) {
 		if len(m) > len(best) {
 			best = m
 		}
 	}
-	if best != "" {
+	return best
+}
+
+func normalizeSoundcloudOAuth(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if best := matchSoundcloudOAuth(s); best != "" {
 		return best
 	}
 	var b strings.Builder

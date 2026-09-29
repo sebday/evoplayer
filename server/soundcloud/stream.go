@@ -8,39 +8,31 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/sebday/evoplayer/server/ytdlp"
 )
 
 func (c *Client) DownloadTrackStream(ctx context.Context, track *Track, destPath string) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
 		return err
 	}
 	order := orderedTranscodings(track)
 	if len(order) == 0 {
+		for _, tc := range track.Media.Transcodings {
+			if strings.Contains(tc.Format.Protocol, "encrypted") {
+				return ytdlp.ErrDRM
+			}
+		}
 		return fmt.Errorf("soundcloud: no transcodings for track %d", track.ID)
 	}
 	var lastErr error
-	drmFailed := false
 	for _, tc := range order {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := c.downloadTranscoding(ctx, tc, destPath); err != nil {
-			lastErr = err
-			if strings.Contains(tc.Format.Protocol, "encrypted") && isFFmpegDecryptErr(err) {
-				drmFailed = true
-			}
-			continue
+		if lastErr = c.downloadTranscoding(ctx, tc, destPath); lastErr == nil {
+			return nil
 		}
-		return nil
-	}
-	if drmFailed {
-		return fmt.Errorf("drm protected")
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("soundcloud: no transcodings for track %d", track.ID)
 	}
 	return lastErr
 }
@@ -50,13 +42,11 @@ func (c *Client) downloadTranscoding(ctx context.Context, tc Transcoding, destPa
 	if err != nil {
 		return err
 	}
+	if tc.Format.Protocol == "hls" {
+		return ytdlp.ToMP3(ctx, streamURL, destPath, nil)
+	}
 	tmp := destPath + ".part"
-	if strings.Contains(tc.Format.Protocol, "hls") {
-		if err := ffmpegToMP3(ctx, streamURL, tmp); err != nil {
-			os.Remove(tmp)
-			return err
-		}
-	} else if err := downloadFile(ctx, c.HTTP, streamURL, tmp); err != nil {
+	if err := downloadFile(ctx, c.HTTP, streamURL, tmp); err != nil {
 		os.Remove(tmp)
 		return err
 	}
@@ -68,9 +58,6 @@ func (c *Client) downloadTranscoding(ctx context.Context, tc Transcoding, destPa
 }
 
 func downloadFile(ctx context.Context, client *http.Client, url, dest string) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if client == nil {
 		client = http.DefaultClient
 	}
