@@ -43,6 +43,7 @@ Flickable {
                 { key: "f", label: "folder" },
                 { key: "o", label: "open" },
                 { key: "l", label: "like playing" },
+                { key: "shift+l", label: "like selected" },
                 { key: "m", label: "move" },
                 { key: "e", label: "edit tags" },
                 { key: "tab", label: "next tag field (in editor)" },

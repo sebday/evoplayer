@@ -8,6 +8,12 @@ Column {
 
     spacing: 2
 
+    function fileName(path) {
+        var s = String(path || "")
+        var i = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"))
+        return i >= 0 ? s.slice(i + 1) : s
+    }
+
     function focusIndex(i) {
         var fields = editor.view.tagMany
                 ? [albumField, yearField, labelField]
@@ -88,6 +94,18 @@ Column {
             input.text = value
             syncing = false
         }
+    }
+
+    Text {
+        visible: !editor.view.tagMany && text !== ""
+        width: parent.width
+        bottomPadding: 8
+        textFormat: Text.PlainText
+        text: fileName(editor.view.tagPath)
+        color: Theme.foreground
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSizeM
+        elide: Text.ElideMiddle
     }
 
     TagField {

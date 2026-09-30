@@ -422,6 +422,7 @@ Item {
             ]
         return [
             { key: "l", label: "like playing" },
+            { key: "shift+l", label: "like selected" },
             { key: "m", label: "move" },
             { key: "e", label: "edit" },
             { key: "o", label: "open" }
@@ -1398,6 +1399,8 @@ Item {
         queue = withLiked(queue, path, likedNow)
         if (shownPlaylist)
             shownTracks = withLiked(shownTracks, path, likedNow)
+        if (searchHits && searchHits.length)
+            searchHits = withLiked(searchHits, path, likedNow)
         if (service && String(player.path || "") === path && service.mergePlayer)
             service.mergePlayer({ path: path, liked: likedNow })
     }
@@ -1408,6 +1411,36 @@ Item {
         ipc("library.favorite.toggle", { path: path }, function(data) {
             root.err = ""
             root.patchLiked(path, !!(data && data.liked))
+        })
+    }
+
+    function likeSelected() {
+        if (mode !== "queue" || (pane !== "playlist" && pane !== "search"))
+            return
+        var rows = playlistRows()
+        var already = {}
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i]
+            if (row && row.path && row.liked)
+                already[String(row.path)] = true
+        }
+        var pending = []
+        var paths = pickedPaths()
+        for (var n = 0; n < paths.length; n++) {
+            if (!already[paths[n]])
+                pending.push(paths[n])
+        }
+        likeNext(pending, 0)
+    }
+
+    function likeNext(paths, i) {
+        if (!paths || i >= paths.length)
+            return
+        var path = paths[i]
+        ipc("library.favorite.toggle", { path: path }, function(data) {
+            root.err = ""
+            root.patchLiked(path, !!(data && data.liked))
+            root.likeNext(paths, i + 1)
         })
     }
 
@@ -2555,6 +2588,7 @@ Item {
         if (text === "d" || text === "D") { addDir(); return true }
         if (text === "f" || text === "F") { openFolder(); return true }
         if (text === "o" || text === "O") { openInFlea(); return true }
+        if (shift && key === Qt.Key_L) { likeSelected(); return true }
         if (text === "l") { likePlaying(); return true }
         if (text === "m" || text === "M") { openMove(); return true }
         if (text === "e" || text === "E") { openTags(); return true }

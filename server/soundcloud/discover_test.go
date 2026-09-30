@@ -212,6 +212,76 @@ func TestDismissRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPickMatchAcceptsGluedDJName(t *testing.T) {
+	tracks := []Track{scTrack(9, "DJHatcha", "Roadtrip", 322332)}
+	got, err := pickMatch(tracks, "DJ Hatcha", "Roadtrip", 322.3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != 9 {
+		t.Fatalf("id = %d", got.ID)
+	}
+}
+
+func TestLooseAndFallbackAcceptGluedDJName(t *testing.T) {
+	tracks := []Track{scTrack(9, "DJHatcha", "Roadtrip", 322332)}
+	tokens := artistTokens("DJ Hatcha")
+	got := pickLooseMatch(tracks, tokens, "Roadtrip", 322.3)
+	if got == nil || got.ID != 9 {
+		t.Fatalf("loose = %+v", got)
+	}
+	off := []Track{scTrack(9, "DJHatcha", "Roadtrip", 500000)}
+	got = pickFallbackMatch(off, tokens, "Roadtrip", 322.3)
+	if got == nil || got.ID != 9 {
+		t.Fatalf("fallback = %+v", got)
+	}
+	if tokenInSlug("hatchamania", "hatcha") {
+		t.Fatal("hatcha should not match inside hatchamania")
+	}
+}
+
+func TestFallbackRejectsLabelWordInTitle(t *testing.T) {
+	got := artistTokens("Horsepower Productions")
+	if len(got) != 1 || got[0] != "horsepower" {
+		t.Fatalf("tokens = %v", got)
+	}
+	tracks := []Track{scTrack(1, "MAUI PETE", "VSP - 181 -VOODOO SPELL PRODUCTIONS", 3438707)}
+	if pickFallbackMatch(tracks, got, "Voodoo Spell", 320) != nil {
+		t.Fatal("a label word in the title should not credit the artist")
+	}
+}
+
+func TestPickArtistUserGluedName(t *testing.T) {
+	users := []scUser{
+		{ID: 1, Username: "DJ MATCHÄ", FollowersCount: 1000},
+		{ID: 2, Username: "Dj Catcha", FollowersCount: 5000},
+		{ID: 3, Username: "DJHatcha", FollowersCount: 100},
+		{ID: 4, Username: "Hatchamania", FollowersCount: 9000},
+	}
+	got := pickArtistUser(users, "DJ Hatcha")
+	if got == nil || got.ID != 3 {
+		t.Fatalf("got %+v", got)
+	}
+	if pickArtistUser(users[3:], "Hatcha") != nil {
+		t.Fatal("substring username should not win")
+	}
+}
+
+func TestCatalogTrackSkipsMixesAndClips(t *testing.T) {
+	short := scTrack(1, "DJHatcha", "Roadtrip", 322332)
+	if !catalogTrack(&short) {
+		t.Fatal("song-length upload should stay")
+	}
+	clip := scTrack(2, "DJHatcha", "Clip", 82000)
+	if catalogTrack(&clip) {
+		t.Fatal("clip should be dropped")
+	}
+	mix := scTrack(3, "DJHatcha", "Oldskool Mix", 3600*1000)
+	if catalogTrack(&mix) {
+		t.Fatal("hour-long mix should be dropped")
+	}
+}
+
 func TestIsPreviewPath(t *testing.T) {
 	cache := filepath.Join(t.TempDir(), "cache")
 	preview := PreviewPath(cache, 7)

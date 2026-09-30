@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -63,8 +64,13 @@ func Similar(env paths.Env, seed Seed) (SimilarResult, error) {
 		return SimilarResult{}, err
 	}
 	client := NewClient(opts.ClientID, opts.OAuthToken)
-	seedTrack, err := resolveSeed(client, seed)
+	seedTrack, artist, title, err := resolveSeed(client, seed)
 	if err != nil {
+		if errors.Is(err, errNoMatch) {
+			if res, ok := catalogSimilar(client, opts, env.StateDir, artist, title); ok {
+				return res, nil
+			}
+		}
 		return SimilarResult{}, err
 	}
 	related, err := client.RelatedTracks(seedTrack.ID, relatedLimit)
@@ -102,22 +108,30 @@ func Similar(env paths.Env, seed Seed) (SimilarResult, error) {
 	return out, nil
 }
 
-func resolveSeed(client *Client, seed Seed) (*Track, error) {
+func resolveSeed(client *Client, seed Seed) (*Track, string, string, error) {
 	if seed.ID != 0 {
-		return client.Track(seed.ID)
+		track, err := client.Track(seed.ID)
+		if err != nil {
+			return nil, "", "", err
+		}
+		return track, track.User.Username, track.Title, nil
 	}
 	path := strings.TrimSpace(seed.Path)
 	if path == "" {
-		return nil, fmt.Errorf("soundcloud: path or id required")
+		return nil, "", "", fmt.Errorf("soundcloud: path or id required")
 	}
 	probed, err := tags.Probe(path)
 	if err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
+	artist := strings.TrimSpace(probed.Tag.Artist)
+	title := strings.TrimSpace(probed.Tag.Title)
 	if id, err := strconv.ParseInt(strings.TrimSpace(probed.Tag.SoundcloudID), 10, 64); err == nil && id > 0 {
-		return client.Track(id)
+		track, err := client.Track(id)
+		return track, artist, title, err
 	}
-	return client.MatchTrack(probed.Tag.Artist, probed.Tag.Title, probed.Duration)
+	track, err := client.MatchTrack(artist, title, probed.Duration)
+	return track, artist, title, err
 }
 
 func artworkThumb(track Track) string {
@@ -168,11 +182,19 @@ func (c *Client) Track(id int64) (*Track, error) {
 	return &track, nil
 }
 
+// errNoMatch is returned when search ran and no upload fit the artist and title.
+var errNoMatch = errors.New("soundcloud: no matching track")
+
+func matchMiss(artist, title string) error {
+	label := strings.Trim(strings.TrimSpace(artist)+" - "+strings.TrimSpace(title), " -")
+	return fmt.Errorf("%w for %s", errNoMatch, label)
+}
+
 // MatchTrack searches SoundCloud for artist and title. When durationSec is
 // known, a hit within a few seconds wins. A strict uploader match wins;
 // otherwise label and repost uploads that name the artist are accepted.
-// Narrower queries run next, and if those still miss, the closest titled
-// upload is used even when its length is off.
+// Narrower queries run next, then the artist's own uploads, and if those
+// still miss, the closest titled upload is used even when its length is off.
 func (c *Client) MatchTrack(artist, title string, durationSec float64) (*Track, error) {
 	artist = strings.TrimSpace(artist)
 	title = strings.TrimSpace(title)
@@ -221,14 +243,171 @@ func (c *Client) MatchTrack(artist, title string, durationSec float64) (*Track, 
 	if best := pickFallbackMatch(pool, tokens, title, durationSec); best != nil {
 		return best, nil
 	}
+	if best := c.matchArtistUploads(artist, title, tokens, durationSec); best != nil {
+		return best, nil
+	}
 	if len(pool) == 0 && searchErr != nil {
 		return nil, searchErr
 	}
-	return nil, fmt.Errorf("soundcloud: no matching track for %s", strings.Trim(artist+" - "+title, " -"))
+	return nil, matchMiss(artist, title)
+}
+
+type scUser struct {
+	ID             int64  `json:"id"`
+	Username       string `json:"username"`
+	FollowersCount int64  `json:"followers_count"`
+}
+
+// pickArtistUser chooses the account whose name is the artist, including
+// glued forms such as DJHatcha for "DJ Hatcha". A name that only contains
+// the artist as a substring does not qualify.
+func pickArtistUser(users []scUser, artist string) *scUser {
+	want := tags.Slugify(artist)
+	var best *scUser
+	bestScore := 0
+	for i := range users {
+		score := overlapScore(want, tags.Slugify(users[i].Username))
+		if score < 4 {
+			continue
+		}
+		if best == nil || score > bestScore || (score == bestScore && users[i].FollowersCount > best.FollowersCount) {
+			bestScore = score
+			cp := users[i]
+			best = &cp
+		}
+	}
+	return best
+}
+
+func (c *Client) searchUsers(query string, limit int) ([]scUser, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, fmt.Errorf("soundcloud: empty search")
+	}
+	if limit <= 0 || limit > 10 {
+		limit = 10
+	}
+	path := "/search/users?q=" + url.QueryEscape(query) + "&limit=" + strconv.Itoa(limit) + "&linked_partitioning=1"
+	body, err := c.getJSONWithClientID(path)
+	if err != nil {
+		return nil, err
+	}
+	var page struct {
+		Collection []scUser `json:"collection"`
+	}
+	if err := decodeJSON(body, &page); err != nil {
+		return nil, err
+	}
+	return page.Collection, nil
+}
+
+func (c *Client) userTracks(id int64, query string, limit int) ([]Track, error) {
+	if id == 0 {
+		return nil, fmt.Errorf("soundcloud: missing user id")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 50 {
+		limit = 50
+	}
+	path := fmt.Sprintf("/users/%d/tracks?limit=%d&linked_partitioning=1", id, limit)
+	if q := strings.TrimSpace(query); q != "" {
+		path = fmt.Sprintf("/users/%d/tracks?q=%s&limit=%d&linked_partitioning=1", id, url.QueryEscape(q), limit)
+	}
+	body, err := c.getJSONWithClientID(path)
+	if err != nil {
+		return nil, err
+	}
+	return decodeTrackList(body)
+}
+
+// matchArtistUploads searches the artist's account when global search never
+// surfaces the title.
+func (c *Client) matchArtistUploads(artist, title string, tokens []string, durationSec float64) *Track {
+	users, err := c.searchUsers(artist, 8)
+	if err != nil || len(users) == 0 {
+		return nil
+	}
+	user := pickArtistUser(users, artist)
+	if user == nil {
+		return nil
+	}
+	tracks, err := c.userTracks(user.ID, title, 20)
+	if err != nil || len(tracks) == 0 {
+		return nil
+	}
+	if best, err := pickMatch(tracks, artist, title, durationSec); err == nil {
+		return best
+	}
+	if best := pickLooseMatch(tracks, tokens, title, durationSec); best != nil {
+		return best
+	}
+	return pickFallbackMatch(tracks, tokens, title, durationSec)
+}
+
+// catalogSimilar lists the artist's own short uploads when SoundCloud has
+// no track under this title.
+func catalogSimilar(client *Client, opts DownloadOptions, stateDir, artist, title string) (SimilarResult, bool) {
+	artist = strings.TrimSpace(artist)
+	if artist == "" {
+		return SimilarResult{}, false
+	}
+	users, err := client.searchUsers(artist, 8)
+	if err != nil {
+		return SimilarResult{}, false
+	}
+	user := pickArtistUser(users, artist)
+	if user == nil {
+		return SimilarResult{}, false
+	}
+	tracks, err := client.userTracks(user.ID, "", 50)
+	if err != nil {
+		return SimilarResult{}, false
+	}
+	archive, err := syncarchive.Load(opts.ArchivePath)
+	if err != nil {
+		return SimilarResult{}, false
+	}
+	dismissed, err := dismissedSet(stateDir)
+	if err != nil {
+		return SimilarResult{}, false
+	}
+	out := SimilarResult{
+		SeedTitle:  strings.TrimSpace(title),
+		SeedArtist: artist,
+		Tracks:     []SimilarTrack{},
+	}
+	seen := map[int64]bool{}
+	for i := range tracks {
+		track := tracks[i]
+		if seen[track.ID] || !catalogTrack(&track) {
+			continue
+		}
+		if archive.HasSC(track.ID) || dismissed[track.ID] {
+			continue
+		}
+		seen[track.ID] = true
+		out.Tracks = append(out.Tracks, similarTrack(track))
+	}
+	if len(out.Tracks) == 0 {
+		return SimilarResult{}, false
+	}
+	return out, true
+}
+
+func catalogTrack(track *Track) bool {
+	if !listable(track) {
+		return false
+	}
+	return track.Duration >= 90*1000 && track.Duration <= 15*60*1000
 }
 
 var artistStopwords = map[string]bool{
 	"and": true, "the": true, "feat": true, "featuring": true, "vs": true, "with": true,
+	"productions": true, "records": true, "recordings": true, "record": true,
+	"music": true, "sound": true, "sounds": true, "audio": true, "digital": true,
+	"official": true, "presents": true, "label": true,
 }
 
 // artistTokens splits an artist tag like "Noisia Maldini And Vegas" into the
@@ -265,11 +444,10 @@ func pickFallbackMatch(tracks []Track, tokens []string, title string, durationSe
 		if !strings.Contains("_"+gotTitle+"_", "_"+wantTitle+"_") {
 			continue
 		}
-		uploader := "_" + tags.Slugify(track.User.Username) + "_"
-		named := "_" + gotTitle + "_"
+		uploader := tags.Slugify(track.User.Username)
 		credited := false
 		for _, tok := range tokens {
-			if strings.Contains(uploader, "_"+tok+"_") || strings.Contains(named, "_"+tok+"_") {
+			if tokenInSlug(uploader, tok) || tokenInSlug(gotTitle, tok) {
 				credited = true
 				break
 			}
@@ -345,15 +523,14 @@ func scoreLooseMatch(track *Track, tokens []string, wantTitle string, durationSe
 	default:
 		return 0, false
 	}
-	uploader := "_" + tags.Slugify(track.User.Username) + "_"
-	named := "_" + gotTitle + "_"
+	uploader := tags.Slugify(track.User.Username)
 	credited := false
 	for _, tok := range tokens {
 		switch {
-		case strings.Contains(uploader, "_"+tok+"_"):
+		case tokenInSlug(uploader, tok):
 			score += 2
 			credited = true
-		case strings.Contains(named, "_"+tok+"_"):
+		case tokenInSlug(gotTitle, tok):
 			score++
 			credited = true
 		}
@@ -523,8 +700,7 @@ func pickMatch(tracks []Track, artist, title string, durationSec float64) (*Trac
 		best = &cp
 	}
 	if best == nil {
-		label := strings.TrimSpace(strings.TrimSpace(artist) + " - " + strings.TrimSpace(title))
-		return nil, fmt.Errorf("soundcloud: no matching track for %s", label)
+		return nil, matchMiss(artist, title)
 	}
 	return best, nil
 }
@@ -563,6 +739,16 @@ func overlapScore(want, got string) int {
 	if want == "" || got == "" {
 		return 0
 	}
+	if score := overlapText(want, got); score > 0 {
+		return score
+	}
+	return overlapText(strings.ReplaceAll(want, "_", ""), strings.ReplaceAll(got, "_", ""))
+}
+
+func overlapText(want, got string) int {
+	if want == "" || got == "" {
+		return 0
+	}
 	if want == got {
 		return 4
 	}
@@ -570,6 +756,39 @@ func overlapScore(want, got string) int {
 		return 2
 	}
 	return 0
+}
+
+var gluedAffixes = map[string]bool{
+	"dj": true, "mc": true, "the": true, "vs": true, "and": true,
+}
+
+// tokenInSlug reports whether tok is a word in slug, or glued to a short
+// prefix such as "dj" in DJHatcha.
+func tokenInSlug(slug, tok string) bool {
+	if slug == "" || len(tok) < 3 {
+		return false
+	}
+	if strings.Contains("_"+slug+"_", "_"+tok+"_") {
+		return true
+	}
+	flat := strings.ReplaceAll(slug, "_", "")
+	from := 0
+	for from < len(flat) {
+		i := strings.Index(flat[from:], tok)
+		if i < 0 {
+			return false
+		}
+		i += from
+		if affixOnly(flat[:i]) && affixOnly(flat[i+len(tok):]) {
+			return true
+		}
+		from = i + 1
+	}
+	return false
+}
+
+func affixOnly(s string) bool {
+	return s == "" || gluedAffixes[s]
 }
 
 func stripMix(s string) string {
