@@ -1,4 +1,5 @@
 import QtQuick
+import qs.Commons
 import "."
 
 Item {
@@ -16,7 +17,7 @@ Item {
     property bool framed: true
     property int pad: 10
 
-    readonly property color borderColor: active ? Theme.liked : Theme.border
+    readonly property color borderColor: active ? Color.popups.border : Color.foreground
     readonly property var superscripts: ["", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹"]
 
     Item {

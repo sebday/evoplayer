@@ -1471,6 +1471,30 @@ Item {
         return queue || []
     }
 
+    function playlistRowSelected(index) {
+        var rows = playlistRows()
+        if (index < 0 || index >= rows.length)
+            return false
+        var path = String((rows[index] && rows[index].path) || "")
+        if (path && trackPicked(path))
+            return true
+        return !(playlistPicks && playlistPicks.length) && index === playlistIdx
+    }
+
+    function unselectPlaylist(index) {
+        var rows = playlistRows()
+        var path = String((rows[index] && rows[index].path) || "")
+        var picks = (playlistPicks || []).slice()
+        var next = []
+        for (var i = 0; i < picks.length; i++) {
+            if (picks[i] !== path)
+                next.push(picks[i])
+        }
+        playlistPicks = next
+        if (!next.length)
+            playlistIdx = -1
+    }
+
     function selectOnly(index) {
         var rows = playlistRows()
         if (index < 0)

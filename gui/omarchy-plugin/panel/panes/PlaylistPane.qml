@@ -327,6 +327,8 @@ Fieldset {
                     }
                     property bool dragged: false
                     property bool rangePress: false
+                    property bool clearOnClick: false
+                    property bool suppressClick: false
                     property real grabY: 0
                     onPressed: function(mouse) {
                         dragged = false
@@ -334,7 +336,9 @@ Fieldset {
                         var ctrl = (mouse.modifiers & Qt.ControlModifier) !== 0
                         rangePress = shift || ctrl
                         grabY = mouse.y
-                        view.clickPlaylist(index, shift, ctrl && !shift)
+                        clearOnClick = !shift && !ctrl && view.playlistRowSelected(index)
+                        if (!clearOnClick)
+                            view.clickPlaylist(index, shift, ctrl && !shift)
                     }
                     onPositionChanged: function(mouse) {
                         if (rangePress || !list.canReorder || pane.rowH < 1)
@@ -375,8 +379,14 @@ Fieldset {
                         list.dragOffset = 0
                     }
                     onClicked: function(mouse) {
-                        if (dragged)
+                        if (dragged || suppressClick) {
+                            suppressClick = false
                             return
+                        }
+                        if (clearOnClick) {
+                            view.unselectPlaylist(index)
+                            return
+                        }
                         var shift = (mouse.modifiers & Qt.ShiftModifier) !== 0
                         var ctrl = (mouse.modifiers & Qt.ControlModifier) !== 0
                         view.clickPlaylist(index, shift, ctrl && !shift)
@@ -384,6 +394,7 @@ Fieldset {
                     onDoubleClicked: {
                         if (dragged)
                             return
+                        suppressClick = true
                         view.playSelected()
                     }
                 }
