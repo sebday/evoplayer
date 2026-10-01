@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import "../compat"
 
 Fieldset {
@@ -11,16 +12,43 @@ Fieldset {
     active: false
     hints: [{ key: "a", label: "art" }]
 
-    Image {
-        id: cover
+    Item {
+        id: coverHost
         anchors.centerIn: parent
         width: Math.min(parent.width, parent.height)
         height: width
-        fillMode: Image.PreserveAspectFit
-        asynchronous: true
-        cache: false
-        source: view.artSource()
-        visible: source !== ""
+        visible: view.artSource() !== ""
+
+        Image {
+            id: cover
+            anchors.fill: parent
+            fillMode: Image.PreserveAspectFit
+            asynchronous: true
+            cache: false
+            source: view.artSource()
+            visible: false
+        }
+
+        MultiEffect {
+            anchors.fill: parent
+            source: cover
+            maskEnabled: true
+            maskSource: coverMask
+            maskThresholdMin: 0.5
+            maskSpreadAtMin: 1.0
+        }
+
+        Item {
+            id: coverMask
+            anchors.fill: parent
+            layer.enabled: true
+            visible: false
+
+            Rectangle {
+                anchors.fill: parent
+                radius: 6
+            }
+        }
     }
 
     DropArea {
