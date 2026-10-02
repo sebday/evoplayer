@@ -70,7 +70,7 @@ build_go() {
 
 link_path "$DESKTOP_DST" "${EVOPLAYER_ROOT}/share/evoplayer.desktop"
 
-PLUGIN_SRC="${EVOPLAYER_ROOT}/gui/omarchy-plugin"
+PLUGIN_SRC="${EVOPLAYER_ROOT}/plugin"
 link_path "$PLUGIN_DST" "$PLUGIN_SRC"
 
 if [[ -f "$SHELL_JSON" ]]; then

@@ -436,7 +436,7 @@ Panel {
                 anchors.centerIn: parent
                 visible: !heroArt.visible
                 text: root.hasMedia ? "󰝚" : "󰿯"
-                color: root.accent
+                color: root.foreground
                 font.family: root.fontFamily
                 font.pixelSize: root.hasMedia ? Style.font.display : Style.font.title
               }

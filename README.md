@@ -15,7 +15,7 @@ Search, download and sort Soundcloud and Youtube from in Evoplayer.
 ```
 cmd/evoplayer/     thin main (serve, CLI)
 server/            daemon, playback, library, ipc, cli
-gui/               quickshell panel (omarchy plugin)
+plugin/            quickshell panel (omarchy plugin)
 scripts/           install (binary, desktop entry, plugin link)
 ```
 
