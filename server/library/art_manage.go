@@ -18,6 +18,7 @@ import (
 
 	"github.com/sebday/evoplayer/server/audio"
 	"github.com/sebday/evoplayer/server/playback"
+	"github.com/sebday/evoplayer/server/tags"
 )
 
 // artCacheMax is the stored cover size. The TUI panel and Discogs preview
@@ -52,9 +53,17 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 	if err := os.MkdirAll(env.ArtDir, 0o755); err != nil {
 		return InstallResult{}, err
 	}
-	destArt := artPathFolder(env, trackPath)
-	if scope == "track" {
-		destArt = artPathTrack(env, trackPath)
+	dirFiles := dirAudioPaths(filepath.Dir(trackPath))
+	paths := []string{trackPath}
+	if scope == "album" {
+		paths = albumAudioPaths(env, trackPath, dirFiles)
+	}
+	// A mixed folder is not an album. Only publish the folder cover when
+	// every audio file in the directory shares the chosen track's album tag.
+	folderWide := scope == "album" && coversPaths(paths, dirFiles)
+	destArt := artPathTrack(env, trackPath)
+	if folderWide {
+		destArt = artPathFolder(env, trackPath)
 	}
 	tmp := filepath.Join(env.ArtDir, fmt.Sprintf(".install.%d.jpg", time.Now().UnixNano()))
 	if err := normalizeJPG(imagePath, tmp); err != nil {
@@ -76,10 +85,6 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 	if err := artLinkFolderAlias(destArt, content); err != nil {
 		return InstallResult{}, err
 	}
-	paths := []string{trackPath}
-	if scope == "album" {
-		paths = albumAudioPaths(trackPath)
-	}
 	for _, p := range paths {
 		trackArt := artPathTrack(env, p)
 		if trackArt != destArt {
@@ -87,7 +92,13 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 		}
 		rememberTrackArt(env, p, trackArt)
 	}
-	markArtDirty(env, trackPath, scope)
+	if folderWide {
+		markArtDirty(env, trackPath, "album")
+	} else {
+		for _, p := range paths {
+			markArtDirty(env, p, "track")
+		}
+	}
 	return InstallResult{
 		Art:     destArt,
 		Track:   artPathTrack(env, trackPath),
@@ -98,11 +109,10 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 	}, nil
 }
 
-func albumAudioPaths(trackPath string) []string {
-	dir := filepath.Dir(trackPath)
+func dirAudioPaths(dir string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return []string{trackPath}
+		return nil
 	}
 	out := make([]string, 0)
 	for _, e := range entries {
@@ -114,10 +124,85 @@ func albumAudioPaths(trackPath string) []string {
 			out = append(out, p)
 		}
 	}
+	return out
+}
+
+// albumAudioPaths is the audio files in dirFiles that share trackPath's album tag.
+// An empty album tag matches nothing else: a year folder of mixes is not an album.
+func albumAudioPaths(env Env, trackPath string, dirFiles []string) []string {
+	info, err := tags.ReadTags(trackPath)
+	album := ""
+	if err == nil {
+		album = info.Album
+	}
+	known := albumsInDir(env, filepath.Dir(trackPath))
+	return pathsSharingAlbum(trackPath, album, dirFiles, func(p string) string {
+		if p == trackPath {
+			return album
+		}
+		if v, ok := known[p]; ok {
+			return v
+		}
+		inf, err := tags.ReadTags(p)
+		if err != nil {
+			return ""
+		}
+		return inf.Album
+	})
+}
+
+func albumsInDir(env Env, dir string) map[string]string {
+	out := map[string]string{}
+	db, err := EnsureDB(env)
+	if err != nil || db == nil {
+		return out
+	}
+	rows, err := db.Query(`SELECT path, album FROM tracks WHERE parent_dir=?`, dir)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var path, album string
+		if err := rows.Scan(&path, &album); err != nil {
+			continue
+		}
+		out[path] = album
+	}
+	return out
+}
+
+func pathsSharingAlbum(trackPath, album string, dirFiles []string, albumOf func(string) string) []string {
+	album = strings.TrimSpace(album)
+	if album == "" || albumOf == nil {
+		return []string{trackPath}
+	}
+	out := make([]string, 0)
+	for _, p := range dirFiles {
+		if strings.EqualFold(strings.TrimSpace(albumOf(p)), album) {
+			out = append(out, p)
+		}
+	}
 	if len(out) == 0 {
 		return []string{trackPath}
 	}
 	return out
+}
+
+func coversPaths(paths, files []string) bool {
+	if len(files) == 0 || len(paths) != len(files) {
+		return false
+	}
+	have := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		have[p] = struct{}{}
+	}
+	for _, f := range files {
+		if _, ok := have[f]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func rememberTrackArt(env Env, path, art string) {

@@ -11,6 +11,12 @@ Item {
     property var host: null
 
     readonly property var service: shell && shell.serviceFor ? shell.serviceFor("evo.player") : null
+    onServiceChanged: {
+        if (service && service.ipcReady && active) {
+            libraryTries = 0
+            ensureLibrary()
+        }
+    }
     readonly property var player: service && service.player ? service.player : ({})
     readonly property string trackPath: String(player.path || "")
     readonly property bool playing: String(player.state || "") === "playing"
@@ -23,6 +29,7 @@ Item {
 
     property bool active: false
     property bool loaded: false
+    property int libraryTries: 0
     property string pane: "browse"
     property string mode: "queue"
     property bool textCapture: false
@@ -154,8 +161,7 @@ Item {
         loadChannels()
         if (!loaded) {
             loaded = true
-            loadBrowse("")
-            loadPlaylistIndex()
+            ensureLibrary()
             loadQueue()
             loadRoot()
             if (service)
@@ -944,6 +950,24 @@ Item {
         focusPane("playlist")
     }
 
+    function ensureLibrary() {
+        if ((sidebar || []).length > 0)
+            return
+        if (!service || !service.ipcCall)
+            return
+        if (libraryTries >= 8)
+            return
+        libraryTries++
+        loadBrowse(browsePath || "")
+        loadPlaylistIndex()
+    }
+
+    function noteLibraryMiss() {
+        if (!active || (sidebar || []).length > 0 || libraryTries >= 8)
+            return
+        libraryRetry.restart()
+    }
+
     function loadBrowse(rel, stayIfLeaf) {
         ipc("library.browse", { path: String(rel || ""), offset: 0, limit: 400 }, function(data) {
             data = data || {}
@@ -961,14 +985,20 @@ Item {
             browseParent = data.parent == null ? "" : String(data.parent)
             browseEntries = entries
             browseIdx = 0
+            libraryTries = 0
             rebuildSidebar()
+        }, function() {
+            root.noteLibraryMiss()
         })
     }
 
     function loadPlaylistIndex() {
         ipc("library.playlist.list", undefined, function(data) {
             playlists = Array.isArray(data) ? data : []
+            root.libraryTries = 0
             rebuildSidebar()
+        }, function() {
+            root.noteLibraryMiss()
         })
     }
 
@@ -2620,6 +2650,12 @@ Item {
     }
 
     Timer {
+        id: libraryRetry
+        interval: 400
+        onTriggered: root.ensureLibrary()
+    }
+
+    Timer {
         id: searchTimer
         interval: 180
         onTriggered: root.runSearch()
@@ -2645,6 +2681,12 @@ Item {
 
     Connections {
         target: root.service
+        function onIpcReadyChanged() {
+            if (!root.service || !root.service.ipcReady || !root.active)
+                return
+            root.libraryTries = 0
+            root.ensureLibrary()
+        }
         function onDaemonJobUpdated(data) {
             if (!data)
                 return
