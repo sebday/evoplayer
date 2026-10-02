@@ -10,6 +10,17 @@ Item {
 
     property var shell: null
     property var player: ({})
+    property bool openedOnStart: false
+
+    onShellChanged: {
+        if (!shell || openedOnStart)
+            return
+        openedOnStart = true
+        Qt.callLater(function() {
+            if (shell && typeof shell.summon === "function")
+                shell.summon(PluginIds.pluginId, "{}")
+        })
+    }
 
     Loader {
         id: mediaLoader
