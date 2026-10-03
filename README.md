@@ -8,8 +8,6 @@ Search, download and sort Soundcloud and Youtube from in Evoplayer.
 
 ![Evoplayer](preview.png)
 
-![EQ](preview2.png)
-
 ## Layout
 
 ```
