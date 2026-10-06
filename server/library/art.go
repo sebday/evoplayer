@@ -21,6 +21,11 @@ func artCacheFind(env Env, path string) string {
 	if nonEmptyFile(track) {
 		return track
 	}
+	// A directory cover is only a stand-in when the directory is one album.
+	// Empty album tags and dump folders (soundcloud) stay track-only.
+	if !folderArtAllowed(env, path) {
+		return ""
+	}
 	folder := artPathFolder(env, path)
 	if folder != track && nonEmptyFile(folder) {
 		return folder

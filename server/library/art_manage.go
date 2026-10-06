@@ -53,14 +53,21 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 	if err := os.MkdirAll(env.ArtDir, 0o755); err != nil {
 		return InstallResult{}, err
 	}
-	dirFiles := dirAudioPaths(filepath.Dir(trackPath))
+	dir := filepath.Dir(trackPath)
+	dirFiles := dirAudioPaths(dir)
 	paths := []string{trackPath}
 	if scope == "album" {
 		paths = albumAudioPaths(env, trackPath, dirFiles)
 	}
-	// A mixed folder is not an album. Only publish the folder cover when
-	// every audio file in the directory shares the chosen track's album tag.
-	folderWide := scope == "album" && coversPaths(paths, dirFiles)
+	album := ""
+	if info, err := tags.ReadTags(trackPath); err == nil {
+		album = strings.TrimSpace(info.Album)
+	}
+	// A mixed folder is not an album. Publish one folder cover only when the
+	// album tag is set and every audio file in the directory shares it.
+	// Dump directories such as "soundcloud" are never albums.
+	forgetFolderArt(dir)
+	folderWide := scope == "album" && album != "" && !isDumpFolder(dir) && coversPaths(paths, dirFiles)
 	destArt := artPathTrack(env, trackPath)
 	if folderWide {
 		destArt = artPathFolder(env, trackPath)
@@ -372,6 +379,16 @@ func writeDirty(env Env, snap dirtySnapshot) error {
 }
 
 func embedFolder(env Env, dir string) error {
+	forgetFolderArt(dir)
+	if !directoryIsAlbum(dir, func(p string) string {
+		info, err := tags.ReadTags(p)
+		if err != nil {
+			return ""
+		}
+		return info.Album
+	}) {
+		return nil
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err

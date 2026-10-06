@@ -1412,11 +1412,11 @@ Item {
         return path
     }
 
-    function openInFlea() {
+    function openInFiles() {
         var path = String(playlistArtPath() || "").replace(/^\s+|\s+$/g, "")
         if (!path || path.charAt(0) !== "/" || path.indexOf("\n") >= 0 || path.indexOf("\r") >= 0)
             return
-        var script = pluginFile("bin/open-flea")
+        var script = pluginFile("bin/open-files")
         if (!script)
             return
         Quickshell.execDetached(["/usr/bin/python3", "-I", script, path])
@@ -2605,7 +2605,7 @@ Item {
         if (text === "=" || text === "+") { volumeDelta(5); return true }
         if (text === "d" || text === "D") { addDir(); return true }
         if (text === "f" || text === "F") { openFolder(); return true }
-        if (text === "o" || text === "O") { openInFlea(); return true }
+        if (text === "o" || text === "O") { openInFiles(); return true }
         if (text === "l" || text === "L") { like(); return true }
         if (text === "m" || text === "M") { openMove(); return true }
         if (text === "e" || text === "E") { openTags(); return true }

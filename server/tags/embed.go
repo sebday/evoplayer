@@ -64,6 +64,17 @@ func EmbedMP3(path string, targets map[string]string, picture []byte, pictureMIM
 	return tag.Save()
 }
 
+// ClearMP3Picture removes embedded front-cover frames from an mp3.
+func ClearMP3Picture(path string) error {
+	tag, err := id3v2.Open(path, id3v2.Options{Parse: true})
+	if err != nil {
+		return fmt.Errorf("tags: open mp3: %w", err)
+	}
+	defer tag.Close()
+	tag.DeleteFrames("APIC")
+	return tag.Save()
+}
+
 // PictureMIME guesses image MIME from magic bytes.
 func PictureMIME(data []byte) string {
 	if len(data) >= 3 && data[0] == 0xff && data[1] == 0xd8 {
