@@ -1455,7 +1455,7 @@ Item {
         var script = pluginFile("bin/open-files")
         if (!script)
             return
-        Quickshell.execDetached(["/usr/bin/python3", "-I", script, path])
+        Quickshell.execDetached(["/usr/bin/bash", script, path])
     }
 
     function patchLiked(path, likedNow) {

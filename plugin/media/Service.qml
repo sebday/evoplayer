@@ -514,7 +514,9 @@ Item {
     })
   }
 
+  // The shell's now-playing service owns this target. This copy only feeds the player.
   IpcHandler {
+    enabled: false
     target: "media"
 
     function status(): string {

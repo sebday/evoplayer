@@ -1,162 +1,288 @@
-#!/usr/bin/env python3
-"""Open the default file manager on one path, then float and center that new window."""
+#!/bin/bash
 
-import json
-import os
-import re
-import shlex
-import subprocess
-import sys
-import time
+# Open the default file manager on one path, then float and center that new window.
 
-ADDR = re.compile(r"0x[0-9a-fA-F]+\Z")
-WIDTH = 875
-HEIGHT = 600
-FIELD = re.compile(r"^%[fFuUickdDnNvm]$|^%%$")
+set -euo pipefail
 
+width=875
+height=600
+parts=()
+argv=()
 
-def clients():
-    proc = subprocess.run(
-        ["hyprctl", "clients", "-j"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    try:
-        data = json.loads(proc.stdout[:1_000_000])
-    except json.JSONDecodeError:
-        return []
-    return data if isinstance(data, list) else []
+trim() {
+    local s=$1
+    s=${s#"${s%%[![:space:]]*}"}
+    s=${s%"${s##*[![:space:]]}"}
+    printf '%s' "$s"
+}
 
+is_ws() {
+    [[ $1 == ' ' || $1 == $'\t' || $1 == $'\n' || $1 == $'\r' ]]
+}
 
-def class_addrs(class_name):
-    want = class_name.casefold()
-    found = set()
-    for row in clients():
-        if not isinstance(row, dict):
+# Split a desktop Exec value the way Python shlex.split(posix=True) does.
+split_exec() {
+    local s=$1
+    local -i i=0 len=${#s}
+    local state=' ' quote='' token='' c
+    local -i quoted=0
+    parts=()
+
+    emit() {
+        if [[ -n $token || $quoted -eq 1 ]]; then
+            parts+=("$token")
+        fi
+        token=''
+        quoted=0
+    }
+
+    while (( i <= len )); do
+        if (( i == len )); then
+            c=''
+        else
+            c=${s:i:1}
+        fi
+        case $state in
+        ' ')
+            if [[ -z $c ]]; then
+                break
+            elif is_ws "$c"; then
+                :
+            elif [[ $c == '\' ]]; then
+                state='\\'
+                quote=''
+            elif [[ $c == "'" || $c == '"' ]]; then
+                state=$c
+            else
+                token=$c
+                state=a
+            fi
+            ;;
+        a)
+            if [[ -z $c ]]; then
+                emit
+                break
+            elif is_ws "$c"; then
+                emit
+                state=' '
+            elif [[ $c == "'" || $c == '"' ]]; then
+                state=$c
+            elif [[ $c == '\' ]]; then
+                state='\\'
+                quote=''
+            else
+                token+=$c
+            fi
+            ;;
+        "'")
+            if [[ -z $c ]]; then
+                return 1
+            fi
+            quoted=1
+            if [[ $c == "'" ]]; then
+                state=a
+            else
+                token+=$c
+            fi
+            ;;
+        '"')
+            if [[ -z $c ]]; then
+                return 1
+            fi
+            quoted=1
+            if [[ $c == '"' ]]; then
+                state=a
+            elif [[ $c == '\' ]]; then
+                state='\\'
+                quote='"'
+            else
+                token+=$c
+            fi
+            ;;
+        '\\')
+            if [[ -z $c ]]; then
+                return 1
+            fi
+            if [[ $quote == '"' && $c != '\' && $c != '"' ]]; then
+                token+='\'
+            fi
+            token+=$c
+            if [[ $quote == '"' ]]; then
+                state='"'
+            else
+                state=a
+            fi
+            ;;
+        esac
+        i+=1
+    done
+}
+
+build_argv() {
+    local exec_line=$1 target=$2
+    local part base arg
+    local -i placed=0 has_w=0
+    local -a rebuilt=()
+    argv=()
+    split_exec "$exec_line"
+
+    for part in "${parts[@]+"${parts[@]}"}"; do
+        case $part in
+        %f | %F | %u | %U)
+            rebuilt+=("$target")
+            placed=1
+            ;;
+        %i | %c | %k | %d | %D | %n | %N | %v | %m | %%)
+            ;;
+        *)
+            rebuilt+=("$part")
+            ;;
+        esac
+    done
+    (( ${#rebuilt[@]} )) || return 0
+
+    base=${rebuilt[0]##*/}
+    if [[ $base == thunar ]]; then
+        for arg in "${rebuilt[@]}"; do
+            if [[ $arg == -w || $arg == --window ]]; then
+                has_w=1
+            fi
+        done
+        if (( ! has_w )); then
+            rebuilt=("${rebuilt[0]}" -w "${rebuilt[@]:1}")
+        fi
+    fi
+    if (( ! placed )); then
+        rebuilt+=("$target")
+    fi
+    argv=("${rebuilt[@]}")
+}
+
+find_desktop() {
+    local name=$1 root path raw part
+    local -a dirs=() extra=()
+    if [[ -n ${HOME:-} ]]; then
+        dirs+=("$HOME/.local/share")
+    fi
+    if [[ -v XDG_DATA_DIRS ]]; then
+        raw=$XDG_DATA_DIRS
+    else
+        raw=/usr/local/share:/usr/share
+    fi
+    IFS=: read -ra extra <<< "$raw"
+    for part in "${extra[@]+"${extra[@]}"}"; do
+        [[ -n $part ]] || continue
+        local dup=0 d
+        for d in "${dirs[@]+"${dirs[@]}"}"; do
+            if [[ $part == "$d" ]]; then
+                dup=1
+                break
+            fi
+        done
+        (( dup )) || dirs+=("$part")
+    done
+    for root in "${dirs[@]+"${dirs[@]}"}"; do
+        path="$root/applications/$name"
+        if [[ -f $path ]]; then
+            printf '%s' "$path"
+            return 0
+        fi
+    done
+    return 1
+}
+
+desktop_exec() {
+    local path=$1 line
+    local -i in_entry=0
+    while IFS= read -r line || [[ -n $line ]]; do
+        line=$(trim "$line")
+        if [[ $line == \[*\] ]]; then
+            if [[ $line == '[Desktop Entry]' ]]; then
+                in_entry=1
+            else
+                in_entry=0
+            fi
             continue
-        if str(row.get("class") or "").casefold() != want:
-            continue
-        addr = row.get("address")
-        if isinstance(addr, str) and ADDR.fullmatch(addr):
-            found.add(addr)
-    return found
+        fi
+        if (( in_entry )) && [[ $line == Exec=* ]]; then
+            printf '%s' "${line#Exec=}"
+            return 0
+        fi
+    done < "$path"
+    return 1
+}
 
+class_addrs() {
+    local want=${1,,} raw
+    raw=$(hyprctl clients -j 2>/dev/null) || true
+    [[ -n $raw ]] || return 0
+    jq -r --arg want "$want" '
+        if type != "array" then
+            empty
+        else
+            .[]
+            | select(type == "object")
+            | select(((.class // "") | if type == "string" then ascii_downcase else "" end) == $want)
+            | .address
+            | select(type == "string" and test("^0x[0-9a-fA-F]+$"))
+        end
+    ' <<<"$raw" 2>/dev/null || true
+}
 
-def dispatch(expr):
-    subprocess.run(
-        ["hyprctl", "dispatch", expr],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
+fresh_addrs() {
+    comm -13 \
+        <(printf '%s\n' "$1" | sed '/^$/d' | sort -u) \
+        <(printf '%s\n' "$2" | sed '/^$/d' | sort -u)
+}
 
+dispatch() {
+    hyprctl dispatch "$1" >/dev/null 2>&1 || true
+}
 
-def data_dirs():
-    dirs = []
-    home = os.environ.get("HOME", "")
-    if home:
-        dirs.append(os.path.join(home, ".local", "share"))
-    raw = os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
-    for part in raw.split(":"):
-        if part and part not in dirs:
-            dirs.append(part)
-    return dirs
+main() {
+    [[ $# -eq 1 ]] || exit 1
+    local path=$1 name desktop exec_line class_name before now addr win
+    local -a fresh=()
+    local -i i
+    [[ $path == /* ]] || exit 1
+    [[ $path != *$'\n'* && $path != *$'\r'* ]] || exit 1
 
+    name=$(xdg-mime query default inode/directory 2>/dev/null) || return 0
+    name=${name//$'\r'/}
+    name=$(trim "$name")
+    [[ -n $name && $name != *$'\n'* ]] || return 0
+    [[ $name == *.desktop && $name != .* && $name != */* ]] || return 0
 
-def find_desktop(name):
-    if not name.endswith(".desktop") or "/" in name or name.startswith("."):
-        return ""
-    for root in data_dirs():
-        path = os.path.join(root, "applications", name)
-        if os.path.isfile(path):
-            return path
-    return ""
+    desktop=$(find_desktop "$name") || return 0
+    exec_line=$(desktop_exec "$desktop") || return 0
+    build_argv "$exec_line" "$path"
+    [[ -n ${argv[0]:-} && ${argv[0]} != -* ]] || return 0
 
+    class_name=${argv[0]##*/}
+    before=$(class_addrs "$class_name")
+    setsid -f "${argv[@]}" </dev/null >/dev/null 2>&1 || true
 
-def desktop_exec(path):
-    in_entry = False
-    with open(path, encoding="utf-8", errors="replace") as handle:
-        for line in handle:
-            line = line.strip()
-            if line.startswith("[") and line.endswith("]"):
-                in_entry = line == "[Desktop Entry]"
-                continue
-            if in_entry and line.startswith("Exec="):
-                return line[len("Exec=") :]
-    return ""
-
-
-def launch_argv(exec_line, target):
-    argv = []
-    placed = False
-    for part in shlex.split(exec_line):
-        if part in ("%f", "%F", "%u", "%U"):
-            argv.append(target)
-            placed = True
-            continue
-        if FIELD.fullmatch(part):
-            continue
-        argv.append(part)
-    if not argv:
-        return []
-    if os.path.basename(argv[0]) == "thunar" and "-w" not in argv and "--window" not in argv:
-        argv = [argv[0], "-w", *argv[1:]]
-    if not placed:
-        argv.append(target)
-    return argv
-
-
-def default_launch(target):
-    proc = subprocess.run(
-        ["xdg-mime", "query", "default", "inode/directory"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        check=False,
-        text=True,
-    )
-    name = proc.stdout.strip()
-    if proc.returncode != 0 or not name or any(c in name for c in "\n\r\0"):
-        return []
-    desktop = find_desktop(name)
-    if not desktop:
-        return []
-    return launch_argv(desktop_exec(desktop), target)
-
-
-def main():
-    if len(sys.argv) != 2:
-        raise SystemExit(1)
-    path = sys.argv[1]
-    if not path.startswith("/") or any(c in path for c in "\n\r\0"):
-        raise SystemExit(1)
-    argv = default_launch(path)
-    if not argv or not argv[0] or argv[0].startswith("-"):
-        return
-    class_name = os.path.basename(argv[0])
-    before = class_addrs(class_name)
-    subprocess.Popen(
-        argv,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    addr = ""
-    for _ in range(25):
-        time.sleep(0.2)
-        fresh = class_addrs(class_name) - before
-        if len(fresh) == 1:
-            addr = next(iter(fresh))
+    addr=''
+    for (( i = 0; i < 25; i++ )); do
+        sleep 0.2
+        now=$(class_addrs "$class_name")
+        mapfile -t fresh < <(fresh_addrs "$before" "$now")
+        if (( ${#fresh[@]} == 1 )); then
+            addr=${fresh[0]}
             break
-        if len(fresh) > 1:
-            return
-    if not addr:
-        return
-    win = "address:" + addr
-    dispatch('hl.dsp.window.float({ window = "%s", action = "toggle" })' % win)
-    dispatch('hl.dsp.window.resize({ window = "%s", x = %d, y = %d })' % (win, WIDTH, HEIGHT))
-    dispatch('hl.dsp.window.center({ window = "%s" })' % win)
+        fi
+        if (( ${#fresh[@]} > 1 )); then
+            return 0
+        fi
+    done
+    [[ $addr =~ ^0x[0-9a-fA-F]+$ ]] || return 0
 
+    win="address:${addr}"
+    dispatch "hl.dsp.window.float({ window = \"${win}\", action = \"toggle\" })"
+    dispatch "hl.dsp.window.resize({ window = \"${win}\", x = ${width}, y = ${height} })"
+    dispatch "hl.dsp.window.center({ window = \"${win}\" })"
+}
 
-if __name__ == "__main__":
-    main()
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+    main "$@"
+fi
