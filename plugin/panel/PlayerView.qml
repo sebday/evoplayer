@@ -1208,6 +1208,39 @@ Item {
             clearShownPlaylist()
     }
 
+    function patchPlaylistCount(name, count) {
+        name = String(name || "")
+        count = Number(count) || 0
+        if (!name)
+            return
+        var lists = playlists || []
+        var nextLists = []
+        var changed = false
+        for (var i = 0; i < lists.length; i++) {
+            var it = lists[i]
+            if (it && String(it.name || "") === name && (Number(it.count) || 0) !== count) {
+                nextLists.push(Object.assign({}, it, { count: count }))
+                changed = true
+            } else
+                nextLists.push(it)
+        }
+        if (changed)
+            playlists = nextLists
+        var rows = sidebar || []
+        var nextRows = []
+        var rowChanged = false
+        for (var r = 0; r < rows.length; r++) {
+            var row = rows[r]
+            if (row && row.kind === "playlist" && String(row.id || "") === name && (Number(row.count) || 0) !== count) {
+                nextRows.push(Object.assign({}, row, { count: count }))
+                rowChanged = true
+            } else
+                nextRows.push(row)
+        }
+        if (rowChanged)
+            sidebar = nextRows
+    }
+
     function loadPlaylistItems(name, done) {
         ipc("library.playlist.tracks", { name: name, offset: 0, limit: 500 }, function(data) {
             data = data || {}
@@ -1215,10 +1248,13 @@ Item {
             var total = Number(data.total) || items.length
             if (total > items.length && total <= 8000) {
                 root.ipc("library.playlist.tracks", { name: name, offset: 0, limit: total }, function(full) {
-                    done((full && full.items) || [])
+                    var rows = (full && full.items) || []
+                    root.patchPlaylistCount(name, Number(full && full.total) || rows.length || total)
+                    done(rows)
                 })
                 return
             }
+            root.patchPlaylistCount(name, total)
             done(items)
         })
     }
@@ -1440,6 +1476,7 @@ Item {
         ipc("library.favorite.toggle", { path: path }, function(data) {
             root.err = ""
             root.patchLiked(path, !!(data && data.liked))
+            root.refreshPlaylistCounts()
         })
     }
 
@@ -1452,13 +1489,55 @@ Item {
     }
 
     function likeNext(paths, i) {
-        if (!paths || i >= paths.length)
+        if (!paths || i >= paths.length) {
+            if (i > 0)
+                root.refreshPlaylistCounts()
             return
+        }
         var path = paths[i]
         ipc("library.favorite.toggle", { path: path }, function(data) {
             root.err = ""
             root.patchLiked(path, !!(data && data.liked))
             root.likeNext(paths, i + 1)
+        }, function() {
+            root.refreshPlaylistCounts()
+        })
+    }
+
+    function refreshPlaylistCounts() {
+        loadPlaylistIndex()
+        reloadShownPlaylist()
+    }
+
+    function reloadShownPlaylist() {
+        var name = shownPlaylist
+        if (!name)
+            return
+        var gen = ++shownGen
+        var keep = ""
+        var row = selectedListTrack()
+        if (row && row.path)
+            keep = String(row.path)
+        var scroll = playlistScroll
+        var idx = playlistIdx
+        loadPlaylistItems(name, function(items) {
+            if (gen !== root.shownGen || root.shownPlaylist !== name)
+                return
+            items = items || []
+            var next = idx
+            if (keep) {
+                for (var i = 0; i < items.length; i++) {
+                    if (String(items[i].path || "") === keep) {
+                        next = i
+                        break
+                    }
+                }
+            }
+            if (next >= items.length)
+                next = Math.max(0, items.length - 1)
+            root.reorderScroll = scroll
+            root.shownTracks = items
+            root.playlistIdx = next
         })
     }
 
@@ -2700,6 +2779,8 @@ Item {
             }
             if (name === "download" || name === "download-url") {
                 root.noteDownloadJob(data)
+                if (name === "download" && String(data.status || "") === "done")
+                    root.refreshPlaylistCounts()
                 return
             }
             if (name === "discover-preview" && root.mode === "download") {
