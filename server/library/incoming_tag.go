@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/tags"
 )
 
@@ -39,7 +40,7 @@ func SetIncomingGenre(env Env, path, genre string) (map[string]any, error) {
 }
 
 func incomingAudioPath(env Env, path string) (string, error) {
-	incoming := filepath.Join(env.MusicRoot, ".incoming")
+	incoming := paths.IncomingDir(env.MusicRoot)
 	clean := filepath.Clean(path)
 	rel, err := filepath.Rel(incoming, clean)
 	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
@@ -70,7 +71,7 @@ func readIncomingOverlay(env Env) map[string]string {
 }
 
 func writeIncomingOverlayGenre(env Env, path, genre string) error {
-	incoming := filepath.Join(env.MusicRoot, ".incoming")
+	incoming := paths.IncomingDir(env.MusicRoot)
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
 		return err
 	}
@@ -103,5 +104,5 @@ func writeIncomingOverlay(env Env, overlay map[string]string) error {
 }
 
 func incomingOverlayPath(env Env) string {
-	return filepath.Join(env.MusicRoot, ".incoming", incomingTagsFile)
+	return filepath.Join(paths.IncomingDir(env.MusicRoot), incomingTagsFile)
 }

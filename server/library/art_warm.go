@@ -36,30 +36,58 @@ func artImageHash(file string) (string, error) {
 }
 
 func artLinkFolderAlias(folderPath, contentPath string) error {
-	if st, err := os.Stat(contentPath); err != nil || st.IsDir() {
+	st, err := os.Stat(contentPath)
+	if err != nil || st.IsDir() || st.Size() == 0 {
 		return fmt.Errorf("missing art content")
 	}
-	if st, err := os.Stat(folderPath); err == nil && !st.IsDir() {
-		if sameFile(folderPath, contentPath) {
-			return nil
-		}
-		_ = os.Remove(folderPath)
+	if sameFile(folderPath, contentPath) {
+		return nil
 	}
+	// Never open the destination with O_TRUNC. A failed link can mean the
+	// dest was just created as another name for contentPath, and truncating
+	// it would wipe every track that already shares that inode.
+	_ = os.Remove(folderPath)
 	if err := os.Link(contentPath, folderPath); err == nil {
 		return nil
 	}
+	if sameFile(folderPath, contentPath) {
+		return nil
+	}
+	_ = os.Remove(folderPath)
+	if err := os.Link(contentPath, folderPath); err == nil {
+		return nil
+	}
+	return copyArtAlias(folderPath, contentPath)
+}
+
+func copyArtAlias(folderPath, contentPath string) error {
 	in, err := os.Open(contentPath)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(folderPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	tmp, err := os.CreateTemp(filepath.Dir(folderPath), ".artlink.*.jpg")
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	_, err = io.Copy(out, in)
-	return err
+	tmpName := tmp.Name()
+	_, copyErr := io.Copy(tmp, in)
+	closeErr := tmp.Close()
+	if copyErr != nil || closeErr != nil || !nonEmptyFile(tmpName) {
+		_ = os.Remove(tmpName)
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		return fmt.Errorf("empty art copy")
+	}
+	if err := os.Rename(tmpName, folderPath); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 func sameFile(a, b string) bool {

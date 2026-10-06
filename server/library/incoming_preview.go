@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/sebday/evoplayer/server/audio"
+	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/tags"
 )
@@ -46,7 +47,7 @@ func PreviewIncoming(env Env, path string) map[string]any {
 }
 
 func ListIncoming(env Env) []map[string]any {
-	incoming := filepath.Join(env.MusicRoot, ".incoming")
+	incoming := paths.IncomingDir(env.MusicRoot)
 	entries, err := os.ReadDir(incoming)
 	if err != nil {
 		return nil

@@ -3,7 +3,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
-import qs.Commons
+import qs.commons as Shell
 
 Item {
     id: root
@@ -24,28 +24,28 @@ Item {
         )
     }
 
-    readonly property color foreground: Color.foreground
-    readonly property color background: Color.background
-    readonly property color accent: Color.accent
-    readonly property color urgent: Color.urgent
-    property color good: Color.accent
-    property color liked: Color.urgent
-    property color border: Color.accent
-    property color muted: Color.muted
-    readonly property color highlight: Color.accent
+    readonly property color foreground: Shell.Theme.foreground
+    readonly property color background: Shell.Theme.background
+    readonly property color accent: Shell.Theme.accent
+    readonly property color urgent: Shell.Theme.urgent
+    property color good: Shell.Theme.accent
+    property color liked: Shell.Theme.urgent
+    property color border: Shell.Theme.accent
+    property color muted: Shell.Theme.muted
+    readonly property color highlight: Shell.Theme.accent
     readonly property color inactiveBorder: withOpacity(foreground, 0.25)
-    readonly property color mantle: Color.popups.background
+    readonly property color mantle: Shell.Theme.popups.background
     readonly property string iconThemeName: ""
     readonly property real surfaceOpacity: 0.97
     readonly property real surfaceOpacityInactive: 0.88
-    readonly property bool roundingOn: Style.cornerRadius > 0
-    readonly property bool gapsOn: Style.gapsOut > 0
-    readonly property int gapsOut: Style.gapsOut * 2
-    readonly property int shellCornerRadiusPx: Style.cornerRadius
-    readonly property int panelCornerRadius: Style.cornerRadius
+    readonly property bool roundingOn: Shell.Theme.cornerRadius > 0
+    readonly property bool gapsOn: Shell.Theme.gapsOut > 0
+    readonly property int gapsOut: Shell.Theme.gapsOut * 2
+    readonly property int shellCornerRadiusPx: Shell.Theme.cornerRadius
+    readonly property int panelCornerRadius: Shell.Theme.cornerRadius
     readonly property bool fieldsetRoundingOn: true
-    readonly property int fieldsetCornerRadius: Style.cornerRadius
-    readonly property color overlaySurface: Color.popups.background
+    readonly property int fieldsetCornerRadius: Shell.Theme.cornerRadius
+    readonly property color overlaySurface: Shell.Theme.popups.background
     readonly property color overlaySurfaceInactive: withOpacity(mantle, surfaceOpacityInactive)
     readonly property color panelBackground: overlaySurface
     readonly property real panelMantleLift: 0.12
@@ -109,9 +109,9 @@ Item {
     readonly property color foregroundBorder: withOpacity(foreground, 0.32)
 
     readonly property int spacing2: 2
-    readonly property int spacingS: Style.space(6)
-    readonly property int spacingM: Style.space(8)
-    readonly property int spacingL: Style.space(10)
+    readonly property int spacingS: Shell.Theme.space(6)
+    readonly property int spacingM: Shell.Theme.space(8)
+    readonly property int spacingL: Shell.Theme.space(10)
     readonly property int settingsNavRowPad: spacingL
     readonly property int panelLabelPadH: spacingS
 
@@ -119,18 +119,18 @@ Item {
     readonly property int radiusM: 3
     readonly property int radiusL: fieldsetCornerRadius
 
-    readonly property string fontFamily: Style.font.family
+    readonly property string fontFamily: Shell.Theme.font.family
     readonly property bool fontBold: true
-    readonly property int fontPixelSize: Style.font.body
+    readonly property int fontPixelSize: Shell.Theme.font.body
     readonly property int fontSizeXxs: Math.max(8, fontPixelSize - 3)
     readonly property int fontSizeXs: Math.max(9, fontPixelSize - 2)
-    readonly property int fontSizeS: Style.font.bodySmall
-    readonly property int fontSizeM: Style.font.body
-    readonly property int fontSizeL: Style.font.subtitle
-    readonly property int fontSizeXl: Style.font.title
-    readonly property int fontSize2xl: Style.font.heading
-    readonly property int fontSize3xl: Style.font.display
-    readonly property int fontSize4xl: Style.font.displayLarge
+    readonly property int fontSizeS: Shell.Theme.font.bodySmall
+    readonly property int fontSizeM: Shell.Theme.font.body
+    readonly property int fontSizeL: Shell.Theme.font.subtitle
+    readonly property int fontSizeXl: Shell.Theme.font.title
+    readonly property int fontSize2xl: Shell.Theme.font.heading
+    readonly property int fontSize3xl: Shell.Theme.font.display
+    readonly property int fontSize4xl: Shell.Theme.font.displayLarge
     readonly property int fontSize5xl: fontPixelSize + 8
     readonly property int fontSize6xl: fontPixelSize + 9
     readonly property int fontSize7xl: fontSizeS * 2
@@ -139,12 +139,12 @@ Item {
     readonly property int fontSizeHero: fontPixelSize * 3
     readonly property int fontSizeHeroLg: fontPixelSize * 4
 
-    readonly property int hoverPanelSectionSpacing: Style.space(10)
-    readonly property int panelSectionSpacing: Style.space(14)
-    readonly property int hoverPanelContentPad: Style.space(16)
-    readonly property int panelContentPad: Style.space(10)
+    readonly property int hoverPanelSectionSpacing: Shell.Theme.space(10)
+    readonly property int panelSectionSpacing: Shell.Theme.space(14)
+    readonly property int hoverPanelContentPad: Shell.Theme.space(16)
+    readonly property int panelContentPad: Shell.Theme.space(10)
     readonly property int panelDockPad: panelContentPad + spacingS
-    readonly property int hoverPanelMargin: Style.space(16)
+    readonly property int hoverPanelMargin: Shell.Theme.space(16)
     readonly property int hoverPanelTopPad: hoverPanelMargin - 10
     readonly property int hoverPanelBorderWidth: 2
     readonly property int hoverPanelRevealDuration: motionNormal
@@ -172,10 +172,10 @@ Item {
     readonly property int settingsPanelWidth: systemPanelWidth
     readonly property int systemMenuWidth: systemMenuPanelWidth
     readonly property int clipboardPanelWidth: Math.round(systemPanelWidth / 2)
-    readonly property int barHeight: Style.bar.sizeHorizontal
-    readonly property int barPaddingX: Style.space(16)
-    readonly property int barGap: Style.space(8)
-    readonly property int barSectionGap: Style.space(14)
+    readonly property int barHeight: Shell.Theme.bar.sizeHorizontal
+    readonly property int barPaddingX: Shell.Theme.space(16)
+    readonly property int barGap: Shell.Theme.space(8)
+    readonly property int barSectionGap: Shell.Theme.space(14)
     readonly property int sparklineGap: 6
     readonly property int sparklineChartMargin: 10
     readonly property int hoverPanelChartPadH: sparklineChartMargin + spacingS
@@ -225,10 +225,10 @@ Item {
         var blue = pickTomlColor(text, "blue")
         var accentHex = pickTomlColor(text, "accent")
         var dim = pickTomlColor(text, "muted")
-        good = green || Color.accent
-        liked = red || Color.urgent
-        border = blue || accentHex || Color.accent
-        muted = dim || Color.muted
+        good = green || Shell.Theme.accent
+        liked = red || Shell.Theme.urgent
+        border = blue || accentHex || Shell.Theme.accent
+        muted = dim || Shell.Theme.muted
     }
 
     function themeColorsPath() {

@@ -93,7 +93,7 @@ Flickable {
 
         Repeater {
             model: [
-                { key: "download", label: "sync soundcloud likes into .incoming" },
+                { key: "download", label: "sync soundcloud likes into .evoplayer/incoming" },
                 { key: "download <url>", label: "youtube or soundcloud, then import" },
                 { key: "discover", label: "similar tracks for the current song" },
                 { key: "discover keep", label: "keep a discover track" },
@@ -116,7 +116,7 @@ Flickable {
                 { key: "tags", label: "read or edit tags" },
                 { key: "art", label: "search or set cover art" },
                 { key: "cache", label: "rebuild the library cache" },
-                { key: "library import", label: "file .incoming into the library" },
+                { key: "library import", label: "file .evoplayer/incoming into the library" },
                 { key: "scrobble", label: "last.fm now playing and submit" },
                 { key: "history report", label: "what you played" },
                 { key: "config", label: "library root and settings" },

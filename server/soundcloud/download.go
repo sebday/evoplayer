@@ -63,7 +63,7 @@ func (opts DownloadOptions) prepareIncoming(rep jobs.Reporter) (string, error) {
 		fmt.Fprintf(os.Stderr, "evoplayer: %s\n", msg)
 		rep.Line(msg)
 	}
-	incoming := filepath.Join(opts.MusicRoot, ".incoming")
+	incoming := paths.IncomingDir(opts.MusicRoot)
 	return incoming, os.MkdirAll(incoming, 0o755)
 }
 
@@ -324,7 +324,7 @@ func trackMeta(track *Track, opts DownloadOptions) map[string]string {
 }
 
 func NormalizeIncoming(ctx context.Context, musicRoot string) error {
-	incoming := filepath.Join(musicRoot, ".incoming")
+	incoming := paths.IncomingDir(musicRoot)
 	entries, err := os.ReadDir(incoming)
 	if err != nil {
 		if os.IsNotExist(err) {

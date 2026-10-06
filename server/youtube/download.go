@@ -91,7 +91,7 @@ func DownloadURLCtx(ctx context.Context, env paths.Env, pageURL string, progress
 	if opts.MusicRoot == "" {
 		return "", fmt.Errorf("evoplayer: music root not configured")
 	}
-	incoming := filepath.Join(opts.MusicRoot, ".incoming")
+	incoming := paths.IncomingDir(opts.MusicRoot)
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
 		return "", err
 	}

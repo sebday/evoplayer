@@ -13,6 +13,7 @@ import (
 
 	"github.com/sebday/evoplayer/server/config"
 	"github.com/sebday/evoplayer/server/library"
+	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/tags"
 )
 
@@ -42,7 +43,7 @@ func IncomingSCReview(env library.Env, setsURL, oauth string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	outPath := filepath.Join(env.MusicRoot, ".incoming", "import-review.txt")
+	outPath := filepath.Join(paths.IncomingDir(env.MusicRoot), "import-review.txt")
 	rows := collectIncomingSCRows(env, byKey)
 	if err := writeIncomingSCReview(outPath, env.MusicRoot, setsURL, playlistFolder, rows); err != nil {
 		return "", err
@@ -57,7 +58,7 @@ func IncomingSCApply(env library.Env, setsURL, oauth string, dryRun bool) (tagge
 		return 0, 0, 0, err
 	}
 
-	incoming := filepath.Join(env.MusicRoot, ".incoming")
+	incoming := paths.IncomingDir(env.MusicRoot)
 	entries, err := os.ReadDir(incoming)
 	if err != nil {
 		return 0, 0, 0, err
@@ -308,7 +309,7 @@ func lookupIncomingSCMeta(byKey map[string]incomingSCMeta, artist, title, filena
 }
 
 func collectIncomingSCRows(env library.Env, byKey map[string]incomingSCMeta) []incomingSCRow {
-	incoming := filepath.Join(env.MusicRoot, ".incoming")
+	incoming := paths.IncomingDir(env.MusicRoot)
 	entries, err := os.ReadDir(incoming)
 	if err != nil {
 		return nil

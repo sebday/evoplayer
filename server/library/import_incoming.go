@@ -11,6 +11,7 @@ import (
 
 	"github.com/sebday/evoplayer/server/audio"
 	"github.com/sebday/evoplayer/server/jobs"
+	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/tags"
 )
 
@@ -21,7 +22,7 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 	if rep == nil {
 		rep = jobs.NopReporter
 	}
-	incoming := filepath.Join(env.MusicRoot, ".incoming")
+	incoming := paths.IncomingDir(env.MusicRoot)
 	if err := os.MkdirAll(incoming, 0o755); err != nil {
 		return err
 	}
