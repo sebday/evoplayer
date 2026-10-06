@@ -629,7 +629,7 @@ Item {
         url = soundcloudPage(url)
         if (!url)
             return false
-        Quickshell.execDetached(["omarchy-launch-browser", url])
+        Quickshell.execDetached(["brave", url])
         return true
     }
 

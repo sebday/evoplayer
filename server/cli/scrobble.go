@@ -63,7 +63,7 @@ func scrobbleAuth() error {
 	apiKey := os.Getenv("LASTFM_API_KEY")
 	secret := os.Getenv("LASTFM_API_SECRET")
 	if apiKey == "" || secret == "" {
-		return fmt.Errorf("evoplayer: set LASTFM_API_KEY and LASTFM_API_SECRET in pass (omarchy/lastfm/*)")
+		return fmt.Errorf("evoplayer: set LASTFM_API_KEY and LASTFM_API_SECRET in pass (evoshell/lastfm/*)")
 	}
 	if os.Getenv("LASTFM_SESSION_KEY") != "" {
 		fmt.Println("evoplayer: LASTFM_SESSION_KEY already set in pass")

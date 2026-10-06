@@ -1,6 +1,5 @@
 import QtQuick
 import Quickshell
-import Quickshell.Io
 import Quickshell.Services.Pipewire
 import qs.Commons
 import qs.Ui
@@ -33,7 +32,7 @@ BarWidget {
     Quickshell.execDetached(["xdg-terminal-exec", "--", Compat.Util.evoplayerBinPath("")])
   }
 
-  readonly property var mediaService: bar?.shell?.firstPartyServiceFor("omarchy.media")
+  readonly property var mediaService: bar && bar.shell && bar.shell.serviceFor ? bar.shell.serviceFor("evo.now-playing") : null
   readonly property bool bravePlaying: !!(mediaService && mediaService.bravePlaying)
   readonly property string browserTitle: bravePlaying && mediaService.activePlayer
     ? String(mediaService.activePlayer.trackTitle || "")
@@ -91,10 +90,6 @@ BarWidget {
   readonly property bool hasInput: !!(source && source.audio)
   readonly property bool anyAudible: (hasOutput && !outputMuted) || (hasInput && !inputMuted)
 
-  function resolveVolumeSink() {
-    if (!volumeSinkProc.running) volumeSinkProc.running = true
-  }
-
   function setOutputVolume(v) {
     if (!volumeSink || !volumeSink.audio) return outputVolume
     var volume = Math.max(0, Math.min(1, v))
@@ -104,7 +99,7 @@ BarWidget {
 
   function showVolumeOsd(volume) {
     if (!bar || !bar.shell) return
-    bar.shell.summon("omarchy.osd", JSON.stringify({
+    bar.shell.summon("evo.osd", JSON.stringify({
       icon: Model.outputIcon(root.sink, volume, root.outputMuted),
       value: Math.round(volume * 100)
     }))
@@ -123,8 +118,6 @@ BarWidget {
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
-  onSinkChanged: resolveVolumeSink()
-
   PwObjectTracker {
     objects: {
       var list = []
@@ -134,43 +127,6 @@ BarWidget {
         list.push(root.volumeSink)
       return list
     }
-  }
-
-  Process {
-    id: volumeSinkProc
-    command: ["omarchy-audio-output-sink"]
-    property string stdoutBuf: ""
-    property bool overflow: false
-    onStarted: {
-      stdoutBuf = ""
-      overflow = false
-    }
-    stdout: SplitParser {
-      splitMarker: ""
-      onRead: function(chunk) {
-        if (volumeSinkProc.overflow)
-          return
-        volumeSinkProc.stdoutBuf += String(chunk || "")
-        if (volumeSinkProc.stdoutBuf.length > 4096) {
-          volumeSinkProc.overflow = true
-          volumeSinkProc.stdoutBuf = ""
-          volumeSinkProc.signal(15)
-        }
-      }
-    }
-    onExited: {
-      if (!overflow)
-        root.volumeSinkName = String(stdoutBuf).trim()
-      stdoutBuf = ""
-    }
-  }
-
-  Timer {
-    interval: 15000
-    running: true
-    repeat: true
-    triggeredOnStart: true
-    onTriggered: root.resolveVolumeSink()
   }
 
   Loader {

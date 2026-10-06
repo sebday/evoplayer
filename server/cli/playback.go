@@ -27,11 +27,10 @@ func CmdGUI(env paths.Env, exe string) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	shell := "omarchy-shell"
-	args := []string{"shell", "toggle", "evo.player", "{}"}
+	shell := "evo"
+	args := []string{"ipc", "shell", "toggle", "evo.panels.player"}
 	if _, err := exec.LookPath(shell); err != nil {
-		shell = "evo"
-		args = []string{"ipc", "shell", "toggle", "evo.panels.player"}
+		return fmt.Errorf("evoplayer: evo is not on PATH")
 	}
 	cmd := exec.Command(shell, args...)
 	cmd.Stdout = os.Stdout

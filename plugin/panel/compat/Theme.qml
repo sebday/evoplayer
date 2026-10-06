@@ -235,7 +235,7 @@ Item {
         var home = Quickshell.env("HOME") || ""
         if (!home)
             return ""
-        return home + "/.local/state/omarchy/current/theme/colors.toml"
+        return home + "/.themes/current/colors.toml"
     }
 
     Process {

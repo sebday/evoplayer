@@ -69,15 +69,13 @@ Item {
     readonly property int notifyNormalMs: 5000
     readonly property int notifyLowMs: 3000
 
-    function omarchyNotify(opts) {
+    function notify(opts) {
         var o = opts || {}
-        var args = ["omarchy", "notification", "send", "--app-name", PluginIds.pluginId]
+        var args = ["evo", "notify", "send", "--app-name", PluginIds.pluginId]
         if (o.urgency)
             args.push("-u", String(o.urgency))
         if (o.timeoutMs !== undefined)
             args.push("-t", String(o.timeoutMs))
-        if (o.replaceId !== undefined)
-            args.push("-r", String(o.replaceId))
         var image = String(o.image || "").trim()
         if (image)
             args.push("--image", image)
@@ -85,6 +83,8 @@ Item {
         var body = Model.plain(o.body || "", 180)
         if (body)
             args.push(body)
+        if (o.replaceId !== undefined)
+            args.push("--", "-r", String(o.replaceId))
         Quickshell.execDetached(args)
     }
 
@@ -303,7 +303,7 @@ Item {
 
     function showScanNotice(body, timeoutMs) {
         var urgent = timeoutMs === 0
-        omarchyNotify({
+        notify({
             summary: "Evoplayer",
             body: String(body || ""),
             replaceId: scanNotifyId,

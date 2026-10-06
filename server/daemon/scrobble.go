@@ -27,7 +27,7 @@ func warnLastfmCredentialsMissing() {
 		os.Getenv("LASTFM_SESSION_KEY") != "" {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "evoplayer: last.fm scrobble disabled (missing pass creds omarchy/lastfm/*)\n")
+	fmt.Fprintf(os.Stderr, "evoplayer: last.fm scrobble disabled (missing pass creds evoshell/lastfm/*)\n")
 }
 
 func (d *Daemon) handleScrobble(req ipc.Request) (interface{}, error) {

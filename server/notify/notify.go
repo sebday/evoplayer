@@ -18,20 +18,33 @@ const AppID = "evo.evoplayer"
 // Match evo.monitors Service.qml low popup duration default.
 const LowTimeoutMs = 3000
 
-var hasOmarchy = sync.OnceValue(func() bool {
-	_, err := exec.LookPath("omarchy")
-	return err == nil
+// Desktop toasts go through `evo notify send`. `omarchy notification send`
+// remains for installs that still have that CLI. Both take the same flags.
+type desktopNotifier struct {
+	bin    string
+	prefix []string
+}
+
+var resolveNotifier = sync.OnceValue(func() desktopNotifier {
+	if path, err := exec.LookPath("evo"); err == nil {
+		return desktopNotifier{bin: path, prefix: []string{"notify", "send"}}
+	}
+	if path, err := exec.LookPath("omarchy"); err == nil {
+		return desktopNotifier{bin: path, prefix: []string{"notification", "send"}}
+	}
+	return desktopNotifier{}
 })
 
 func Enabled() bool {
 	if os.Getenv("EVOPLAYER_NOTIFY") == "0" {
 		return false
 	}
-	return hasOmarchy()
+	return resolveNotifier().bin != ""
 }
 
 func send(icon, summary, body, urgency string, timeoutMs int) {
-	if !Enabled() {
+	n := resolveNotifier()
+	if os.Getenv("EVOPLAYER_NOTIFY") == "0" || n.bin == "" {
 		return
 	}
 	if urgency == "" {
@@ -40,12 +53,12 @@ func send(icon, summary, body, urgency string, timeoutMs int) {
 	if timeoutMs <= 0 {
 		timeoutMs = LowTimeoutMs
 	}
-	args := []string{
-		"notification", "send",
+	args := append([]string{}, n.prefix...)
+	args = append(args,
 		"--app-name", AppID,
 		"-u", urgency,
 		"-t", strconv.Itoa(timeoutMs),
-	}
+	)
 	if icon != "" {
 		if st, err := os.Stat(icon); err == nil && !st.IsDir() {
 			args = append(args, "--image", icon)
@@ -55,7 +68,7 @@ func send(icon, summary, body, urgency string, timeoutMs int) {
 	if body != "" {
 		args = append(args, body)
 	}
-	cmd := exec.Command("omarchy", args...)
+	cmd := exec.Command(n.bin, args...)
 	if cmd.Start() == nil {
 		go func() { _ = cmd.Wait() }()
 	}

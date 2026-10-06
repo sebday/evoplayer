@@ -17,7 +17,7 @@ func passPrefix() string {
 	if v := strings.TrimSpace(os.Getenv("EVOPLAYER_PASS_PREFIX")); v != "" {
 		return v
 	}
-	return "omarchy"
+	return "evoshell"
 }
 
 func passPath(rel string) string {

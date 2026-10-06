@@ -4,7 +4,7 @@
   "name": "Evoplayer",
   "version": "0.1.0",
   "author": "seb",
-  "description": "Music library and playback for Omarchy",
+  "description": "Music library and playback",
   "kinds": ["service", "panel", "bar-widget"],
   "keepLoaded": true,
   "entryPoints": {
@@ -18,8 +18,5 @@
     "category": "Media",
     "allowMultiple": false,
     "defaultSection": "center"
-  },
-  "omarchy": {
-    "clonedFrom": "omarchy.media"
   }
 }

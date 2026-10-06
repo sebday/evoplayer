@@ -37,7 +37,7 @@ func lastfmScrobbleAPI(method, artist, title, album, duration, timestamp, albumA
 	secret := os.Getenv("LASTFM_API_SECRET")
 	session := os.Getenv("LASTFM_SESSION_KEY")
 	if apiKey == "" || secret == "" || session == "" {
-		return fmt.Errorf("evoplayer: last.fm credentials missing in pass (omarchy/lastfm/*)")
+		return fmt.Errorf("evoplayer: last.fm credentials missing in pass (evoshell/lastfm/*)")
 	}
 	return lastfm.APICall(lastfm.ScrobbleParams{
 		Method:      method,

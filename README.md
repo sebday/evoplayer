@@ -1,6 +1,6 @@
 # Evoplayer
 
-Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. The panel is Quickshell, and integrated in Omarchy with a bar icon.
+Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. The panel is Quickshell, with a bar icon.
 
 I used Soundcloud for years and ignored my mp3 collection. This is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library. 
 
@@ -13,7 +13,7 @@ Search, download and sort Soundcloud and Youtube from in Evoplayer.
 ```
 cmd/evoplayer/     thin main (serve, CLI)
 server/            daemon, playback, library, ipc, cli
-plugin/            quickshell panel (omarchy plugin)
+plugin/            quickshell panel
 scripts/           install (binary, desktop entry, plugin link)
 ```
 
@@ -29,7 +29,7 @@ Puts `evoplayer` on `PATH` (`~/.local/bin/evoplayer` → `.build/evoplayer`).
 
 ## Usage
 
-With no arguments, `evoplayer` opens the Quickshell panel and starts `serve` if the socket is missing. Install links the Omarchy plugin and adds it to the bar. Reload plugins with `omarchy-shell shell rescanPlugins` after install.
+With no arguments, `evoplayer` opens the Quickshell panel and starts `serve` if the socket is missing. The panel is the `vendor/evoplayer` plugin in hyprdots. Toggle it with `evo ipc shell toggle evo.panels.player`.
 
 ### Player and daemon
 
@@ -165,7 +165,7 @@ A genre tag is only a hint for which of those folders to use. Untagged downloads
 
 ## Credentials
 
-The daemon loads secrets from `pass` once at startup, under `omarchy/` (override with `EVOPLAYER_PASS_PREFIX`), unless the environment variable is already set:
+The daemon loads secrets from `pass` once at startup, under `evoshell/` (override with `EVOPLAYER_PASS_PREFIX`), unless the environment variable is already set:
 
 
 | Variable                                                    | pass entry                                                  | Used for                                                                                         |

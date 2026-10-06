@@ -68,7 +68,7 @@ func Load(repoRoot string) Env {
 		SocketPath:      socket,
 		DaemonLock:      filepath.Join(state, "daemon.lock"),
 		RepoRoot:        repo,
-		DisplayArtDir:   filepath.Join(xdgCache(), "omarchy", "display-art"),
+		DisplayArtDir:   filepath.Join(cache, "display-art"),
 		LikesFile:       filepath.Join(state, "likes.json"),
 		TracksCacheDir:  filepath.Join(cache, "tracks"),
 		WaveformDir:     filepath.Join(cache, "waveforms"),

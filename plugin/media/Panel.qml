@@ -24,7 +24,7 @@ Panel {
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property color background: bar ? bar.background : Color.background
 
-  readonly property var mediaService: bar && bar.shell ? bar.shell.firstPartyServiceFor("omarchy.media") : null
+  readonly property var mediaService: bar && bar.shell && bar.shell.serviceFor ? bar.shell.serviceFor("evo.now-playing") : null
   readonly property var activePlayer: mediaService ? mediaService.activePlayer : null
   readonly property bool hasMedia: activePlayer !== null && !!(activePlayer.trackTitle || activePlayer.trackArtist)
   readonly property bool playerPlaying: !!(activePlayer && activePlayer.isPlaying)

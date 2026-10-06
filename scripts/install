@@ -1,3 +1,76 @@
 #!/usr/bin/env bash
+# Build evoplayer and link the binary + desktop entry.
 set -euo pipefail
-exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/link-into-omarchy"
+
+EVOPLAYER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOCAL_BIN="${HOME}/.local/bin"
+EVOPLAYER_LIB="${HOME}/.local/lib/evoplayer"
+BUILD_DIR="${EVOPLAYER_ROOT}/.build"
+DESKTOP_DST="${XDG_DATA_HOME:-$HOME/.local/share}/applications/evoplayer.desktop"
+
+link_path() {
+  local target="$1"
+  local source="$2"
+  mkdir -p "$(dirname "$target")"
+  if [[ -d "$target" && ! -L "$target" ]]; then
+    echo "evoplayer: refusing to replace directory ${target}; move it aside first" >&2
+    exit 1
+  fi
+  if [[ -e "$target" && ! -L "$target" ]]; then
+    rm -f -- "$target"
+  fi
+  ln -sfn -- "$source" "$target"
+}
+
+mkdir -p "$BUILD_DIR" "$EVOPLAYER_LIB"
+build_go() {
+  if command -v go >/dev/null 2>&1; then
+    go build -o "$BUILD_DIR/evoplayer" ./cmd/evoplayer
+    return 0
+  fi
+  if command -v mise >/dev/null 2>&1; then
+    if mise exec go@1.24.2 -- go build -o "$BUILD_DIR/evoplayer" ./cmd/evoplayer 2>/dev/null; then
+      return 0
+    fi
+    mise exec -- go build -o "$BUILD_DIR/evoplayer" ./cmd/evoplayer
+    return 0
+  fi
+  if [[ -x "$BUILD_DIR/evoplayer" ]]; then
+    echo "evoplayer: using existing ${BUILD_DIR}/evoplayer (go toolchain missing)" >&2
+    return 0
+  fi
+  return 1
+}
+(
+  cd "$EVOPLAYER_ROOT"
+  if ! build_go; then
+    echo "evoplayer: go toolchain required to build" >&2
+    exit 1
+  fi
+  link_path "${EVOPLAYER_LIB}/evoplayer" "${BUILD_DIR}/evoplayer"
+  link_path "${LOCAL_BIN}/evoplayer" "${EVOPLAYER_LIB}/evoplayer"
+
+  # go install puts a copy on PATH via mise before ~/.local/bin; shadow it with the dev build.
+  if command -v go >/dev/null 2>&1; then
+    go_bin="$(go env GOBIN 2>/dev/null || true)"
+    if [[ -z "$go_bin" ]]; then
+      go_bin="$(go env GOPATH 2>/dev/null)/bin"
+    fi
+    if [[ -n "$go_bin" && "$go_bin" != "$LOCAL_BIN" ]]; then
+      stale="${go_bin}/evoplayer"
+      if [[ -e "$stale" || -L "$stale" ]]; then
+        link_path "$stale" "${BUILD_DIR}/evoplayer"
+        echo "shadowed stale go install: ${stale} -> ${BUILD_DIR}/evoplayer" >&2
+      fi
+    fi
+  fi
+)
+
+link_path "$DESKTOP_DST" "${EVOPLAYER_ROOT}/share/evoplayer.desktop"
+
+echo "binary: ${LOCAL_BIN}/evoplayer -> ${EVOPLAYER_LIB}/evoplayer"
+echo "apps menu: ${DESKTOP_DST}"
+echo ""
+echo "run: evoplayer"
+echo "backend: evoplayer serve"
+echo "toggle panel: evo ipc shell toggle evo.panels.player"
