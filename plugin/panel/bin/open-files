@@ -4,8 +4,6 @@
 
 set -euo pipefail
 
-width=875
-height=600
 parts=()
 argv=()
 
@@ -239,6 +237,28 @@ dispatch() {
     hyprctl dispatch "$1" >/dev/null 2>&1 || true
 }
 
+# Same size as the Hyprland open/save dialogs: half the monitor, in logical pixels.
+half_monitor_size() {
+    local addr=$1 raw id line
+    raw=$(hyprctl clients -j 2>/dev/null) || return 1
+    id=$(jq -r --arg addr "$addr" '
+        if type != "array" then empty
+        else .[] | select(.address == $addr) | .monitor // empty
+        end
+    ' <<<"$raw") || return 1
+    [[ $id =~ ^[0-9]+$ ]] || return 1
+    line=$(hyprctl monitors -j | jq -r --argjson id "$id" '
+        if type != "array" then empty
+        else
+            .[] | select(.id == $id) |
+            ((.scale // 1) | if . == 0 then 1 else . end) as $s |
+            "\(((.width / $s) * 0.5) | round) \(((.height / $s) * 0.5) | round)"
+        end
+    ') || return 1
+    [[ $line =~ ^[0-9]+\ [0-9]+$ ]] || return 1
+    printf '%s\n' "$line"
+}
+
 main() {
     [[ $# -eq 1 ]] || exit 1
     local path=$1 name desktop exec_line class_name before now addr win
@@ -276,6 +296,10 @@ main() {
         fi
     done
     [[ $addr =~ ^0x[0-9a-fA-F]+$ ]] || return 0
+
+    local width height
+    read -r width height < <(half_monitor_size "$addr") || return 0
+    [[ $width =~ ^[0-9]+$ && $height =~ ^[0-9]+$ ]] || return 0
 
     win="address:${addr}"
     dispatch "hl.dsp.window.float({ window = \"${win}\", action = \"toggle\" })"
