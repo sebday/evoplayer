@@ -1,6 +1,8 @@
 #!/bin/bash
 
-# Open the default file manager on one path, then float and center that new window.
+# Open the default file manager on one path, then float and center that new window
+# on the default screen (the monitor under the pointer). The player is pinned to
+# its own output, and this window should not follow it there.
 
 set -euo pipefail
 
@@ -237,25 +239,37 @@ dispatch() {
     hyprctl dispatch "$1" >/dev/null 2>&1 || true
 }
 
-# Same size as the Hyprland open/save dialogs: half the monitor, in logical pixels.
-half_monitor_size() {
-    local addr=$1 raw id line
-    raw=$(hyprctl clients -j 2>/dev/null) || return 1
-    id=$(jq -r --arg addr "$addr" '
-        if type != "array" then empty
-        else .[] | select(.address == $addr) | .monitor // empty
-        end
+# Workspace and half-size of the default screen: the monitor under the pointer,
+# or the focused monitor when the pointer is not on one. Size is logical pixels.
+default_place() {
+    local raw cursor line cx cy
+    raw=$(hyprctl monitors -j 2>/dev/null) || return 1
+    cursor=$(hyprctl cursorpos 2>/dev/null || true)
+    cx=null
+    cy=null
+    if [[ $cursor =~ ^([0-9]+),[[:space:]]*([0-9]+)$ ]]; then
+        cx=${BASH_REMATCH[1]}
+        cy=${BASH_REMATCH[2]}
+    fi
+    line=$(jq -r --argjson cx "$cx" --argjson cy "$cy" '
+        def logical:
+            ((.scale // 1) | if . == 0 then 1 else . end) as $s
+            | . + {lw: (.width / $s), lh: (.height / $s)};
+        (map(logical)) as $mons
+        | ($mons | map(select(
+            $cx != null and $cy != null
+            and ($cx >= .x) and ($cx < (.x + .lw))
+            and ($cy >= .y) and ($cy < (.y + .lh))
+          )) | .[0]) as $hit
+        | (if $hit != null then $hit
+           else ($mons | map(select(.focused == true)) | .[0])
+           end) as $m
+        | if $m == null then empty
+          else
+            "\($m.activeWorkspace.name // "") \((($m.lw * 0.5) | round)) \((($m.lh * 0.5) | round))"
+          end
     ' <<<"$raw") || return 1
-    [[ $id =~ ^[0-9]+$ ]] || return 1
-    line=$(hyprctl monitors -j | jq -r --argjson id "$id" '
-        if type != "array" then empty
-        else
-            .[] | select(.id == $id) |
-            ((.scale // 1) | if . == 0 then 1 else . end) as $s |
-            "\(((.width / $s) * 0.5) | round) \(((.height / $s) * 0.5) | round)"
-        end
-    ') || return 1
-    [[ $line =~ ^[0-9]+\ [0-9]+$ ]] || return 1
+    [[ $line =~ ^[0-9]+[[:space:]][0-9]+[[:space:]][0-9]+$ ]] || return 1
     printf '%s\n' "$line"
 }
 
@@ -297,11 +311,12 @@ main() {
     done
     [[ $addr =~ ^0x[0-9a-fA-F]+$ ]] || return 0
 
-    local width height
-    read -r width height < <(half_monitor_size "$addr") || return 0
-    [[ $width =~ ^[0-9]+$ && $height =~ ^[0-9]+$ ]] || return 0
+    local workspace width height
+    read -r workspace width height < <(default_place) || return 0
+    [[ $workspace =~ ^[0-9]+$ && $width =~ ^[0-9]+$ && $height =~ ^[0-9]+$ ]] || return 0
 
     win="address:${addr}"
+    dispatch "hl.dsp.window.move({ window = \"${win}\", workspace = \"${workspace}\", follow = false })"
     dispatch "hl.dsp.window.float({ window = \"${win}\", action = \"toggle\" })"
     dispatch "hl.dsp.window.resize({ window = \"${win}\", x = ${width}, y = ${height} })"
     dispatch "hl.dsp.window.center({ window = \"${win}\" })"

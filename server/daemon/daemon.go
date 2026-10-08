@@ -40,6 +40,7 @@ type Daemon struct {
 	scrobbleDedupeKey string
 	scrobbleDedupeAt  time.Time
 	scrobblePrev      playback.Status
+	scrobblePrevAt    time.Time
 	scrobblePath      string
 	scrobbleStartPos  float64
 	scrobbleStartedAt int64

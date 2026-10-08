@@ -62,11 +62,15 @@ func (d *Daemon) autoScrobble(st playback.Status) {
 	if st.Path == "" {
 		d.resetScrobbleSessionLocked()
 		d.scrobblePrev = st
+		d.scrobblePrevAt = time.Now()
 		d.scrobbleMu.Unlock()
 		return
 	}
 
-	if st.Path == prev.Path && st.State == "playing" && st.Position < prev.Position-5 {
+	// A seek, or the resume that reports 0 then jumps to the saved position,
+	// is not listening time. Start the session again from the new position.
+	if st.Path == prev.Path && st.State == "playing" &&
+		scrobblePositionJumped(prev.Position, st.Position, scrobbleElapsed(d.scrobblePrevAt)) {
 		d.beginScrobbleSessionLocked(st)
 	}
 
@@ -95,6 +99,7 @@ func (d *Daemon) autoScrobble(st playback.Status) {
 	}
 
 	d.scrobblePrev = st
+	d.scrobblePrevAt = time.Now()
 	d.scrobbleMu.Unlock()
 
 	if !configured || (nowPlaying == nil && submit == nil) {
@@ -400,6 +405,33 @@ func recordScrobble(path string, st playback.Status, event string, started int64
 func initScrobbleCredentials() {
 	secrets.Load()
 	warnLastfmCredentialsMissing()
+}
+
+const scrobbleSeekSlack = 5.0
+
+// scrobbleElapsed is how long since the previous playback sample. A zero time
+// means there is no previous sample, so a forward jump cannot be judged yet.
+func scrobbleElapsed(prev time.Time) float64 {
+	if prev.IsZero() {
+		return 0
+	}
+	elapsed := time.Since(prev).Seconds()
+	if elapsed < 0 {
+		return 0
+	}
+	return elapsed
+}
+
+// scrobblePositionJumped reports a seek. Playback moves about one second per
+// second; anything further than that, in either direction, was not heard.
+func scrobblePositionJumped(prevPos, pos, elapsed float64) bool {
+	if prevPos < 0 || pos < 0 {
+		return false
+	}
+	if pos < prevPos-scrobbleSeekSlack {
+		return true
+	}
+	return pos > prevPos+elapsed+scrobbleSeekSlack
 }
 
 // scrobbleListenThreshold returns seconds of playback required before a scrobble
