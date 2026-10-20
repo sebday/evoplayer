@@ -186,6 +186,7 @@ Fieldset {
                 readonly property bool playing: String(modelData.path || "") !== "" && String(modelData.path) === view.trackPath
                 readonly property bool inPlaylist: view.mode === "queue" && (view.pane === "playlist" || (String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") !== "" && view.pane === "search"))
                 readonly property bool selected: inPlaylist && (view.trackPicked(String(modelData.path || "")) || (!(view.playlistPicks && view.playlistPicks.length) && index === view.playlistIdx))
+                readonly property bool filled: selected || playing
 
                 Item {
                     id: body
@@ -208,7 +209,7 @@ Fieldset {
                 Rectangle {
                     anchors.fill: parent
                     radius: 2
-                    color: selected ? Theme.good : "transparent"
+                    color: selected ? Theme.good : (playing ? Theme.mixColors(Theme.background, Theme.good, 0.65) : "transparent")
                 }
 
                 Row {
@@ -223,7 +224,7 @@ Fieldset {
                         height: width
                         radius: 2
                         anchors.verticalCenter: parent.verticalCenter
-                        color: selected ? Theme.background : Theme.mantle
+                        color: filled ? Theme.background : Theme.mantle
                         clip: true
 
                         Image {
@@ -263,7 +264,7 @@ Fieldset {
                             verticalAlignment: Text.AlignVCenter
                             text: view.trackLabel(modelData)
                             elide: Text.ElideRight
-                            color: selected ? Theme.background : (playing ? Theme.good : Theme.foreground)
+                            color: filled ? Theme.background : Theme.foreground
                             font.family: Theme.fontFamily
                             font.pointSize: pane.termPt
                         }
@@ -281,7 +282,7 @@ Fieldset {
                             verticalAlignment: Text.AlignVCenter
                             horizontalAlignment: Text.AlignHCenter
                             text: modelData.liked ? "♥" : ""
-                            color: selected ? Theme.background : Theme.good
+                            color: filled ? Theme.background : Theme.good
                             font.family: Theme.fontFamily
                             font.pointSize: pane.termPt
                         }
@@ -293,7 +294,7 @@ Fieldset {
                             verticalAlignment: Text.AlignVCenter
                             horizontalAlignment: Text.AlignRight
                             text: view.trackClock(modelData)
-                            color: selected ? Theme.background : (playing ? Theme.good : Theme.muted)
+                            color: filled ? Theme.background : Theme.muted
                             font.family: Theme.fontFamily
                             font.pointSize: pane.metaPt
                         }
@@ -304,7 +305,7 @@ Fieldset {
                             height: pane.rowH
                             verticalAlignment: Text.AlignVCenter
                             text: String(modelData.year || "")
-                            color: selected ? Theme.background : (playing ? Theme.good : Theme.muted)
+                            color: filled ? Theme.background : Theme.muted
                             font.family: Theme.fontFamily
                             font.pointSize: pane.metaPt
                         }
