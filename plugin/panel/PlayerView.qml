@@ -3031,8 +3031,13 @@ Item {
         }
 
         Item {
+            id: panes
             width: parent.width
             height: parent.height - nowPane.height - root.paneGap
+
+            readonly property int playlistReserve: 420
+            readonly property int artMin: 160
+            readonly property bool showArt: width - browsePane.width - root.paneGap * 2 - playlistReserve >= artMin
 
             BrowsePane {
                 id: browsePane
@@ -3045,7 +3050,7 @@ Item {
                 anchors.left: browsePane.right
                 anchors.leftMargin: root.paneGap
                 anchors.right: artPane.left
-                anchors.rightMargin: root.paneGap
+                anchors.rightMargin: panes.showArt ? root.paneGap : 0
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 view: root
@@ -3053,10 +3058,13 @@ Item {
 
             ArtPane {
                 id: artPane
+                visible: panes.showArt
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: Math.min(parent.height, Math.max(160, parent.width - browsePane.width - root.paneGap * 2 - 420))
+                width: panes.showArt
+                      ? Math.min(parent.height, parent.width - browsePane.width - root.paneGap * 2 - panes.playlistReserve)
+                      : 0
                 view: root
             }
         }
