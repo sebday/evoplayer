@@ -1175,6 +1175,39 @@ Item {
         })
     }
 
+    // Leave whatever list was open and land on the playing row of the current queue.
+    function showNowPlaying() {
+        if (String(searchQuery || "").replace(/^\s+|\s+$/g, "") !== "") {
+            searchQuery = ""
+            searchHits = []
+            searchGen++
+            textCapture = false
+        }
+        var rows = sidebar || []
+        var found = false
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i] && rows[i].kind === "playlist" && rows[i].id === "current") {
+                browseIdx = i
+                found = true
+                break
+            }
+        }
+        pane = "browse"
+        textCapture = false
+        if (found)
+            syncShownPlaylist()
+        else
+            clearShownPlaylist()
+        if (host && host.forceKeyFocus)
+            host.forceKeyFocus()
+        loadPlaylistItems("current", function(items) {
+            root.applyQueue(items, root.trackPath)
+            Qt.callLater(function() {
+                root.focusPlayingRow()
+            })
+        })
+    }
+
     function showPlaylist(name) {
         name = String(name || "")
         if (!name)
@@ -1944,7 +1977,7 @@ Item {
                 root.err = ""
                 root.patchSharedTags(paths)
                 root.closeMode()
-                root.loadQueue()
+                root.showNowPlaying()
             })
             return
         }
@@ -1963,7 +1996,7 @@ Item {
             root.tagBusy = false
             root.err = ""
             root.closeMode()
-            root.loadQueue()
+            root.showNowPlaying()
         })
     }
 
