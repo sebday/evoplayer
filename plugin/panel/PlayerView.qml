@@ -39,9 +39,16 @@ Item {
     property string browsePath: ""
     property bool browseFiles: false
     property string libraryView: ""
+    property var treeOpen: ({})
+    property bool treeRootOpen: false
+    property var treeChildren: ({})
+    property int playlistColumns: 4
+    property bool asGrid: true
     property string browseParent: ""
     property var browseEntries: []
     property var playlists: []
+    property var playlistCovers: ({})
+    property int playlistCoverGen: 0
     property var sidebar: []
     property int browseIdx: 0
     property int browsePage: 12
@@ -55,6 +62,11 @@ Item {
     property int reorderPending: 0
     property real reorderScroll: -1
     property real playlistScroll: 0
+    property var scrollMemory: ({})
+    property bool holdScroll: false
+    property int scrollEpoch: 0
+    property int viewChangeDepth: 0
+    property bool scrollPending: false
     property string shownPlaylist: ""
     property var shownTracks: []
     property int shownGen: 0
@@ -96,7 +108,6 @@ Item {
     property string indexFilter: ""
     property int indexIdx: 0
     property int indexColumns: 1
-    property int indexFilterFocus: 0
 
     property bool vizOn: true
     property bool vizSubscribed: false
@@ -384,14 +395,18 @@ Item {
             else if (name)
                 others++
         }
-        sidebar = [
-            { kind: "files", type: "", label: "filesystem", path: "", count: 0, id: "filesystem" },
-            { kind: "playlist", type: "", label: "now playing", path: "", count: current, id: "current" },
-            { kind: "playlist", type: "", label: "likes", path: "", count: likes, id: "all" },
-            { kind: "lists", type: "", label: "playlists", path: "", count: others, id: "playlists" },
-            { kind: "page", type: "", label: "artists", path: "", count: 0, id: "artists" },
-            { kind: "page", type: "", label: "labels", path: "", count: 0, id: "labels" }
+        var rows = [
+            { kind: "files", type: "", label: "filesystem", path: "", count: 0, id: "filesystem", depth: 0 }
         ]
+        if (treeOpen.root)
+            appendTree(rows, "", 1)
+        rows.push({ kind: "playlist", type: "", label: "now playing", path: "", count: current, id: "current", depth: 0 })
+        rows.push({ kind: "playlist", type: "", label: "likes", path: "", count: likes, id: "all", depth: 0 })
+        rows.push({ kind: "lists", type: "", label: "playlists", path: "", count: others, id: "playlists", depth: 0 })
+        rows.push({ kind: "page", type: "", label: "artists", path: "", count: indexCount("artist"), id: "artists", depth: 0 })
+        rows.push({ kind: "page", type: "", label: "labels", path: "", count: indexCount("label"), id: "labels", depth: 0 })
+        rows.push({ kind: "page", type: "", label: "genres", path: "", count: indexCount("genre"), id: "genres", depth: 0 })
+        sidebar = rows
         var tab = tabIndexForView()
         if (tab >= 0)
             browseIdx = tab
@@ -399,11 +414,9 @@ Item {
 
     function tabIndexForView() {
         var id = "current"
-        if (libraryView === "files")
-            id = "filesystem"
-        else if (libraryView === "lists")
+        if (libraryView === "lists")
             id = "playlists"
-        else if (page && (page.kind === "artists" || page.kind === "labels"))
+        else if (page && (page.kind === "artists" || page.kind === "labels" || page.kind === "genres"))
             id = page.kind
         else if (shownPlaylist)
             id = shownPlaylist
@@ -415,19 +428,134 @@ Item {
         return -1
     }
 
-    function showBrowseTab(row) {
+    function menuTabs() {
+        var rows = sidebar || []
+        var out = []
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i] && rows[i].kind !== "tree" && rows[i].kind !== "rule")
+                out.push({ index: i, row: rows[i] })
+        }
+        return out
+    }
+
+    function treeRows() {
+        var rows = sidebar || []
+        var out = []
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i] && rows[i].kind === "tree")
+                out.push({ index: i, row: rows[i] })
+        }
+        return out
+    }
+
+    function treeKey(path) {
+        var p = String(path || "")
+        return p === "" ? "root" : p
+    }
+
+    function appendTree(rows, path, depth) {
+        var kids = treeChildren[treeKey(path)] || []
+        for (var i = 0; i < kids.length; i++) {
+            var kid = kids[i]
+            var key = treeKey(kid.path)
+            var open = !!treeOpen[key]
+            rows.push({
+                kind: "tree",
+                type: "dir",
+                label: String(kid.name || ""),
+                path: String(kid.path || ""),
+                count: Number(kid.count) || 0,
+                id: String(kid.path || ""),
+                depth: depth,
+                open: open
+            })
+            if (open)
+                appendTree(rows, kid.path, depth + 1)
+        }
+    }
+
+    function loadTree(path) {
+        var key = treeKey(path)
+        ipc("library.browse", { path: String(path || ""), offset: 0, limit: 500 }, function(data) {
+            var entries = (data && data.entries) || []
+            var dirs = []
+            for (var i = 0; i < entries.length; i++) {
+                var en = entries[i] || {}
+                if (String(en.type || "") !== "dir")
+                    continue
+                dirs.push({
+                    name: String(en.name || en.path || ""),
+                    path: String(en.path || ""),
+                    count: Number(en.count) || 0
+                })
+            }
+            var next = Object.assign({}, root.treeChildren)
+            next[key] = dirs
+            root.treeChildren = next
+            root.rebuildSidebar()
+        })
+    }
+
+    function refreshTrees() {
+        var open = treeOpen || {}
+        var keys = Object.keys(open)
+        for (var i = 0; i < keys.length; i++) {
+            if (!open[keys[i]])
+                continue
+            loadTree(keys[i] === "root" ? "" : keys[i])
+        }
+    }
+
+    function closeTree() {
+        if (!treeRootOpen)
+            return
+        treeOpen = ({})
+        treeRootOpen = false
+        rebuildSidebar()
+    }
+
+    function toggleTree(path) {
+        var key = treeKey(path)
+        var open = Object.assign({}, treeOpen)
+        if (open[key]) {
+            delete open[key]
+            treeRootOpen = !!open.root
+            treeOpen = open
+            rebuildSidebar()
+            return
+        }
+        open[key] = true
+        treeRootOpen = !!open.root
+        treeOpen = open
+        if (!treeChildren[key])
+            loadTree(path)
+        else
+            rebuildSidebar()
+    }
+
+    function showBrowseTab(row, fromKey) {
         if (!row)
             return
         if (row.id === "filesystem") {
-            openFilesystem()
+            if (!fromKey)
+                toggleTree("")
             return
         }
+        if (row.kind === "tree") {
+            if (!fromKey)
+                toggleTree(row.path)
+            return
+        }
+        closeTree()
+        beginViewChange()
         if (row.id === "playlists") {
             openPlaylists()
+            endViewChange()
             return
         }
         if (row.id === "current") {
             showNowPlaying()
+            endViewChange()
             return
         }
         if (row.kind === "playlist") {
@@ -436,6 +564,7 @@ Item {
             closePages()
             showPlaylist(row.id)
             playlistIdx = 0
+            endViewChange()
             return
         }
         if (row.kind === "page") {
@@ -443,6 +572,7 @@ Item {
             leaveOverlays()
             openIndex(row.id)
         }
+        endViewChange()
     }
 
     function syncSettingsMode() {
@@ -974,6 +1104,7 @@ Item {
         libraryTries++
         loadBrowse(browsePath || "")
         loadPlaylistIndex()
+        prefetchIndexes()
     }
 
     function noteLibraryMiss() {
@@ -1011,6 +1142,7 @@ Item {
             playlists = Array.isArray(data) ? data : []
             root.libraryTries = 0
             rebuildSidebar()
+            root.loadPlaylistCovers()
         }, function() {
             root.noteLibraryMiss()
         })
@@ -1087,7 +1219,7 @@ Item {
                 left--
         }
         browseIdx = i
-        showBrowseTab(sidebar[i])
+        showBrowseTab(sidebar[i], true)
     }
 
     function syncPageRow() {
@@ -1145,12 +1277,13 @@ Item {
     }
 
     function enterFolder() {
-        if (listSource() === "files") {
-            openFileSelection()
+        var row = currentRow()
+        if (!row)
             return
-        }
-        if (currentRow() && currentRow().id === "filesystem")
-            openFilesystem()
+        if (row.id === "filesystem")
+            toggleTree("")
+        else if (row.kind === "tree")
+            toggleTree(row.path)
     }
 
     function leaveFolder() {
@@ -1171,18 +1304,84 @@ Item {
         loadBrowse("")
     }
 
+    function scrollKey() {
+        if (mode !== "queue")
+            return ""
+        if (indexPage())
+            return "index:" + page.kind
+        if (entityPage())
+            return "page:" + page.kind + ":" + page.name + (asGrid ? ":grid" : ":list")
+        if (searchActive())
+            return "search:" + (asGrid ? "grid" : "list")
+        if (listSource() === "lists")
+            return "playlists"
+        if (shownPlaylist === "all")
+            return asGrid ? "likes-grid" : "likes-list"
+        if (shownPlaylist)
+            return "pl:" + shownPlaylist + (asGrid ? ":grid" : ":list")
+        if (listSource() === "queue")
+            return "queue"
+        return ""
+    }
+
+    function rememberScroll(key, y) {
+        if (!key || y < 0)
+            return
+        var next = Object.assign({}, scrollMemory)
+        next[key] = y
+        scrollMemory = next
+    }
+
+    function savedScroll(key) {
+        if (!scrollMemory || scrollMemory[key] === undefined)
+            return -1
+        return Number(scrollMemory[key]) || 0
+    }
+
+    function beginViewChange() {
+        if (viewChangeDepth === 0) {
+            if (playlist && playlist.captureScroll)
+                playlist.captureScroll()
+            holdScroll = true
+        }
+        viewChangeDepth++
+    }
+
+    function endViewChange() {
+        if (viewChangeDepth <= 0)
+            return
+        viewChangeDepth--
+        if (viewChangeDepth > 0)
+            return
+        scrollPending = true
+        scrollEpoch++
+        Qt.callLater(function() { holdScroll = false })
+    }
+
+    function setLayout(grid) {
+        if (asGrid === !!grid)
+            return
+        beginViewChange()
+        asGrid = !!grid
+        endViewChange()
+    }
+
     function openPlaylists() {
+        beginViewChange()
         leaveOverlays()
         libraryView = "lists"
         closePages()
         clearShownPlaylist()
         playlistIdx = 0
+        endViewChange()
     }
 
     function backToPlaylists() {
+        beginViewChange()
         clearShownPlaylist()
         libraryView = "lists"
         playlistIdx = 0
+        endViewChange()
     }
 
     function openBrowsePath(path) {
@@ -1194,9 +1393,11 @@ Item {
         name = String(name || "")
         if (!name)
             return
+        beginViewChange()
         libraryView = "lists"
         showPlaylist(name)
         playlistIdx = 0
+        endViewChange()
     }
 
     function fileRows() {
@@ -1225,12 +1426,15 @@ Item {
             var name = String(items[i].name || "")
             if (!name || name === "current" || name === "all")
                 continue
+            var cover = playlistCovers[name] || {}
             out.push({
                 type: "playlist",
                 id: name,
                 title: playlistLabel(name),
                 path: "",
-                count: Number(items[i].count) || 0
+                count: Number(items[i].count) || 0,
+                art: String(cover.art || ""),
+                thumb: String(cover.thumb || "")
             })
         }
         return out
@@ -1279,8 +1483,20 @@ Item {
         })
     }
 
+    function addFolder(rel) {
+        rel = String(rel || "")
+        if (!rel)
+            return
+        ipc("queue.append_folder", { path: rel }, function() {
+            root.err = ""
+            root.loadQueue()
+            root.loadPlaylistIndex()
+        })
+    }
+
     // Leave whatever list was open and land on the playing row of the current queue.
     function showNowPlaying() {
+        beginViewChange()
         libraryView = ""
         if (String(searchQuery || "").replace(/^\s+|\s+$/g, "") !== "") {
             searchQuery = ""
@@ -1309,9 +1525,11 @@ Item {
         loadPlaylistItems("current", function(items) {
             root.applyQueue(items, root.trackPath)
             Qt.callLater(function() {
-                root.focusPlayingRow()
+                if (root.savedScroll("queue") < 0)
+                    root.focusPlayingRow()
             })
         })
+        endViewChange()
     }
 
     function searchActive() {
@@ -1319,7 +1537,7 @@ Item {
     }
 
     function indexPage() {
-        return !!page && (page.kind === "artists" || page.kind === "labels")
+        return !!page && (page.kind === "artists" || page.kind === "labels" || page.kind === "genres")
     }
 
     function entityPage() {
@@ -1334,8 +1552,6 @@ Item {
             return "index"
         if (searchActive())
             return "search"
-        if (libraryView === "files")
-            return "files"
         if (libraryView === "lists" && !shownPlaylist)
             return "lists"
         if (shownPlaylist)
@@ -1396,17 +1612,19 @@ Item {
     }
 
     function showPage(spec, saved) {
+        beginViewChange()
         pageGen++
         playlistPicks = []
         textCapture = false
         pageBusy = false
-        if (spec.kind === "artists" || spec.kind === "labels") {
+        if (spec.kind === "artists" || spec.kind === "labels" || spec.kind === "genres") {
             pageData = null
             pageTracks = []
             page = spec
             indexFilter = saved ? String(saved.filter || "") : ""
             indexIdx = saved ? saved.index : 0
             loadIndex(indexKind())
+            endViewChange()
             return
         }
         if (saved && saved.data) {
@@ -1415,6 +1633,7 @@ Item {
             pageTracks = saved.rows || saved.data.tracks || []
             page = spec
             playlistIdx = saved.idx
+            endViewChange()
             return
         }
         pageData = null
@@ -1422,6 +1641,7 @@ Item {
         page = spec
         playlistIdx = 0
         pageBusy = true
+        endViewChange()
         var gen = pageGen
         ipc("library.entity", { kind: spec.kind, name: spec.name, dir: spec.dir }, function(data) {
             if (gen !== root.pageGen)
@@ -1454,6 +1674,15 @@ Item {
     }
 
     function pageBack() {
+        if (!page)
+            return false
+        beginViewChange()
+        var moved = finishPageBack()
+        endViewChange()
+        return moved
+    }
+
+    function finishPageBack() {
         if (!page)
             return false
         var stack = pageStack.slice()
@@ -1489,24 +1718,55 @@ Item {
 
     function afterLibraryEdit() {
         indexCache = ({})
+        prefetchIndexes()
         if (entityPage())
             reloadPage()
         else
             showNowPlaying()
     }
 
+    function indexCount(kind) {
+        var rows = indexCache[kind]
+        return rows ? rows.length : 0
+    }
+
+    function prefetchIndexes() {
+        var kinds = ["artist", "label", "genre"]
+        for (var i = 0; i < kinds.length; i++)
+            prefetchIndex(kinds[i])
+    }
+
+    function prefetchIndex(kind) {
+        if (indexCache[kind])
+            return
+        ipc("library.index", { kind: kind }, function(data) {
+            var next = Object.assign({}, root.indexCache)
+            next[kind] = Array.isArray(data) ? data : []
+            root.indexCache = next
+            root.rebuildSidebar()
+            if (root.indexPage() && root.indexKind() === kind)
+                root.applyIndexFilter()
+        })
+    }
+
     function indexKind() {
-        return page && page.kind === "labels" ? "label" : "artist"
+        if (page && page.kind === "labels")
+            return "label"
+        if (page && page.kind === "genres")
+            return "genre"
+        return "artist"
     }
 
     function openIndex(kind) {
         if (page && page.kind === kind && libraryView === "")
             return
+        beginViewChange()
         libraryView = ""
         leaveOverlays()
         if (!indexPage())
             pushPage()
         showPage({ kind: kind, name: kind, dir: "" }, null)
+        endViewChange()
     }
 
     function loadIndex(kind) {
@@ -1564,6 +1824,52 @@ Item {
         openPage(indexKind(), row.name, "")
     }
 
+    function loadPlaylistCovers() {
+        var items = orderedPlaylists()
+        var gen = ++playlistCoverGen
+        for (var i = 0; i < items.length; i++) {
+            var name = String(items[i].name || "")
+            if (!name || name === "current" || name === "all")
+                continue
+            fetchPlaylistCover(name, gen)
+        }
+    }
+
+    function fetchPlaylistCover(name, gen) {
+        ipc("library.playlist.tracks", { name: name, offset: 0, limit: 24 }, function(data) {
+            if (gen !== root.playlistCoverGen)
+                return
+            var rows = (data && data.items) || []
+            var art = ""
+            var thumb = ""
+            for (var i = 0; i < rows.length; i++) {
+                var row = rows[i] || {}
+                if (row.art || row.thumb) {
+                    art = String(row.art || "")
+                    thumb = String(row.thumb || "")
+                    break
+                }
+            }
+            var next = Object.assign({}, root.playlistCovers)
+            next[name] = { art: art, thumb: thumb }
+            root.playlistCovers = next
+        })
+    }
+
+    function stepTrackGrid(delta) {
+        var n = playlistRows().length
+        if (!n || !delta)
+            return
+        playlistIdx = Math.max(0, Math.min(n - 1, playlistIdx + delta))
+    }
+
+    function stepPlaylistGrid(delta) {
+        var n = playlistIndexRows().length
+        if (!n || !delta)
+            return
+        playlistIdx = Math.max(0, Math.min(n - 1, playlistIdx + delta))
+    }
+
     function stepIndexGrid(delta) {
         var n = (indexRows || []).length
         if (!n || !delta)
@@ -1599,6 +1905,10 @@ Item {
 
     function rowArtUrl(row) {
         return Util.fileUrl(String(row && (row.thumb || row.art) || ""))
+    }
+
+    function rowCoverUrl(row) {
+        return Util.fileUrl(String(row && (row.art || row.thumb) || ""))
     }
 
     function mosaicOf(rows) {
@@ -1720,6 +2030,7 @@ Item {
             return
         if (shownPlaylist === name)
             return
+        beginViewChange()
         shownPlaylist = name
         shownTracks = []
         playlistIdx = 0
@@ -1728,15 +2039,20 @@ Item {
             if (gen !== root.shownGen || root.shownPlaylist !== name)
                 return
             root.shownTracks = items
+            if (playlist && playlist.restoreActiveScroll)
+                playlist.restoreActiveScroll()
         })
+        endViewChange()
     }
 
     function clearShownPlaylist() {
         if (!shownPlaylist)
             return
+        beginViewChange()
         shownPlaylist = ""
         shownTracks = []
         shownGen++
+        endViewChange()
     }
 
     function syncShownPlaylist() {
@@ -2377,6 +2693,7 @@ Item {
     }
 
     function openSearch() {
+        closeTree()
         dismissDownload()
         if (mode !== "queue")
             closeMode()
@@ -3058,7 +3375,7 @@ Item {
             closeMode()
         }
         browseIdx = index
-        showBrowseTab(sidebar[index])
+        showBrowseTab(sidebar[index], false)
         focusPane("playlist")
     }
 
@@ -3216,6 +3533,23 @@ Item {
             if ((text === "l" || text === "L") && importPlayingPreview())
                 return true
         }
+        if (mode === "queue" && asGrid && pane === "playlist"
+                && (listSource() === "shown" || listSource() === "page" || listSource() === "search")) {
+            if (key === Qt.Key_Left) { stepTrackGrid(-1); return true }
+            if (key === Qt.Key_Right) { stepTrackGrid(1); return true }
+            if (key === Qt.Key_Up) { stepTrackGrid(-playlistColumns); return true }
+            if (key === Qt.Key_Down) { stepTrackGrid(playlistColumns); return true }
+            if (key === Qt.Key_PageUp) { stepTrackGrid(-playlistColumns * 4); return true }
+            if (key === Qt.Key_PageDown) { stepTrackGrid(playlistColumns * 4); return true }
+            if (key === Qt.Key_Return || key === Qt.Key_Enter) { playSelected(); return true }
+        }
+        if (mode === "queue" && listSource() === "lists" && pane === "playlist") {
+            if (key === Qt.Key_Left) { stepPlaylistGrid(-1); return true }
+            if (key === Qt.Key_Right) { stepPlaylistGrid(1); return true }
+            if (key === Qt.Key_Up) { stepPlaylistGrid(-playlistColumns); return true }
+            if (key === Qt.Key_Down) { stepPlaylistGrid(playlistColumns); return true }
+            if (key === Qt.Key_Return || key === Qt.Key_Enter) { playSelected(); return true }
+        }
         if (mode === "queue" && indexPage() && pane === "playlist") {
             if (textCapture) {
                 if (key === Qt.Key_Escape) {
@@ -3237,7 +3571,7 @@ Item {
             if (key === Qt.Key_PageDown) { stepIndexGrid(indexColumns * 4); return true }
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { openIndexAt(indexIdx); return true }
             if (key === Qt.Key_Backspace) { pageBack(); return true }
-            if (text === "/") { indexFilterFocus++; return true }
+            if (text === "/") { openSearch(); return true }
         }
         if (pane === "search" && textCapture) {
             if (key === Qt.Key_Escape) { clearSearch(); return true }
@@ -3409,6 +3743,7 @@ Item {
                 if (!running) {
                     root.indexCache = ({})
                     root.loadBrowse(root.browsePath)
+                    root.refreshTrees()
                 }
                 return
             }
@@ -3658,21 +3993,31 @@ Item {
         anchors.fill: parent
         anchors.margins: root.paneGap
 
-            BrowsePane {
-                id: browse
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                height: 32
-                view: root
+            MouseArea {
+                anchors.fill: parent
+                z: 3
+                visible: root.treeRootOpen
+                onClicked: root.closeTree()
             }
 
             PlaylistPane {
+                id: playlist
                 anchors.left: parent.left
                 anchors.right: parent.right
-                anchors.top: browse.bottom
-                anchors.topMargin: 8
+                anchors.top: parent.top
                 anchors.bottom: parent.bottom
+                anchors.topMargin: browse.barHeight + 12
+                sideMargin: 0
+                view: root
+            }
+
+            BrowsePane {
+                id: browse
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: barHeight
+                z: 5
                 view: root
             }
     }

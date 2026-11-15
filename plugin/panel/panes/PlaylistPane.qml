@@ -53,6 +53,63 @@ Card {
     }
 
     active: view.pane === "playlist"
+    property int sideMargin: 0
+    readonly property bool likesOpen: view.shownPlaylist === "all" && view.listSource() === "shown"
+    readonly property bool likesGrid: likesOpen && view.asGrid
+    readonly property bool trackGrid: view.asGrid && view.mode === "queue" && !view.indexPage()
+        && (view.listSource() === "shown" || view.listSource() === "page" || view.listSource() === "search")
+    readonly property bool plainHead: view.listSource() === "files" || view.listSource() === "lists" || likesOpen
+    readonly property bool titledHead: view.listSource() === "files"
+    property int menuTop: 0
+
+    function activeFlick() {
+        if (view.indexPage())
+            return indexGrid
+        if (trackGrid)
+            return trackView
+        if (view.listSource() === "lists")
+            return playlistGrid
+        return list
+    }
+
+    function captureScroll() {
+        var key = view.scrollKey()
+        if (!key)
+            return
+        var flick = activeFlick()
+        if (!flick)
+            return
+        view.rememberScroll(key, flick.readScroll ? flick.readScroll() : flick.contentY)
+    }
+
+    function restoreActiveScroll() {
+        var key = view.scrollKey()
+        if (!key)
+            return
+        var y = view.savedScroll(key)
+        if (y < 0)
+            return
+        placeScroll(activeFlick(), y, 6)
+    }
+
+    function placeScroll(flick, y, tries) {
+        Qt.callLater(function() {
+            if (!flick)
+                return
+            var maxY = flick.scrollMax ? flick.scrollMax() : Math.max(0, flick.contentHeight - flick.height)
+            if (y > 8 && maxY < y && (tries > 0 || maxY < 8)) {
+                if (tries > 0)
+                    placeScroll(flick, y, tries - 1)
+                return
+            }
+            var next = Math.max(0, Math.min(maxY, y))
+            if (flick.writeScroll)
+                flick.writeScroll(next)
+            else
+                flick.contentY = next
+            view.scrollPending = false
+        })
+    }
 
     Item {
         anchors.fill: parent
@@ -70,13 +127,308 @@ Card {
             elide: Text.ElideRight
         }
 
-        ListView {
-            id: list
+        Item {
+            id: head
             anchors.top: errLine.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.bottom: parent.bottom
+            anchors.rightMargin: pane.plainHead ? pane.sideMargin : 0
             visible: view.mode === "queue" && !view.indexPage()
+            height: visible ? (pane.plainHead ? (pane.titledHead ? plainHead.implicitHeight : 0) : banner.implicitHeight) : 0
+            onHeightChanged: pane.menuTop = pane.plainHead ? 0 : height
+            onVisibleChanged: pane.menuTop = visible && !pane.plainHead ? height : 0
+
+            PageHeader {
+                id: banner
+                view: pane.view
+                width: head.width
+                visible: !pane.plainHead
+            }
+
+            Column {
+                id: plainHead
+                width: parent.width
+                visible: pane.titledHead
+                spacing: 4
+                bottomPadding: 10
+
+                Row {
+                    width: parent.width
+                    height: 40
+                    spacing: 12
+
+                    Text {
+                        visible: view.listSource() === "files" && view.browsePath !== ""
+                        anchors.verticalCenter: parent.verticalCenter
+                        textFormat: Text.PlainText
+                        text: "‹"
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSize2xl
+
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -8
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: view.leaveFolder()
+                        }
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: Math.min(implicitWidth, parent.width - 90)
+                        textFormat: Text.PlainText
+                        text: pane.likesGrid ? "Likes" : (view.listSource() === "files" ? (view.browsePath || "Filesystem") : "Playlists")
+                        elide: Text.ElideMiddle
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.bold: true
+                        font.pixelSize: Theme.fontSize2xl
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        textFormat: Text.PlainText
+                        text: pane.likesGrid ? String((view.shownTracks || []).length)
+                            : (view.listSource() === "files"
+                            ? String((view.browseEntries || []).length)
+                            : String(view.playlistIndexRows().length))
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeS
+                    }
+                }
+            }
+        }
+
+        GridView {
+            id: playlistGrid
+            visible: view.listSource() === "lists"
+            anchors.top: head.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.rightMargin: pane.sideMargin
+            anchors.bottom: parent.bottom
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            model: view.playlistIndexRows()
+            currentIndex: view.playlistIdx
+            highlightFollowsCurrentItem: false
+
+            readonly property int columns: Math.max(2, Math.floor(width / 160))
+            cellWidth: Math.floor(width / columns)
+            cellHeight: cellWidth + 36
+            onColumnsChanged: view.playlistColumns = columns
+            Component.onCompleted: view.playlistColumns = columns
+
+            Text {
+                anchors.centerIn: parent
+                visible: playlistGrid.count === 0
+                textFormat: Text.PlainText
+                text: "no playlists"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeM
+            }
+
+            delegate: Item {
+                required property int index
+                required property var modelData
+
+                width: playlistGrid.cellWidth
+                height: playlistGrid.cellHeight
+
+                readonly property bool selected: view.pane === "playlist" && index === view.playlistIdx
+                readonly property bool hot: cellArea.containsMouse || selected
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    radius: 8
+                    color: selected ? Theme.withOpacity(Theme.border, 0.16) : (cellArea.containsMouse ? Theme.foregroundWash : "transparent")
+                    border.width: selected ? 1 : 0
+                    border.color: Theme.border
+                }
+
+                Cover {
+                    id: face
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.topMargin: 12
+                    width: parent.width - 36
+                    height: width
+                    corner: 6
+                    name: String(modelData.title || "")
+                    source: view.rowCoverUrl(modelData)
+                    decodeSize: Math.ceil((width > 0 ? width : 160) * Screen.devicePixelRatio)
+                    scale: hot ? 1.04 : 1
+
+                    Behavior on scale {
+                        NumberAnimation { duration: Theme.motionFast }
+                    }
+                }
+
+                Text {
+                    id: nameText
+                    anchors.top: face.bottom
+                    anchors.topMargin: 8
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width - 16
+                    horizontalAlignment: Text.AlignHCenter
+                    textFormat: Text.PlainText
+                    text: String(modelData.title || "")
+                    elide: Text.ElideRight
+                    color: hot ? Theme.foreground : Theme.withOpacity(Theme.foreground, 0.85)
+                    font.family: Theme.fontFamily
+                    font.bold: true
+                    font.pixelSize: Theme.fontSizeM
+                }
+
+                Text {
+                    anchors.top: nameText.bottom
+                    anchors.topMargin: 2
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    textFormat: Text.PlainText
+                    text: view.counted(modelData.count, "track")
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeXs
+                }
+
+                MouseArea {
+                    id: cellArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        view.playlistIdx = index
+                        view.openListedPlaylist(String(modelData.id || ""))
+                    }
+                }
+            }
+        }
+
+        GridView {
+            id: trackView
+            visible: pane.trackGrid
+            anchors.top: head.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            model: view.listSource() === "page" ? (view.pageTracks || [])
+                : (view.listSource() === "search" ? (view.searchHits || []) : (view.shownTracks || []))
+            currentIndex: view.playlistIdx
+            highlightFollowsCurrentItem: false
+
+            readonly property int columns: Math.max(2, Math.floor(width / 160))
+            cellWidth: Math.floor(width / columns)
+            cellHeight: cellWidth + 48
+            onColumnsChanged: view.playlistColumns = columns
+            Component.onCompleted: view.playlistColumns = columns
+
+            Text {
+                anchors.centerIn: parent
+                visible: trackView.count === 0
+                textFormat: Text.PlainText
+                text: view.listSource() === "search" ? "no matches"
+                    : (view.shownPlaylist === "all" ? "no likes" : "no tracks")
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeM
+            }
+
+            delegate: Item {
+                required property int index
+                required property var modelData
+
+                width: trackView.cellWidth
+                height: trackView.cellHeight
+
+                readonly property bool selected: view.pane === "playlist" && index === view.playlistIdx
+                readonly property bool hot: likeArea.containsMouse || selected
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 4
+                    radius: 8
+                    color: selected ? Theme.withOpacity(Theme.border, 0.16) : (likeArea.containsMouse ? Theme.foregroundWash : "transparent")
+                    border.width: selected ? 1 : 0
+                    border.color: Theme.border
+                }
+
+                Cover {
+                    id: likeFace
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.topMargin: 12
+                    width: parent.width - 36
+                    height: width
+                    corner: 6
+                    name: String(modelData.title || "")
+                    source: view.rowCoverUrl(modelData)
+                    decodeSize: Math.ceil((width > 0 ? width : 160) * Screen.devicePixelRatio)
+                    scale: hot ? 1.04 : 1
+
+                    Behavior on scale {
+                        NumberAnimation { duration: Theme.motionFast }
+                    }
+                }
+
+                Text {
+                    id: likeTitle
+                    anchors.top: likeFace.bottom
+                    anchors.topMargin: 8
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width - 16
+                    horizontalAlignment: Text.AlignHCenter
+                    textFormat: Text.PlainText
+                    text: String(modelData.title || "")
+                    elide: Text.ElideRight
+                    color: hot ? Theme.foreground : Theme.withOpacity(Theme.foreground, 0.85)
+                    font.family: Theme.fontFamily
+                    font.bold: true
+                    font.pixelSize: Theme.fontSizeM
+                }
+
+                Text {
+                    anchors.top: likeTitle.bottom
+                    anchors.topMargin: 2
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: parent.width - 16
+                    horizontalAlignment: Text.AlignHCenter
+                    textFormat: Text.PlainText
+                    text: String(modelData.artist || "")
+                    elide: Text.ElideRight
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeXs
+                }
+
+                MouseArea {
+                    id: likeArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        view.playlistIdx = index
+                        view.focusPane("playlist")
+                        if (modelData.path)
+                            view.playTrackList(view.playlistRows(), String(modelData.path))
+                    }
+                }
+            }
+        }
+
+        ListView {
+            id: list
+            anchors.top: head.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.rightMargin: pane.sideMargin
+            anchors.bottom: parent.bottom
+            visible: view.mode === "queue" && !view.indexPage() && view.listSource() !== "lists" && !pane.trackGrid
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
@@ -107,74 +459,6 @@ Card {
                     view.playlistScroll = contentY
             }
 
-            header: Item {
-                id: listHead
-                width: list.width
-                readonly property bool plain: view.listSource() === "files" || view.listSource() === "lists"
-                height: plain ? plainHead.implicitHeight : banner.implicitHeight
-
-                PageHeader {
-                    id: banner
-                    view: pane.view
-                    width: listHead.width
-                    visible: !listHead.plain
-                }
-
-                Column {
-                    id: plainHead
-                    width: parent.width
-                    visible: listHead.plain
-                    spacing: 4
-                    bottomPadding: 10
-
-                    Row {
-                        width: parent.width
-                        height: 40
-                        spacing: 12
-
-                        Text {
-                            visible: view.listSource() === "files" && view.browsePath !== ""
-                            anchors.verticalCenter: parent.verticalCenter
-                            textFormat: Text.PlainText
-                            text: "‹"
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSize2xl
-
-                            MouseArea {
-                                anchors.fill: parent
-                                anchors.margins: -8
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: view.leaveFolder()
-                            }
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: Math.min(implicitWidth, parent.width - 90)
-                            textFormat: Text.PlainText
-                            text: view.listSource() === "files" ? (view.browsePath || "Filesystem") : "Playlists"
-                            elide: Text.ElideMiddle
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.bold: true
-                            font.pixelSize: Theme.fontSize2xl
-                        }
-
-                        Text {
-                            anchors.verticalCenter: parent.verticalCenter
-                            textFormat: Text.PlainText
-                            text: view.listSource() === "files"
-                                ? String((view.browseEntries || []).length)
-                                : String(view.playlistIndexRows().length)
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeS
-                        }
-                    }
-                }
-            }
-
             footer: Item {
                 width: list.width
                 height: list.count === 0 ? 48 : 12
@@ -200,20 +484,33 @@ Card {
 
             Connections {
                 target: view
-                function onQueueChanged() { list.restoreScroll() }
-                function onShownTracksChanged() { list.restoreScroll() }
+                function onQueueChanged() {
+                    list.restoreScroll()
+                    if (view.scrollPending)
+                        pane.restoreActiveScroll()
+                }
+                function onShownTracksChanged() {
+                    list.restoreScroll()
+                    if (view.scrollPending)
+                        pane.restoreActiveScroll()
+                }
                 function onSearchHitsChanged() { list.restoreScroll() }
                 function onPageTracksChanged() {
                     if (view.reorderScroll >= 0)
                         list.restoreScroll()
-                    else
-                        Qt.callLater(list.positionViewAtBeginning)
+                    else if (view.scrollPending)
+                        pane.restoreActiveScroll()
                 }
                 function onPageChanged() {
                     if (view.reorderScroll >= 0)
                         list.restoreScroll()
-                    else
-                        Qt.callLater(list.positionViewAtBeginning)
+                    else if (view.scrollPending)
+                        pane.restoreActiveScroll()
+                }
+                function onScrollEpochChanged() { pane.restoreActiveScroll() }
+                function onIndexRowsChanged() {
+                    if (view.scrollPending)
+                        pane.restoreActiveScroll()
                 }
             }
 
@@ -231,8 +528,12 @@ Card {
             Connections {
                 target: view
                 function onPlaylistIdxChanged() {
-                    if (view.mode !== "queue" || view.playlistIdx < 0)
+                    if (view.mode !== "queue" || view.playlistIdx < 0 || view.holdScroll)
                         return
+                    if (pane.trackGrid && view.playlistIdx < trackView.count)
+                        trackView.positionViewAtIndex(view.playlistIdx, GridView.Contain)
+                    if (view.listSource() === "lists" && view.playlistIdx < playlistGrid.count)
+                        playlistGrid.positionViewAtIndex(view.playlistIdx, GridView.Contain)
                     list.currentIndex = view.playlistIdx
                     if (view.reorderScroll >= 0)
                         return
@@ -540,6 +841,22 @@ Card {
 
                         Chip {
                             anchors.verticalCenter: parent.verticalCenter
+                            visible: row.folder
+                            text: "play"
+                            inverted: row.filled
+                            onActivated: view.playFolder(String(modelData.path || ""))
+                        }
+
+                        Chip {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: row.folder
+                            text: "add"
+                            inverted: row.filled
+                            onActivated: view.addFolder(String(modelData.path || ""))
+                        }
+
+                        Chip {
+                            anchors.verticalCenter: parent.verticalCenter
                             visible: row.roomy && String(modelData.label || "") !== ""
                             text: String(modelData.label || "")
                             maxWidth: 150
@@ -614,6 +931,7 @@ Card {
             anchors.top: errLine.bottom
             anchors.left: parent.left
             anchors.right: parent.right
+            anchors.rightMargin: pane.sideMargin
             anchors.bottom: parent.bottom
             visible: view.mode === "discover"
             clip: true
@@ -727,8 +1045,10 @@ Card {
         }
 
         IndexGrid {
+            id: indexGrid
             anchors.fill: parent
             anchors.topMargin: errLine.height
+            anchors.rightMargin: pane.sideMargin
             visible: view.mode === "queue" && view.indexPage()
             view: pane.view
         }
@@ -736,6 +1056,7 @@ Card {
         HelpOverlay {
             anchors.fill: parent
             anchors.topMargin: errLine.height
+            anchors.rightMargin: pane.sideMargin
             visible: view.mode === "help"
             view: pane.view
         }
@@ -743,6 +1064,7 @@ Card {
         TagEditor {
             anchors.fill: parent
             anchors.topMargin: errLine.height
+            anchors.rightMargin: pane.sideMargin
             visible: view.mode === "tags"
             view: pane.view
         }
@@ -750,6 +1072,7 @@ Card {
         MovePicker {
             anchors.fill: parent
             anchors.topMargin: errLine.height
+            anchors.rightMargin: pane.sideMargin
             visible: view.mode === "move"
             view: pane.view
         }
@@ -757,6 +1080,7 @@ Card {
         ArtPickerOverlay {
             anchors.fill: parent
             anchors.topMargin: errLine.height
+            anchors.rightMargin: pane.sideMargin
             visible: view.mode === "art"
             view: pane.view
         }
@@ -764,6 +1088,7 @@ Card {
         EqOverlay {
             anchors.fill: parent
             anchors.topMargin: errLine.height
+            anchors.rightMargin: pane.sideMargin
             visible: view.mode === "eq"
             view: pane.view
         }
@@ -771,6 +1096,7 @@ Card {
         DownloadOverlay {
             anchors.fill: parent
             anchors.topMargin: errLine.height
+            anchors.rightMargin: pane.sideMargin
             visible: view.mode === "download"
             view: pane.view
         }

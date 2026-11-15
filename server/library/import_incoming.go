@@ -203,13 +203,43 @@ func trackDestForFolder(env Env, path, folder string, probed tags.ProbeResult) (
 	if base == "" {
 		return "", fmt.Errorf("cannot name %s", path)
 	}
-	dir := filepath.Join(env.MusicRoot, folder, "soundcloud")
+	bucket := "soundcloud"
+	year := ""
 	if IsMix(probed.Duration) {
-		dir = filepath.Join(env.MusicRoot, folder, "mixes", mixYear(tag.Year, path, base))
+		bucket = "mixes"
+		year = mixYear(tag.Year, path, base)
 	} else if isYouTubeSource(path, tag) {
-		dir = filepath.Join(env.MusicRoot, folder, "youtube", mixYear(tag.Year, path, base))
+		bucket = "youtube"
+		year = mixYear(tag.Year, path, base)
+	}
+	dir := libraryBucket(env.MusicRoot, folder, bucket)
+	if year != "" {
+		dir = filepath.Join(dir, year)
 	}
 	return filepath.Join(dir, base), nil
+}
+
+// libraryBucket returns the genre child directory, reusing an existing folder
+// whose name matches ignoring case. When none exists, the name has a capital
+// first letter (Soundcloud, Mixes, Youtube) so a later create does not split the library.
+func libraryBucket(root, genre, name string) string {
+	dir := filepath.Join(root, genre)
+	entries, err := os.ReadDir(dir)
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() && strings.EqualFold(e.Name(), name) {
+				return filepath.Join(dir, e.Name())
+			}
+		}
+	}
+	return filepath.Join(dir, capitaliseFirst(name))
+}
+
+func capitaliseFirst(name string) string {
+	if name == "" {
+		return name
+	}
+	return strings.ToUpper(name[:1]) + name[1:]
 }
 
 func trackFilename(artist, title, path, ext string) string {

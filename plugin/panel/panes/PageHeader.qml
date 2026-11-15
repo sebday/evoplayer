@@ -11,7 +11,6 @@ Column {
     readonly property bool entity: view.entityPage()
     readonly property var entityData: entity && view.pageData ? view.pageData : ({})
     readonly property bool queueHeader: info.kind === "queue"
-    readonly property bool showPause: queueHeader && view.playing
     readonly property color onBanner: Theme.foreground
     readonly property string pageKind: view.page ? String(view.page.kind) : ""
 
@@ -28,56 +27,6 @@ Column {
         font.letterSpacing: 1
     }
 
-    component SkipButton: Item {
-        property bool forward: false
-        signal activated()
-
-        width: 32
-        height: 56
-
-        Canvas {
-            anchors.fill: parent
-            onWidthChanged: requestPaint()
-            onHeightChanged: requestPaint()
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.clearRect(0, 0, width, height)
-                var s = Math.min(width, height)
-                var cy = height / 2
-                var th = s * 0.34
-                var tw = s * 0.28
-                var barW = Math.max(2, s * 0.07)
-                var gap = s * 0.06
-                ctx.fillStyle = Theme.withOpacity(Theme.foreground, 0.78)
-                if (parent.forward) {
-                    var left = (width - (tw + gap + barW)) / 2
-                    ctx.beginPath()
-                    ctx.moveTo(left, cy - th / 2)
-                    ctx.lineTo(left, cy + th / 2)
-                    ctx.lineTo(left + tw, cy)
-                    ctx.closePath()
-                    ctx.fill()
-                    ctx.fillRect(left + tw + gap, cy - th / 2, barW, th)
-                } else {
-                    var right = (width - (barW + gap + tw)) / 2
-                    ctx.fillRect(right, cy - th / 2, barW, th)
-                    ctx.beginPath()
-                    ctx.moveTo(right + barW + gap + tw, cy - th / 2)
-                    ctx.lineTo(right + barW + gap + tw, cy + th / 2)
-                    ctx.lineTo(right + barW + gap, cy)
-                    ctx.closePath()
-                    ctx.fill()
-                }
-            }
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            cursorShape: Qt.PointingHandCursor
-            onClicked: parent.activated()
-        }
-    }
-
     Item {
         id: banner
         width: hero.width
@@ -85,38 +34,18 @@ Column {
 
         BlurBackdrop {
             anchors.fill: parent
+            visible: !hero.queueHeader
             source: hero.info.blur || ""
-        }
-
-        Row {
-            id: transport
-            x: 16
-            y: 22
-            height: 56
-            spacing: 2
-
-            SkipButton { onActivated: hero.view.transport("prev") }
-
-            PlayCircle {
-                id: playCircle
-                pause: hero.showPause
-                onActivated: hero.view.headerPlay()
-            }
-
-            SkipButton {
-                forward: true
-                onActivated: hero.view.transport("next")
-            }
         }
 
         Column {
             id: textCol
-            anchors.left: transport.right
-            anchors.leftMargin: 16
+            anchors.left: parent.left
+            anchors.leftMargin: 18
             anchors.right: artSlot.left
             anchors.rightMargin: 16
-            anchors.top: transport.top
-            anchors.topMargin: -4
+            anchors.top: parent.top
+            anchors.topMargin: 18
             spacing: 6
 
             Row {
@@ -255,7 +184,7 @@ Column {
                 Chip {
                     text: "like"
                     inverted: hero.view.liked
-                    visible: hero.view.trackPath !== ""
+                    visible: !hero.queueHeader && hero.view.trackPath !== ""
                     color: inverted ? Theme.liked : (hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1))
                     onActivated: hero.view.likePlaying()
                 }
@@ -298,58 +227,27 @@ Column {
         Row {
             id: seekRow
             anchors.left: parent.left
-            anchors.right: parent.right
+            anchors.right: artSlot.visible ? artSlot.left : parent.right
+            anchors.top: textCol.bottom
             anchors.bottom: parent.bottom
             anchors.leftMargin: 18
-            anchors.rightMargin: 18
+            anchors.rightMargin: 16
+            anchors.topMargin: 8
             anchors.bottomMargin: 12
-            height: 36
-            spacing: 14
 
             WaveformViz {
                 id: wave
-                width: seekRow.width - volumeBar.width - seekRow.spacing
+                width: seekRow.width
                 height: seekRow.height
-            peaks: hero.view.peaks
-            levels: hero.view.service ? hero.view.service.vizLevels : []
-            progress: hero.view.progressFrac()
-            live: hero.view.vizOn && hero.view.playing
-            positionText: hero.view.clock(hero.view.shownPosition) || "0:00"
-            durationText: hero.view.clock(hero.view.player.duration) || "0:00"
-            onSeekRequested: function(fraction) {
-                var dur = Number(hero.view.player.duration) || 0
-                hero.view.seekTo(dur * fraction)
-            }
-            }
-
-            Item {
-                id: volumeBar
-                width: 88
-                height: seekRow.height
-
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: parent.width
-                    height: 3
-                    radius: 1
-                    color: Theme.withOpacity(Theme.foreground, 0.28)
-                }
-
-                Rectangle {
-                    width: parent.width * hero.view.volumeFrac()
-                    height: 3
-                    radius: 1
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: Theme.good
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    anchors.topMargin: -8
-                    anchors.bottomMargin: -8
-                    onClicked: function(mouse) {
-                        hero.view.setVolume(Math.round(100 * mouse.x / width))
-                    }
+                peaks: hero.view.peaks
+                levels: hero.view.service ? hero.view.service.vizLevels : []
+                progress: hero.view.progressFrac()
+                live: hero.view.vizOn && hero.view.playing
+                positionText: hero.view.clock(hero.view.shownPosition) || "0:00"
+                durationText: hero.view.clock(hero.view.player.duration) || "0:00"
+                onSeekRequested: function(fraction) {
+                    var dur = Number(hero.view.player.duration) || 0
+                    hero.view.seekTo(dur * fraction)
                 }
             }
         }
@@ -357,12 +255,9 @@ Column {
         Item {
             id: artSlot
             anchors.right: parent.right
-            anchors.rightMargin: 22
             anchors.top: parent.top
-            anchors.topMargin: 18
-            anchors.bottom: seekRow.top
-            anchors.bottomMargin: 10
-            width: banner.width > 640 ? height : 0
+            anchors.bottom: parent.bottom
+            width: banner.width > 520 ? height : 0
             visible: width > 0
 
             Cover {
@@ -490,8 +385,9 @@ Column {
                     id: releaseCover
                     width: 112
                     height: 112
-                    source: hero.view.rowArtUrl(modelData)
+                    source: hero.view.rowCoverUrl(modelData)
                     name: String(modelData.name || "")
+                    decodeSize: Math.ceil(width * Screen.devicePixelRatio)
                     scale: releaseArea.containsMouse ? 1.03 : 1
 
                     Behavior on scale {

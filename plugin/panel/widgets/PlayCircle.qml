@@ -8,9 +8,10 @@ Item {
 
     property bool pause: false
     property color fill: Theme.border
+    property int size: 56
 
-    width: 56
-    height: 56
+    width: size
+    height: size
 
     Rectangle {
         anchors.fill: parent

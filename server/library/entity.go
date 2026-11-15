@@ -369,7 +369,7 @@ func summarizeEntity(env Env, page *EntityPage, tracks []Track) {
 	page.Genres = genres.refs("", 8)
 }
 
-// Index lists every artist or label with a track count and a cover.
+// Index lists every artist, label, or genre with a track count and a cover.
 func Index(env Env, kind string) ([]EntityRef, error) {
 	var col string
 	switch kind {
@@ -377,6 +377,8 @@ func Index(env Env, kind string) ([]EntityRef, error) {
 		col = "artist"
 	case "label":
 		col = "label"
+	case "genre":
+		col = "genre"
 	default:
 		return nil, fmt.Errorf("unknown kind: %s", kind)
 	}
@@ -392,10 +394,27 @@ WHERE trim(COALESCE(` + col + `,'')) != '' ORDER BY path`)
 	defer rows.Close()
 	tally := newRefTally()
 	stored := map[string]string{}
+	var aliases map[string]string
+	spellings := map[string]string{}
+	if kind == "genre" {
+		aliases = genreConfigFor(env).aliases
+	}
 	for rows.Next() {
 		var path, art, name string
 		if err := rows.Scan(&path, &art, &name); err != nil {
 			return nil, err
+		}
+		if kind == "genre" {
+			key := canonicalGenreKey(name, aliases)
+			if key == "" {
+				continue
+			}
+			shown, ok := spellings[key]
+			if !ok {
+				shown = strings.TrimSpace(name)
+				spellings[key] = shown
+			}
+			name = shown
 		}
 		tally.add(name, path)
 		if art != "" {

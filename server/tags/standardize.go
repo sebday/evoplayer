@@ -405,7 +405,7 @@ func resolvePathYear(musicRoot, path string) int {
 	}
 	parts := strings.Split(rel, string(os.PathSeparator))
 	for i, part := range parts {
-		if part == "mixes" && i+1 < len(parts) {
+		if strings.EqualFold(part, "mixes") && i+1 < len(parts) {
 			if year, err := strconv.Atoi(parts[i+1]); err == nil && validYear(year) {
 				return year
 			}
@@ -469,7 +469,7 @@ func vinylFromPath(musicRoot, path string) TagMap {
 		return nil
 	}
 	parts := strings.Split(rel, string(os.PathSeparator))
-	if len(parts) < 4 || parts[0] == "" || strings.HasPrefix(parts[0], ".") || parts[1] != "vinyl" {
+	if len(parts) < 4 || parts[0] == "" || strings.HasPrefix(parts[0], ".") || !strings.EqualFold(parts[1], "vinyl") {
 		return nil
 	}
 	if parts[2] == "_misc" {

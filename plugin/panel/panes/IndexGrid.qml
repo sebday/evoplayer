@@ -10,88 +10,14 @@ Item {
 
     readonly property bool artists: view.page && view.page.kind === "artists"
 
-    Row {
-        id: titleRow
-        width: parent.width
-        height: 34
-        spacing: 14
-
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: root.artists ? "Artists" : "Labels"
-            color: Theme.foreground
-            font.family: Theme.fontFamily
-            font.bold: true
-            font.pixelSize: Theme.fontSize2xl
-        }
-
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            textFormat: Text.PlainText
-            text: root.view.pageBusy ? "loading…" : String((root.view.indexRows || []).length)
-            color: Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeS
-        }
-    }
-
-    Rectangle {
-        id: filterBox
-        anchors.right: parent.right
-        anchors.verticalCenter: titleRow.verticalCenter
-        width: Math.min(260, parent.width * 0.4)
-        height: 26
-        radius: height / 2
-        color: Theme.mantle
-        border.width: 1
-        border.color: filterField.activeFocus ? Theme.good : Theme.inactiveBorder
-
-        Text {
-            anchors.fill: filterField
-            visible: filterField.text === ""
-            textFormat: Text.PlainText
-            text: root.artists ? "filter artists" : "filter labels"
-            color: Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeM
-            verticalAlignment: Text.AlignVCenter
-        }
-
-        TextInput {
-            id: filterField
-            anchors.fill: parent
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
-            verticalAlignment: TextInput.AlignVCenter
-            color: Theme.foreground
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeM
-            clip: true
-            selectByMouse: true
-            selectionColor: Theme.good
-            selectedTextColor: Theme.background
-            onTextChanged: root.view.setIndexFilter(text)
-            onActiveFocusChanged: {
-                if (activeFocus) {
-                    root.view.pane = "playlist"
-                    root.view.textCapture = true
-                } else if (root.view.textCapture) {
-                    root.view.textCapture = false
-                }
-            }
-            Keys.priority: Keys.BeforeItem
-            Keys.onPressed: function(event) {
-                if (root.view.dispatch(event))
-                    event.accepted = true
-            }
-        }
-    }
+    function readScroll() { return grid.contentY }
+    function writeScroll(y) { grid.contentY = y }
+    function scrollMax() { return Math.max(0, grid.contentHeight - grid.height) }
 
     GridView {
         id: grid
-        anchors.top: titleRow.bottom
-        anchors.topMargin: 12
+        anchors.top: parent.top
+        anchors.topMargin: 8
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -105,6 +31,7 @@ Item {
         cellHeight: cellWidth + 34
         onColumnsChanged: root.view.indexColumns = columns
         Component.onCompleted: root.view.indexColumns = columns
+        highlightFollowsCurrentItem: false
 
         ScrollBar.vertical: ScrollBar {
             policy: ScrollBar.AsNeeded
@@ -131,20 +58,19 @@ Item {
         Connections {
             target: root.view
             function onIndexIdxChanged() {
+                if (root.view.holdScroll)
+                    return
                 if (root.view.indexIdx >= 0 && root.view.indexIdx < grid.count)
                     grid.positionViewAtIndex(root.view.indexIdx, GridView.Contain)
-            }
-            function onIndexFilterFocusChanged() {
-                filterField.forceActiveFocus()
             }
             function onPageChanged() {
                 if (!root.view.indexPage())
                     return
-                if (filterField.text !== root.view.indexFilter)
-                    filterField.text = root.view.indexFilter
                 Qt.callLater(function() {
+                    if (root.view.holdScroll)
+                        return
                     if (root.view.indexIdx < grid.count)
-                        grid.positionViewAtIndex(root.view.indexIdx, GridView.Center)
+                        grid.positionViewAtIndex(root.view.indexIdx, GridView.Contain)
                 })
             }
         }
@@ -178,8 +104,8 @@ Item {
                 round: root.artists
                 corner: 6
                 name: String(modelData.name || "")
-                source: root.view.rowArtUrl(modelData)
-                decodeSize: 200
+                source: root.view.rowCoverUrl(modelData)
+                decodeSize: Math.ceil((width > 0 ? width : 160) * Screen.devicePixelRatio)
                 scale: hot ? 1.04 : 1
 
                 Behavior on scale {
