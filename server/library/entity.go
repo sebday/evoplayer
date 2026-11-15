@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/sebday/evoplayer/server/playback"
+	"github.com/sebday/evoplayer/server/tags"
 )
 
 const (
@@ -157,8 +158,8 @@ FROM tracks WHERE `
 		if want == "" {
 			return page, fmt.Errorf("genre required")
 		}
-		query = base + `trim(genre) = ?`
-		args = []any{want}
+		query = base + `replace(trim(genre), char(0), '') = ?`
+		args = []any{tags.TrimFrame(want)}
 	case "year":
 		want := yearGroup(name)
 		if want == "" {
@@ -215,6 +216,7 @@ func scanEntityRows(rows *sql.Rows, keep func(Track) bool) ([]Track, error) {
 			return nil, err
 		}
 		t.Liked = liked == 1
+		cleanTrackText(&t)
 		if keep(t) {
 			out = append(out, t)
 		}
@@ -433,6 +435,10 @@ WHERE trim(COALESCE(` + col + `,'')) != '' ORDER BY path`)
 		var path, art, name string
 		if err := rows.Scan(&path, &art, &name); err != nil {
 			return nil, err
+		}
+		name = tags.TrimFrame(name)
+		if name == "" {
+			continue
 		}
 		if kind == "year" {
 			name = yearGroup(name)

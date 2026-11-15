@@ -148,6 +148,22 @@ Item {
         }
     }
 
+    EqOverlay {
+        id: eqPanel
+        anchors.left: parent.left
+        anchors.right: helpCol.left
+        anchors.bottom: parent.bottom
+        height: {
+            var rows = (view.incomingFiles || []).length
+            var listH = rows === 0 ? 36 : rows * 60
+            var foldersH = view.incomingGenrePath !== "" ? 40 : 0
+            var room = parent.height - tools.height - 10 - foldersH
+            var listCap = Math.min(listH, Math.max(0, room - 180))
+            return Math.max(180, room - listCap) / 2
+        }
+        view: pane.view
+    }
+
     ListView {
         id: files
         anchors.top: tools.bottom
@@ -208,7 +224,7 @@ Item {
         visible: view.incomingGenrePath !== ""
         anchors.left: parent.left
         anchors.right: helpCol.left
-        anchors.bottom: parent.bottom
+        anchors.bottom: eqPanel.top
         anchors.leftMargin: 8
         anchors.rightMargin: 16
         height: visible ? 40 : 0

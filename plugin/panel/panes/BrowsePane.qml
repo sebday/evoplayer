@@ -263,52 +263,6 @@ Item {
 
                     Canvas {
                         anchors.fill: parent
-                        property bool hot: view.mode === "eq" || view.eqHot()
-                        onHotChanged: requestPaint()
-                        onWidthChanged: requestPaint()
-                        onHeightChanged: requestPaint()
-                        onPaint: {
-                            var ctx = getContext("2d")
-                            ctx.clearRect(0, 0, width, height)
-                            var color = hot
-                                ? Theme.good
-                                : Theme.withOpacity(Theme.foreground, eqArea.containsMouse ? 0.95 : 0.55)
-                            ctx.strokeStyle = color
-                            ctx.fillStyle = color
-                            ctx.lineWidth = 1.6
-                            ctx.lineCap = "round"
-                            var xs = [width / 2 - 5, width / 2, width / 2 + 5]
-                            var knobs = [0.72, 0.28, 0.52]
-                            var top = height / 2 - 6
-                            var span = 12
-                            for (var i = 0; i < xs.length; i++) {
-                                ctx.beginPath()
-                                ctx.moveTo(xs[i], top)
-                                ctx.lineTo(xs[i], top + span)
-                                ctx.stroke()
-                                ctx.beginPath()
-                                ctx.arc(xs[i], top + span * knobs[i], 2.1, 0, Math.PI * 2)
-                                ctx.fill()
-                            }
-                        }
-                    }
-
-                    MouseArea {
-                        id: eqArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: view.toggleEq()
-                        onContainsMouseChanged: parent.children[0].requestPaint()
-                    }
-                }
-
-                Item {
-                    width: 34
-                    height: 34
-
-                    Canvas {
-                        anchors.fill: parent
                         property bool open: view.mode === "library"
                         onOpenChanged: requestPaint()
                         onWidthChanged: requestPaint()
@@ -320,17 +274,39 @@ Item {
                                 ? Theme.good
                                 : Theme.withOpacity(Theme.foreground, libArea.containsMouse ? 0.95 : 0.55)
                             ctx.strokeStyle = color
+                            ctx.fillStyle = color
                             ctx.lineWidth = 1.6
                             ctx.lineCap = "round"
-                            var left = width / 2 - 7
-                            var right = width / 2 + 7
-                            var ys = [height / 2 - 5, height / 2, height / 2 + 5]
-                            for (var i = 0; i < ys.length; i++) {
-                                ctx.beginPath()
-                                ctx.moveTo(left, ys[i])
-                                ctx.lineTo(right, ys[i])
-                                ctx.stroke()
+                            ctx.lineJoin = "round"
+                            var cx = width / 2
+                            var cy = height / 2
+                            var teeth = 8
+                            var outer = 7.4
+                            var root = 5.4
+                            var hole = 2.3
+                            ctx.beginPath()
+                            for (var i = 0; i < teeth; i++) {
+                                var a0 = (i / teeth) * Math.PI * 2 - Math.PI / 2
+                                var a1 = a0 + (Math.PI * 2 / teeth) * 0.28
+                                var a2 = a0 + (Math.PI * 2 / teeth) * 0.72
+                                var a3 = a0 + Math.PI * 2 / teeth
+                                var x0 = cx + Math.cos(a0) * root
+                                var y0 = cy + Math.sin(a0) * root
+                                if (i === 0)
+                                    ctx.moveTo(x0, y0)
+                                else
+                                    ctx.lineTo(x0, y0)
+                                ctx.lineTo(cx + Math.cos(a1) * outer, cy + Math.sin(a1) * outer)
+                                ctx.lineTo(cx + Math.cos(a2) * outer, cy + Math.sin(a2) * outer)
+                                ctx.lineTo(cx + Math.cos(a3) * root, cy + Math.sin(a3) * root)
                             }
+                            ctx.closePath()
+                            ctx.fill()
+                            ctx.globalCompositeOperation = "destination-out"
+                            ctx.beginPath()
+                            ctx.arc(cx, cy, hole, 0, Math.PI * 2)
+                            ctx.fill()
+                            ctx.globalCompositeOperation = "source-over"
                         }
                     }
 

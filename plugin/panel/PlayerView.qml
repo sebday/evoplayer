@@ -132,6 +132,7 @@ Item {
     property int eqIdx: 0
     property var eqPresets: [null, null, null]
     property bool eqSaveArmed: false
+    property bool eqKeys: false
     property var peaks: []
     property real seekPreview: -1
 
@@ -752,9 +753,11 @@ Item {
             return
         }
         eqSaveArmed = false
+        eqKeys = false
         incomingGenrePath = ""
         pushOverlay("library")
         loadIncoming()
+        loadEq()
         refreshLibraryJob()
     }
 
@@ -763,6 +766,7 @@ Item {
         if (index < 0 || index >= rows.length)
             return
         incomingIdx = index
+        eqKeys = false
         var path = String(rows[index].path || "")
         if (!path)
             return
@@ -3139,6 +3143,7 @@ Item {
         var back = savedFocus || "playlist"
         var returnMode = modeReturn
         modeReturn = ""
+        eqKeys = false
         mode = returnMode === "library" ? "library" : "queue"
         artPreview = ""
         artHits = []
@@ -3674,18 +3679,6 @@ Item {
         eqPresets = data.presets || [null, null, null]
     }
 
-    function toggleEq() {
-        if (mode === "eq") {
-            closeMode()
-            return
-        }
-        eqSaveArmed = false
-        eqPanel = "eq"
-        pushOverlay("eq")
-        loadEq()
-        refreshLibraryJob()
-    }
-
     function refreshLibraryJob() {
         ipc("job.status", {}, function(data) {
             root.libraryJob = data || { status: "idle" }
@@ -4038,8 +4031,22 @@ Item {
             return false
         }
         if (mode === "library") {
+            if (key === Qt.Key_Escape && eqSaveArmed) { eqSaveArmed = false; return true }
+            if (key === Qt.Key_Escape && eqKeys) { eqKeys = false; return true }
             if (key === Qt.Key_Escape && incomingGenrePath) { incomingGenrePath = ""; return true }
             if (key === Qt.Key_Escape) { onEsc(); return true }
+            if (eqKeys) {
+                if (text === "1" || text === "2" || text === "3") { pickEqPreset(Number(text)); return true }
+                if (text === "s" || text === "S") { eqSaveArmed = !eqSaveArmed; return true }
+                if (key === Qt.Key_Left) { eqIdx = Math.max(0, eqIdx - 1); return true }
+                if (key === Qt.Key_Right) { eqIdx = Math.min(10, eqIdx + 1); return true }
+                if (key === Qt.Key_Up) { nudgeEq(shift ? 3 : 1); return true }
+                if (key === Qt.Key_Down) { nudgeEq(shift ? -3 : -1); return true }
+                if (text === "0") { setEqGain(eqIdx, 0); return true }
+                if (text === "r" || text === "R") { resetEq(); return true }
+                if (text === "e" || text === "E") { toggleEqEnabled(); return true }
+                return false
+            }
             if (key === Qt.Key_Up) { incomingIdx = Math.max(0, incomingIdx - 1); return true }
             if (key === Qt.Key_Down) {
                 incomingIdx = Math.min(Math.max(0, (incomingFiles || []).length - 1), incomingIdx + 1)

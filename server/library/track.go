@@ -43,6 +43,18 @@ func trackFromProbe(path, genre string, probed tags.ProbeResult) Track {
 	}
 }
 
+func cleanTrackText(row *Track) {
+	if row == nil {
+		return
+	}
+	row.Genre = tags.TrimFrame(row.Genre)
+	row.Title = tags.TrimFrame(row.Title)
+	row.Artist = tags.TrimFrame(row.Artist)
+	row.Album = tags.TrimFrame(row.Album)
+	row.Year = tags.TrimFrame(row.Year)
+	row.Label = tags.TrimFrame(row.Label)
+}
+
 func applyTagGenre(row *Track) {
 	if row == nil || row.Path == "" || strings.TrimSpace(row.Genre) != "" {
 		return
@@ -107,6 +119,7 @@ FROM tracks WHERE path=? LIMIT 1`, path).Scan(
 	if !row.Liked && isLiked(env, path) {
 		row.Liked = true
 	}
+	cleanTrackText(&row)
 	enrichTrackAssets(env, &row)
 	applyTagGenre(&row)
 	return row, nil

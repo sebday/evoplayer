@@ -154,7 +154,7 @@ func textFrame(tag *id3v2.Tag, id string) string {
 		return ""
 	}
 	if text, ok := frame.(id3v2.TextFrame); ok {
-		return text.Text
+		return TrimFrame(text.Text)
 	}
 	return fmt.Sprint(frame)
 }

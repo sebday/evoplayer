@@ -81,29 +81,30 @@ func readID3(path string) (TagInfo, float64) {
 		return info, 0
 	}
 	defer tag.Close()
-	info.Title = strings.TrimSpace(tag.Title())
-	info.Artist = strings.TrimSpace(firstNonEmpty(tag.Artist(), textFrame(tag, "TPE2")))
-	info.AlbumArtist = strings.TrimSpace(textFrame(tag, "TPE2"))
-	info.Genre = strings.TrimSpace(tag.Genre())
-	info.Album = strings.TrimSpace(tag.Album())
-	info.Label = strings.TrimSpace(textFrame(tag, "TPUB"))
+	info.Title = TrimFrame(tag.Title())
+	info.Artist = TrimFrame(firstNonEmpty(tag.Artist(), textFrame(tag, "TPE2")))
+	info.AlbumArtist = TrimFrame(textFrame(tag, "TPE2"))
+	info.Genre = TrimFrame(tag.Genre())
+	info.Album = TrimFrame(tag.Album())
+	info.Label = TrimFrame(textFrame(tag, "TPUB"))
 	info.Year = yearTag(firstNonEmpty(textFrame(tag, "TDRC"), textFrame(tag, "TYER")))
 	if comm, ok := tag.GetLastFrame("COMM").(id3v2.CommentFrame); ok {
-		info.Comment = strings.TrimSpace(comm.Text)
+		info.Comment = TrimFrame(comm.Text)
 	}
 	for _, frame := range tag.GetFrames("TXXX") {
 		user, ok := frame.(id3v2.UserDefinedTextFrame)
 		if !ok {
 			continue
 		}
-		desc := strings.ToLower(user.Description)
+		desc := strings.ToLower(TrimFrame(user.Description))
+		value := TrimFrame(user.Value)
 		switch desc {
 		case "catalognumber", "catalog", "catalogue":
-			info.CatalogNumber = strings.TrimSpace(user.Value)
+			info.CatalogNumber = value
 		case "soundcloud_id":
-			info.SoundcloudID = strings.TrimSpace(user.Value)
+			info.SoundcloudID = value
 		case "tags":
-			info.Tags = ParseTagList(user.Value)
+			info.Tags = ParseTagList(value)
 		}
 	}
 	dur := 0.0
@@ -139,7 +140,7 @@ func readFFProbe(path string) (TagInfo, float64) {
 	}
 	pick := func(keys ...string) string {
 		for _, key := range keys {
-			if val := lookup[strings.ToLower(key)]; val != "" {
+			if val := TrimFrame(lookup[strings.ToLower(key)]); val != "" {
 				return val
 			}
 		}
@@ -161,6 +162,14 @@ func readFFProbe(path string) (TagInfo, float64) {
 		dur, _ = strconv.ParseFloat(payload.Format.Duration, 64)
 	}
 	return info, dur
+}
+
+// TrimFrame drops the ID3 NUL terminator and any padding after it.
+func TrimFrame(s string) string {
+	if i := strings.IndexByte(s, 0); i >= 0 {
+		s = s[:i]
+	}
+	return strings.TrimSpace(s)
 }
 
 func yearTag(raw string) string {

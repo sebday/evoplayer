@@ -117,7 +117,17 @@ Item {
 
         MouseArea {
             anchors.fill: parent
+            onPressed: view.eqKeys = true
         }
+    }
+
+    Rectangle {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        height: 1
+        color: Theme.foregroundFaint
+        z: 2
     }
 
     Item {
@@ -142,12 +152,18 @@ Item {
                     label: view.eqEnabled ? "on" : "off"
                     lit: view.eqEnabled
                     dim: !view.eqEnabled
-                    onClicked: view.toggleEqEnabled()
+                    onClicked: {
+                        view.eqKeys = true
+                        view.toggleEqEnabled()
+                    }
                 }
 
                 EqButton {
                     label: "flat"
-                    onClicked: view.resetEq()
+                    onClicked: {
+                        view.eqKeys = true
+                        view.resetEq()
+                    }
                 }
             }
 
@@ -159,7 +175,10 @@ Item {
                 EqButton {
                     label: "save"
                     armed: view.eqSaveArmed
-                    onClicked: view.eqSaveArmed = !view.eqSaveArmed
+                    onClicked: {
+                        view.eqKeys = true
+                        view.eqSaveArmed = !view.eqSaveArmed
+                    }
                 }
 
                 Repeater {
@@ -171,7 +190,10 @@ Item {
                         armed: view.eqSaveArmed
                         lit: view.eqPresetActive(index + 1)
                         dim: !(view.eqPresets || [])[index]
-                        onClicked: view.pickEqPreset(index + 1)
+                        onClicked: {
+                            view.eqKeys = true
+                            view.pickEqPreset(index + 1)
+                        }
                     }
                 }
             }
@@ -297,6 +319,7 @@ Item {
                                 anchors.fill: parent
                                 acceptedButtons: Qt.LeftButton
                                 onPressed: function(mouse) {
+                                    view.eqKeys = true
                                     view.eqIdx = slot.index
                                     view.focusPane("playlist")
                                     view.setEqGain(slot.index, pane.dbFromY(mouse.y, well.height))
@@ -311,6 +334,7 @@ Item {
 
                             WheelHandler {
                                 onWheel: function(event) {
+                                    view.eqKeys = true
                                     view.eqIdx = slot.index
                                     var step = (event.modifiers & Qt.ShiftModifier) ? 3 : 1
                                     var dir = event.angleDelta.y < 0 ? -1 : 1

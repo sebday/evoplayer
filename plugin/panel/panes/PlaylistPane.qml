@@ -57,8 +57,8 @@ Card {
     readonly property int scrollGutter: 12
     readonly property bool likesOpen: view.shownPlaylist === "all" && view.listSource() === "shown"
     readonly property bool likesGrid: likesOpen && view.asGrid
-    readonly property bool showLibrary: view.mode === "queue" || view.mode === "tags" || view.mode === "eq"
-    readonly property bool coverList: view.mode === "eq" || view.mode === "library"
+    readonly property bool showLibrary: view.mode === "queue" || view.mode === "tags"
+    readonly property bool coverList: view.mode === "library"
     readonly property bool trackGrid: view.asGrid && pane.showLibrary && !view.indexPage()
         && (view.listSource() === "shown" || view.listSource() === "page" || view.listSource() === "search")
     readonly property bool plainHead: view.listSource() === "files" || view.listSource() === "lists"
@@ -1182,7 +1182,7 @@ Card {
                             visible: !row.folder && !row.listPick
                             width: row.folder || row.listPick ? 0 : Math.ceil(term.advanceWidth("♥"))
                             horizontalAlignment: Text.AlignHCenter
-                            text: modelData.liked ? "♥" : (row.hovered ? "♡" : "")
+                            text: modelData.liked || row.hovered ? "♥" : ""
                             color: row.filled ? Theme.background : (modelData.liked ? Theme.liked : Theme.muted)
                             font.family: Theme.fontFamily
                             font.pointSize: pane.termPt
@@ -1364,17 +1364,6 @@ Card {
             anchors.topMargin: errLine.height
             anchors.rightMargin: pane.sideMargin
             visible: view.mode === "art"
-            view: pane.view
-        }
-
-        EqOverlay {
-            z: 6
-            anchors.top: pane.trackHeading ? tracksLabel.bottom : head.bottom
-            anchors.left: parent.left
-            anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
-            anchors.rightMargin: pane.releaseColumn ? 16 : pane.sideMargin
-            anchors.bottom: parent.bottom
-            visible: view.mode === "eq"
             view: pane.view
         }
 

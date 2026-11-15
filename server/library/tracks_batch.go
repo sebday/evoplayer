@@ -90,6 +90,7 @@ FROM tracks WHERE path IN (%s)`, strings.Join(placeholders, ","))
 		if !row.Liked {
 			row.Liked = isLiked(env, row.Path)
 		}
+		cleanTrackText(&row)
 		enrichTrackAssets(env, &row)
 		applyTagGenre(&row)
 		out[row.Path] = row

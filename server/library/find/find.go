@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/sebday/evoplayer/server/library"
+	"github.com/sebday/evoplayer/server/tags"
 )
 
 func Tracks(env library.Env, mode, query string) ([]map[string]any, error) {
@@ -44,8 +45,8 @@ func tracksFromSQLite(env library.Env, dbPath, mode, query string) ([]map[string
 			continue
 		}
 		item := map[string]any{
-			"path": path, "genre": genre, "title": title, "artist": artist,
-			"album": album, "year": year, "label": label, "duration": duration,
+			"path": path, "genre": tags.TrimFrame(genre), "title": tags.TrimFrame(title), "artist": tags.TrimFrame(artist),
+			"album": tags.TrimFrame(album), "year": tags.TrimFrame(year), "label": tags.TrimFrame(label), "duration": duration,
 			"liked": liked == 1,
 		}
 		if matchItem(item, mode, query, needle) {
