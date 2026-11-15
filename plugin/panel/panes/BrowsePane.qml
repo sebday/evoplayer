@@ -304,7 +304,7 @@ Item {
 
                     Canvas {
                         anchors.fill: parent
-                        property bool hot: view.eqHot()
+                        property bool hot: view.mode === "eq" || view.eqHot()
                         onHotChanged: requestPaint()
                         onWidthChanged: requestPaint()
                         onHeightChanged: requestPaint()
@@ -340,6 +340,47 @@ Item {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: view.toggleEq()
+                        onContainsMouseChanged: parent.children[0].requestPaint()
+                    }
+                }
+
+                Item {
+                    width: 34
+                    height: 34
+
+                    Canvas {
+                        anchors.fill: parent
+                        property bool open: view.mode === "library"
+                        onOpenChanged: requestPaint()
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            var color = open
+                                ? Theme.good
+                                : Theme.withOpacity(Theme.foreground, libArea.containsMouse ? 0.95 : 0.55)
+                            ctx.strokeStyle = color
+                            ctx.lineWidth = 1.6
+                            ctx.lineCap = "round"
+                            var left = width / 2 - 7
+                            var right = width / 2 + 7
+                            var ys = [height / 2 - 5, height / 2, height / 2 + 5]
+                            for (var i = 0; i < ys.length; i++) {
+                                ctx.beginPath()
+                                ctx.moveTo(left, ys[i])
+                                ctx.lineTo(right, ys[i])
+                                ctx.stroke()
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        id: libArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: view.toggleLibrary()
                         onContainsMouseChanged: parent.children[0].requestPaint()
                     }
                 }

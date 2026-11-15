@@ -73,6 +73,8 @@ Item {
     property int shownGen: 0
     property var discoverTracks: []
     property var relatedTracks: []
+    property int relatedShown: 0
+    property bool relatedBlockArmed: true
     property var adoptedRelated: []
     property string adoptedFor: ""
     property string relatedFor: ""
@@ -123,6 +125,11 @@ Item {
     property bool vizSubscribed: false
     property string eqPanel: "eq"
     property var libraryJob: null
+    property var incomingFiles: []
+    property var incomingFolders: []
+    property int incomingIdx: 0
+    property string incomingGenrePath: ""
+    property string modeReturn: ""
     property bool eqEnabled: true
     property real eqPreamp: 0
     property var eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -845,8 +852,68 @@ Item {
 
     function loadIncoming() {
         ipc("library.incoming.list", {}, function(data) {
-            root.downloadFiles = (data && data.files) || []
+            data = data || {}
+            root.downloadFiles = data.files || []
+            root.incomingFiles = data.files || []
+            root.incomingFolders = data.folders || data.genres || []
+            if (root.incomingIdx >= root.incomingFiles.length)
+                root.incomingIdx = Math.max(0, root.incomingFiles.length - 1)
         })
+    }
+
+    function toggleLibrary() {
+        if (mode === "library") {
+            closeMode()
+            return
+        }
+        eqSaveArmed = false
+        incomingGenrePath = ""
+        pushOverlay("library")
+        loadIncoming()
+        refreshLibraryJob()
+    }
+
+    function playIncoming(index) {
+        var rows = incomingFiles || []
+        if (index < 0 || index >= rows.length)
+            return
+        incomingIdx = index
+        var path = String(rows[index].path || "")
+        if (!path)
+            return
+        var queued = queue || []
+        for (var i = 0; i < queued.length; i++) {
+            if (String(queued[i] && queued[i].path || "") === path) {
+                ipc("queue.play_path", { path: path }, null)
+                return
+            }
+        }
+        ipc("queue.append", { paths: [path] }, function() {
+            root.loadQueue()
+            root.ipc("queue.play_path", { path: path }, null)
+        })
+    }
+
+    function toggleIncomingGenre(path) {
+        path = String(path || "")
+        incomingGenrePath = incomingGenrePath === path ? "" : path
+    }
+
+    function setIncomingGenre(path, folder) {
+        ipc("library.incoming.set_genre", { path: path, folder: folder }, function() {
+            root.incomingGenrePath = ""
+            root.err = ""
+            root.loadIncoming()
+        })
+    }
+
+    function editIncoming(index) {
+        var row = (incomingFiles || [])[index]
+        if (!row || !row.path)
+            return
+        incomingIdx = index
+        modeReturn = "library"
+        beginTagEdit([String(row.path)], String(row.path))
     }
 
     function tailJobLog(log) {
@@ -1233,6 +1300,8 @@ Item {
         relatedPending = key
         if (key !== relatedFor) {
             relatedTracks = []
+            relatedShown = 0
+            relatedBlockArmed = true
             relatedFor = ""
             publishRelated()
         }
@@ -1266,20 +1335,61 @@ Item {
             var data = msg && msg.data ? msg.data : {}
             var src = data.tracks || []
             var next = []
-            var cap = Math.min(8, src.length)
+            var cap = Math.min(20, src.length)
             for (var i = 0; i < cap; i++)
                 next.push(src[i])
             root.relatedFor = key
             root.relatedPending = key
             root.relatedTracks = next
+            root.relatedShown = Math.min(5, next.length)
+            root.relatedBlockArmed = true
             root.relatedNote = next.length ? "ready" : ""
             root.publishRelated()
         })
     }
 
+    function relatedPage() {
+        var rows = relatedTracks || []
+        var n = relatedShown
+        if (n > rows.length)
+            n = rows.length
+        if (n < 0)
+            n = 0
+        var out = []
+        for (var i = 0; i < n; i++)
+            out.push(rows[i])
+        return out
+    }
+
+    function revealRelated() {
+        var rows = relatedTracks || []
+        if (relatedShown >= rows.length)
+            return
+        relatedShown = Math.min(relatedShown + 5, rows.length)
+        relatedBlockArmed = false
+        publishRelated()
+    }
+
+    function noteRelatedScroll(y, h, contentH) {
+        if (listSource() !== "queue" || relatedShown >= (relatedTracks || []).length)
+            return
+        var near = contentH > h && y + h >= contentH - rowGap()
+        if (!near) {
+            relatedBlockArmed = true
+            return
+        }
+        if (!relatedBlockArmed)
+            return
+        revealRelated()
+    }
+
+    function rowGap() {
+        return 48
+    }
+
     function publishRelated() {
         var ids = []
-        var rows = relatedTracks || []
+        var rows = relatedPage()
         for (var i = 0; i < rows.length; i++) {
             var id = Number(rows[i] && rows[i].id)
             if (id)
@@ -2032,6 +2142,10 @@ Item {
         indexCache = ({})
         indexShown = ""
         prefetchIndexes()
+        if (mode === "library") {
+            loadIncoming()
+            return
+        }
         if (entityPage())
             reloadPage()
         else
@@ -3058,7 +3172,9 @@ Item {
 
     function closeMode() {
         var back = savedFocus || "playlist"
-        mode = "queue"
+        var returnMode = modeReturn
+        modeReturn = ""
+        mode = returnMode === "library" ? "library" : "queue"
         artPreview = ""
         artHits = []
         artBusy = false
@@ -3071,7 +3187,7 @@ Item {
         moveBusy = false
         tagBusy = false
         playlistIdx = savedPlaylistIdx
-        pane = back
+        pane = returnMode === "library" ? "playlist" : back
         textCapture = false
         err = ""
         if (host && host.forceKeyFocus)
@@ -3875,8 +3991,9 @@ Item {
     }
 
     function clickBrowse(index) {
-        if (mode === "eq") {
+        if (mode === "eq" || mode === "library") {
             eqSaveArmed = false
+            incomingGenrePath = ""
             closeMode()
         }
         browseIdx = index
@@ -3965,6 +4082,23 @@ Item {
             if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && shift)) { cycleFocus(-1); return true }
             if (key === Qt.Key_Tab) { cycleFocus(1); return true }
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { return true }
+            return false
+        }
+        if (mode === "library") {
+            if (key === Qt.Key_Escape && incomingGenrePath) { incomingGenrePath = ""; return true }
+            if (key === Qt.Key_Escape) { onEsc(); return true }
+            if (key === Qt.Key_Up) { incomingIdx = Math.max(0, incomingIdx - 1); return true }
+            if (key === Qt.Key_Down) {
+                incomingIdx = Math.min(Math.max(0, (incomingFiles || []).length - 1), incomingIdx + 1)
+                return true
+            }
+            if (key === Qt.Key_Return || key === Qt.Key_Enter) { playIncoming(incomingIdx); return true }
+            if (text === "g" || text === "G") {
+                var genreRow = (incomingFiles || [])[incomingIdx]
+                if (genreRow && genreRow.path)
+                    toggleIncomingGenre(String(genreRow.path))
+                return true
+            }
             return false
         }
         if (mode === "tags") {
@@ -4259,6 +4393,8 @@ Item {
                     root.prefetchIndexes()
                     root.loadBrowse(root.browsePath)
                     root.refreshTrees()
+                    if (name === "import")
+                        root.loadIncoming()
                     if (root.entityPage())
                         root.reloadPage()
                 }

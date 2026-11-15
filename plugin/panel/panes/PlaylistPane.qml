@@ -54,9 +54,11 @@ Card {
 
     active: view.pane === "playlist"
     property int sideMargin: 0
+    readonly property int scrollGutter: 12
     readonly property bool likesOpen: view.shownPlaylist === "all" && view.listSource() === "shown"
     readonly property bool likesGrid: likesOpen && view.asGrid
-    readonly property bool showLibrary: view.mode === "queue" || view.mode === "tags"
+    readonly property bool showLibrary: view.mode === "queue" || view.mode === "tags" || view.mode === "eq" || view.mode === "library"
+    readonly property bool coverList: view.mode === "eq" || view.mode === "library"
     readonly property bool trackGrid: view.asGrid && pane.showLibrary && !view.indexPage()
         && (view.listSource() === "shown" || view.listSource() === "page" || view.listSource() === "search")
     readonly property bool plainHead: view.listSource() === "files" || view.listSource() === "lists"
@@ -481,11 +483,19 @@ Card {
                 anchors.top: releaseLabel.bottom
                 anchors.left: parent.left
                 anchors.right: parent.right
+                anchors.rightMargin: pane.scrollGutter
                 anchors.bottom: parent.bottom
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 model: pane.releaseColumn && view.pageData ? (view.pageData.releases || []) : []
-                ScrollBar.vertical: ThinScrollBar {}
+                ScrollBar.vertical: ThinScrollBar {
+                    parent: releaseList.parent
+                    visible: releaseList.visible
+                    anchors.top: releaseList.top
+                    anchors.bottom: releaseList.bottom
+                    anchors.left: releaseList.right
+                    anchors.leftMargin: Math.max(0, pane.scrollGutter - implicitWidth)
+                }
 
                 delegate: Item {
                     required property var modelData
@@ -562,14 +572,21 @@ Card {
             anchors.top: pane.trackHeading ? tracksLabel.bottom : head.bottom
             anchors.left: parent.left
             anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
-            anchors.rightMargin: pane.releaseColumn ? 16 : pane.sideMargin
+            anchors.rightMargin: (pane.releaseColumn ? 16 : pane.sideMargin) + pane.scrollGutter
             anchors.bottom: parent.bottom
-            visible: pane.showLibrary && !view.indexPage() && view.listSource() !== "lists" && !pane.trackGrid
+            visible: pane.showLibrary && !pane.coverList && !view.indexPage() && view.listSource() !== "lists" && !pane.trackGrid
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
             highlightFollowsCurrentItem: false
-            ScrollBar.vertical: ThinScrollBar {}
+            ScrollBar.vertical: ThinScrollBar {
+                parent: list.parent
+                visible: list.visible
+                anchors.top: list.top
+                anchors.bottom: list.bottom
+                anchors.left: list.right
+                anchors.leftMargin: Math.max(0, pane.scrollGutter - implicitWidth)
+            }
 
             function scrollBy(dy) {
                 var minY = list.originY
@@ -593,6 +610,7 @@ Card {
             onContentYChanged: {
                 if (view.reorderScroll < 0)
                     view.playlistScroll = contentY
+                view.noteRelatedScroll(contentY, height, contentHeight)
             }
 
             footer: Column {
@@ -651,7 +669,7 @@ Card {
                     }
 
                     Repeater {
-                        model: view.relatedTracks || []
+                        model: view.relatedPage()
 
                         Item {
                             id: relatedWrap
@@ -705,6 +723,30 @@ Card {
                                     onActivated: view.dismissRelated(relatedWrap.index)
                                 }
                             }
+                        }
+                    }
+
+                    Text {
+                        width: parent.width
+                        leftPadding: 8
+                        topPadding: 8
+                        bottomPadding: 10
+                        visible: view.relatedShown < (view.relatedTracks ? view.relatedTracks.length : 0)
+                        textFormat: Text.PlainText
+                        text: "more"
+                        color: moreRelatedArea.containsMouse ? Theme.withOpacity(Theme.foreground, 0.7) : Theme.withOpacity(Theme.foreground, 0.32)
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeS
+                        font.bold: true
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: 1
+
+                        MouseArea {
+                            id: moreRelatedArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: view.revealRelated()
                         }
                     }
                 }
@@ -1163,14 +1205,21 @@ Card {
             anchors.top: errLine.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.rightMargin: pane.sideMargin
+            anchors.rightMargin: pane.sideMargin + pane.scrollGutter
             anchors.bottom: parent.bottom
             visible: view.mode === "discover"
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
             highlightFollowsCurrentItem: false
-            ScrollBar.vertical: ThinScrollBar {}
+            ScrollBar.vertical: ThinScrollBar {
+                parent: discoverList.parent
+                visible: discoverList.visible
+                anchors.top: discoverList.top
+                anchors.bottom: discoverList.bottom
+                anchors.left: discoverList.right
+                anchors.leftMargin: Math.max(0, pane.scrollGutter - implicitWidth)
+            }
             model: view.discoverTracks
 
             header: Item {
@@ -1320,10 +1369,23 @@ Card {
 
         EqOverlay {
             z: 6
-            anchors.fill: parent
-            anchors.topMargin: errLine.height
-            anchors.rightMargin: pane.sideMargin
+            anchors.top: pane.trackHeading ? tracksLabel.bottom : head.bottom
+            anchors.left: parent.left
+            anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
+            anchors.rightMargin: pane.releaseColumn ? 16 : pane.sideMargin
+            anchors.bottom: parent.bottom
             visible: view.mode === "eq"
+            view: pane.view
+        }
+
+        LibraryOverlay {
+            z: 6
+            anchors.top: pane.trackHeading ? tracksLabel.bottom : head.bottom
+            anchors.left: parent.left
+            anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
+            anchors.rightMargin: pane.releaseColumn ? 16 : pane.sideMargin
+            anchors.bottom: parent.bottom
+            visible: view.mode === "library"
             view: pane.view
         }
 

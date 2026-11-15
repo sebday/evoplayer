@@ -124,157 +124,13 @@ Item {
         id: stage
         anchors.fill: parent
 
-        Column {
-            id: library
-            width: 292
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.right: parent.right
-            spacing: 10
-
-            Text {
-                width: parent.width
-                textFormat: Text.PlainText
-                text: "Library"
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSizeS
-                font.bold: true
-                font.capitalization: Font.AllUppercase
-                font.letterSpacing: 1
-            }
-            Row {
-                width: parent.width
-                height: 18
-                spacing: 10
-
-                Text {
-                    width: parent.width - (stopJob.visible ? stopJob.width + parent.spacing : 0)
-                    anchors.verticalCenter: parent.verticalCenter
-                    textFormat: Text.PlainText
-                    text: pane.libraryJobLine()
-                    color: view.libraryJob && view.libraryJob.status === "error" ? Theme.liked : Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeS
-                    elide: Text.ElideRight
-                }
-
-                EqButton {
-                    id: stopJob
-                    visible: view.libraryJob && view.libraryJob.status === "running"
-                    label: "stop"
-                    anchors.verticalCenter: parent.verticalCenter
-                    onClicked: view.cancelLibraryJob()
-                }
-            }
-
-            Text {
-                width: parent.width
-                visible: text !== ""
-                textFormat: Text.PlainText
-                text: pane.libraryJobLog()
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSizeS
-                elide: Text.ElideRight
-            }
-
-            Repeater {
-                model: [
-                    {
-                        title: "Rebuild library",
-                        detail: "Read tags and artwork back into the index.",
-                        method: "library.cache",
-                        params: { force: true }
-                    },
-                    {
-                        title: "Import incoming",
-                        detail: "File downloads from incoming into the library.",
-                        method: "library.import",
-                        params: {}
-                    },
-                    {
-                        title: "Repair artwork",
-                        detail: "Fill missing covers and thumbs.",
-                        method: "library.art.maintain",
-                        params: {}
-                    },
-                    {
-                        title: "Sync likes",
-                        detail: "Download new SoundCloud likes into incoming.",
-                        method: "library.soundcloud.download",
-                        params: { import: false }
-                    }
-                ]
-
-                Rectangle {
-                    required property var modelData
-                    width: library.width
-                    height: 58
-                    radius: 10
-                    color: Theme.foregroundFaint
-
-                    Column {
-                        anchors.left: parent.left
-                        anchors.leftMargin: 14
-                        anchors.right: run.left
-                        anchors.rightMargin: 12
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 3
-
-                        Text {
-                            width: parent.width
-                            textFormat: Text.PlainText
-                            text: modelData.title
-                            color: Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.bold: true
-                            font.pixelSize: Theme.fontSizeS
-                            elide: Text.ElideRight
-                        }
-
-                        Text {
-                            width: parent.width
-                            textFormat: Text.PlainText
-                            text: modelData.detail
-                            color: Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeS
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    EqButton {
-                        id: run
-                        anchors.right: parent.right
-                        anchors.rightMargin: 12
-                        anchors.verticalCenter: parent.verticalCenter
-                        label: view.libraryJob && view.libraryJob.status === "running" ? "busy" : "run"
-                        dim: view.libraryJob && view.libraryJob.status === "running"
-                        onClicked: {
-                            if (view.libraryJob && view.libraryJob.status === "running")
-                                return
-                            view.startLibraryJob(modelData.method, modelData.params)
-                        }
-                    }
-                }
-            }
-        }
-
-        Rectangle {
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.right: library.left
-            anchors.rightMargin: 18
-            width: 1
-            color: Theme.foregroundGhost
-        }
         Item {
             id: head
             anchors.top: parent.top
             anchors.left: parent.left
-            anchors.right: library.left
-            anchors.rightMargin: 28
+            anchors.right: parent.right
+            anchors.leftMargin: 8
+            anchors.rightMargin: 12
             height: 22
 
             Row {
@@ -327,8 +183,9 @@ Item {
             anchors.topMargin: 6
             anchors.bottom: parent.bottom
             anchors.left: parent.left
-            anchors.right: library.left
-            anchors.rightMargin: 28
+            anchors.right: parent.right
+            anchors.leftMargin: 4
+            anchors.rightMargin: 12
             spacing: 2
 
             Repeater {

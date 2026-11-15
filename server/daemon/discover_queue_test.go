@@ -24,6 +24,20 @@ func TestQueueSeedsSpreadsTheList(t *testing.T) {
 	}
 }
 
+func TestDropOwnedSimilar(t *testing.T) {
+	tracks := []soundcloud.SimilarTrack{
+		{ID: 1, Artist: "Alias", Title: "Gladiator II"},
+		{ID: 2, Artist: "Alias", Title: "Fiction II"},
+		{ID: 3, Artist: "Someone", Title: "New One"},
+	}
+	got := dropOwnedSimilar(tracks, func(id int64) bool { return id == 2 }, map[string]struct{}{
+		ownedTitleKey("alias", "Gladiator  II"): {},
+	})
+	if len(got) != 1 || got[0].ID != 3 {
+		t.Fatalf("kept = %+v", got)
+	}
+}
+
 func TestMergeSimilarRoundRobin(t *testing.T) {
 	lists := [][]soundcloud.SimilarTrack{
 		{{ID: 1, Title: "a1"}, {ID: 2, Title: "a2"}},

@@ -8,7 +8,14 @@ import (
 
 	"github.com/sebday/evoplayer/server/ipc"
 	"github.com/sebday/evoplayer/server/jobs"
+	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/soundcloud"
+	"github.com/sebday/evoplayer/server/syncarchive"
+)
+
+const (
+	relatedFetch = 50
+	relatedShow  = 20
 )
 
 func (d *Daemon) handleDiscover(req ipc.Request) (interface{}, error) {
@@ -134,11 +141,74 @@ func (d *Daemon) similarQueue(paths []string) (soundcloud.SimilarResult, error) 
 		d.discoverStore(path, res)
 		lists = append(lists, res.Tracks)
 	}
-	tracks := mergeSimilar(lists, 8)
+	tracks := mergeSimilar(lists, relatedFetch)
+	tracks = dropOwnedSimilar(tracks, d.archivedSoundCloud(), d.ownedTitleKeys())
+	if len(tracks) > relatedShow {
+		tracks = tracks[:relatedShow]
+	}
 	if len(tracks) == 0 && firstErr != nil {
 		return soundcloud.SimilarResult{}, firstErr
 	}
 	return soundcloud.SimilarResult{Tracks: tracks}, nil
+}
+
+func (d *Daemon) archivedSoundCloud() func(int64) bool {
+	archive, err := syncarchive.Load(syncarchive.Path(d.env().StateDir))
+	if err != nil || archive == nil {
+		return nil
+	}
+	return archive.HasSC
+}
+
+func (d *Daemon) ownedTitleKeys() map[string]struct{} {
+	db, err := library.EnsureDB(library.EnvFrom(d.env()))
+	if err != nil || db == nil {
+		return nil
+	}
+	rows, err := db.Query(`SELECT artist, title FROM tracks`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := map[string]struct{}{}
+	for rows.Next() {
+		var artist, title string
+		if err := rows.Scan(&artist, &title); err != nil {
+			return out
+		}
+		if key := ownedTitleKey(artist, title); key != "" {
+			out[key] = struct{}{}
+		}
+	}
+	return out
+}
+
+func ownedTitleKey(artist, title string) string {
+	artist = strings.ToLower(strings.Join(strings.Fields(artist), " "))
+	title = strings.ToLower(strings.Join(strings.Fields(title), " "))
+	if artist == "" && title == "" {
+		return ""
+	}
+	return artist + "\n" + title
+}
+
+func dropOwnedSimilar(tracks []soundcloud.SimilarTrack, hasSC func(int64) bool, titles map[string]struct{}) []soundcloud.SimilarTrack {
+	if len(tracks) == 0 {
+		return tracks
+	}
+	out := make([]soundcloud.SimilarTrack, 0, len(tracks))
+	for _, track := range tracks {
+		if hasSC != nil && hasSC(track.ID) {
+			continue
+		}
+		if key := ownedTitleKey(track.Artist, track.Title); key != "" {
+			if _, ok := titles[key]; ok {
+				continue
+			}
+		}
+		out = append(out, track)
+	}
+	return out
 }
 
 // queueSeeds picks tracks spread across the whole queue.
