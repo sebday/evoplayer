@@ -8,6 +8,7 @@ Item {
 
     readonly property var marks: ["pre", "31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
     readonly property int capH: 28
+    readonly property int bandW: Math.max(16, Math.floor((sliders.width - 20) / 12))
 
     function dbFromY(y, h) {
         var travel = Math.max(1, h - capH)
@@ -211,6 +212,132 @@ Item {
             anchors.rightMargin: 12
             spacing: 2
 
+            Item {
+                id: volSlot
+                readonly property int level: Math.round(view.volumeFrac() * 100)
+                width: pane.bandW
+                height: sliders.height
+
+                Text {
+                    id: volRead
+                    textFormat: Text.PlainText
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 14
+                    horizontalAlignment: Text.AlignHCenter
+                    text: String(volSlot.level)
+                    color: Theme.foreground
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                }
+
+                Text {
+                    id: volName
+                    textFormat: Text.PlainText
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 14
+                    horizontalAlignment: Text.AlignHCenter
+                    text: "vol"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                }
+
+                Item {
+                    id: volWell
+                    anchors.top: volRead.bottom
+                    anchors.bottom: volName.top
+                    anchors.topMargin: 4
+                    anchors.bottomMargin: 4
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+
+                    function levelFromY(y) {
+                        var travel = Math.max(1, height - pane.capH)
+                        var t = (y - pane.capH / 2) / travel
+                        if (t < 0)
+                            t = 0
+                        if (t > 1)
+                            t = 1
+                        return Math.round((1 - t) * 100)
+                    }
+
+                    Rectangle {
+                        width: 8
+                        height: parent.height
+                        radius: 3
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        color: Theme.background
+                        border.width: 1
+                        border.color: Theme.foregroundTrack
+                    }
+
+                    Rectangle {
+                        width: 2
+                        height: parent.height - 8
+                        anchors.centerIn: parent
+                        color: Theme.foregroundDivider
+                    }
+
+                    Rectangle {
+                        id: volCap
+                        width: Math.max(16, Math.min(parent.width - 2, 26))
+                        height: pane.capH
+                        radius: 3
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        y: {
+                            var travel = Math.max(0, volWell.height - pane.capH)
+                            return (1 - volSlot.level / 100) * travel
+                        }
+                        color: Theme.foregroundBorder
+                        border.width: 1
+                        border.color: Theme.foreground
+
+                        Rectangle {
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.leftMargin: 3
+                            anchors.rightMargin: 3
+                            anchors.verticalCenter: parent.verticalCenter
+                            height: 2
+                            radius: 1
+                            color: Theme.background
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        acceptedButtons: Qt.LeftButton
+                        onPressed: function(mouse) {
+                            view.focusPane("playlist")
+                            view.setVolume(volWell.levelFromY(mouse.y))
+                        }
+                        onPositionChanged: function(mouse) {
+                            if (!pressed)
+                                return
+                            view.setVolume(volWell.levelFromY(mouse.y))
+                        }
+                        onDoubleClicked: view.setVolume(100)
+                    }
+
+                    WheelHandler {
+                        onWheel: function(event) {
+                            var step = (event.modifiers & Qt.ShiftModifier) ? 15 : 5
+                            var dir = event.angleDelta.y < 0 ? -1 : 1
+                            view.setVolume(volSlot.level + dir * step)
+                        }
+                    }
+                }
+            }
+
+            Item {
+                width: 10
+                height: 1
+            }
+
             Repeater {
                 model: 11
                 Item {
@@ -219,7 +346,7 @@ Item {
                     readonly property bool focused: view.eqIdx === index
                     readonly property real gain: pane.gainAt(index)
                     readonly property color capColor: focused ? Theme.good : Theme.foregroundBorder
-                    width: Math.floor((sliders.width - 20) / 11) + (index === 1 ? 10 : 0)
+                    width: pane.bandW + (index === 1 ? 10 : 0)
                     height: sliders.height
 
                     Item {

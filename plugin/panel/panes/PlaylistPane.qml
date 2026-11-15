@@ -617,13 +617,18 @@ Card {
             }
             model: view.playlistRows()
             header: Column {
+                id: searchHead
                 width: list.width
                 spacing: 0
-                visible: view.listSource() === "search" && (view.searchArtists || []).length > 0
+                readonly property bool showArtists: view.listSource() === "search" && (view.searchArtists || []).length > 0
+                readonly property bool showAlbums: view.listSource() === "search" && (view.searchAlbums || []).length > 0
+                readonly property bool showTracks: view.listSource() === "search" && list.count > 0
+                visible: showArtists || showAlbums || showTracks
                 height: visible ? implicitHeight : 0
 
                 Text {
                     width: parent.width
+                    visible: searchHead.showArtists
                     topPadding: 8
                     bottomPadding: 6
                     leftPadding: 8
@@ -637,81 +642,114 @@ Card {
                     font.letterSpacing: 1
                 }
 
-                Repeater {
-                    model: view.searchArtists || []
+                Item {
+                    id: artistWrap
+                    width: parent.width
+                    visible: searchHead.showArtists
+                    readonly property int columns: Math.max(1, Math.floor(width / 150))
+                    readonly property int cellW: Math.max(1, Math.floor(width / columns))
+                    readonly property int cellH: cellW + 34
+                    readonly property int count: (view.searchArtists || []).length
+                    height: visible ? Math.ceil(count / columns) * cellH : 0
 
-                    delegate: Item {
-                        id: artistHit
-                        required property var modelData
-                        width: list.width
-                        height: pane.rowH
+                    GridView {
+                        anchors.fill: parent
+                        interactive: false
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        highlightFollowsCurrentItem: false
+                        model: view.searchArtists || []
+                        cellWidth: artistWrap.cellW
+                        cellHeight: artistWrap.cellH
 
-                        readonly property bool hovered: artistHover.hovered
-
-                        HoverHandler {
-                            id: artistHover
-                        }
-
-                        Rectangle {
-                            anchors.fill: parent
-                            anchors.topMargin: 1
-                            anchors.bottomMargin: 1
-                            radius: 6
-                            color: artistHit.hovered ? Theme.foregroundWash : "transparent"
-                        }
-
-                        Cover {
-                            x: 6
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: pane.artSide
-                            height: width
+                        delegate: IndexTile {
+                            required property var modelData
+                            width: artistWrap.cellW
+                            height: artistWrap.cellH
+                            view: pane.view
+                            row: modelData
                             round: true
-                            name: String(artistHit.modelData.name || "")
-                            source: view.rowThumbUrl(artistHit.modelData)
-                            decodeSize: 96
-                        }
-
-                        Column {
-                            anchors.left: parent.left
-                            anchors.leftMargin: pane.artSide + 18
-                            anchors.right: parent.right
-                            anchors.rightMargin: 16
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 2
-
-                            Text {
-                                width: parent.width
-                                textFormat: Text.PlainText
-                                text: String(artistHit.modelData.name || "")
-                                elide: Text.ElideRight
-                                color: Theme.foreground
-                                font.family: Theme.fontFamily
-                                font.pointSize: pane.termPt
-                                font.bold: true
-                            }
-
-                            Text {
-                                width: parent.width
-                                textFormat: Text.PlainText
-                                text: view.counted(artistHit.modelData.count, "track")
-                                elide: Text.ElideRight
-                                color: Theme.muted
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSizeS
-                            }
-                        }
-
-                        MouseArea {
-                            anchors.fill: parent
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: view.openArtist(String(artistHit.modelData.name || ""))
+                            starred: !!modelData.starred
+                            onActivated: pane.view.openArtist(String(modelData.name || ""))
+                            onContextActivated: pane.view.openFieldTags("artist", String(modelData.name || ""))
                         }
                     }
                 }
 
                 Item {
                     width: parent.width
-                    height: 8
+                    visible: searchHead.showArtists
+                    height: visible ? 8 : 0
+                }
+
+                Text {
+                    width: parent.width
+                    visible: searchHead.showAlbums
+                    topPadding: 8
+                    bottomPadding: 6
+                    leftPadding: 8
+                    textFormat: Text.PlainText
+                    text: "Albums"
+                    color: Theme.withOpacity(Theme.foreground, 0.38)
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                    font.bold: true
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 1
+                }
+
+                Item {
+                    id: albumWrap
+                    width: parent.width
+                    visible: searchHead.showAlbums
+                    readonly property int columns: Math.max(1, Math.floor(width / 150))
+                    readonly property int cellW: Math.max(1, Math.floor(width / columns))
+                    readonly property int cellH: cellW + 34
+                    readonly property int count: (view.searchAlbums || []).length
+                    height: visible ? Math.ceil(count / columns) * cellH : 0
+
+                    GridView {
+                        anchors.fill: parent
+                        interactive: false
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        highlightFollowsCurrentItem: false
+                        model: view.searchAlbums || []
+                        cellWidth: albumWrap.cellW
+                        cellHeight: albumWrap.cellH
+
+                        delegate: IndexTile {
+                            required property var modelData
+                            width: albumWrap.cellW
+                            height: albumWrap.cellH
+                            view: pane.view
+                            row: modelData
+                            onActivated: pane.view.openAlbum(String(modelData.name || ""), "")
+                            onContextActivated: pane.view.openFieldTags("album", String(modelData.name || ""))
+                        }
+                    }
+                }
+
+                Item {
+                    width: parent.width
+                    visible: searchHead.showAlbums
+                    height: visible ? 8 : 0
+                }
+
+                Text {
+                    width: parent.width
+                    visible: searchHead.showTracks
+                    topPadding: 8
+                    bottomPadding: 6
+                    leftPadding: 8
+                    textFormat: Text.PlainText
+                    text: "Tracks"
+                    color: Theme.withOpacity(Theme.foreground, 0.38)
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                    font.bold: true
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 1
                 }
             }
             onHeightChanged: view.playlistPage = Math.max(1, Math.floor(height / pane.rowH))
@@ -727,14 +765,14 @@ Card {
                 spacing: 0
 
                 Item {
-                    readonly property bool searchArtists: view.listSource() === "search" && (view.searchArtists || []).length > 0
+                    readonly property bool searchSections: view.listSource() === "search" && ((view.searchArtists || []).length > 0 || (view.searchAlbums || []).length > 0)
                     width: parent.width
-                    height: list.count === 0 && !searchArtists ? 48 : 12
+                    height: list.count === 0 && !searchSections ? 48 : 12
 
                     Text {
                         anchors.centerIn: parent
                         textFormat: Text.PlainText
-                        visible: list.count === 0 && !parent.searchArtists
+                        visible: list.count === 0 && !parent.searchSections
                         text: view.pageBusy ? "loading…"
                             : (view.listSource() === "search" ? "no matches"
                             : (view.listSource() === "files" ? "empty folder" : "no tracks"))
@@ -1157,8 +1195,14 @@ Card {
 
                             MouseArea {
                                 anchors.fill: parent
+                                acceptedButtons: Qt.LeftButton | Qt.RightButton
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: {
+                                onClicked: function(mouse) {
+                                    if (mouse.button === Qt.RightButton) {
+                                        if (!row.folder && !row.listPick)
+                                            view.editTrack(String(modelData.path || ""))
+                                        return
+                                    }
                                     if (row.playing) {
                                         view.togglePlay()
                                         return
@@ -1214,6 +1258,7 @@ Card {
                                 hoverColor: row.filled ? Theme.background : Theme.foreground
                                 font.pixelSize: Theme.fontSizeS
                                 onActivated: view.openAlbum(row.album, modelData.path)
+                                onContextActivated: view.openFieldTags("album", row.album)
                             }
                         }
 

@@ -69,6 +69,34 @@ func UpdateTrackTags(env Env, path string, patch TrackTagsPatch) (Track, error) 
 	})
 }
 
+// UpdateArtistTags writes the artist and the tag list on each path in one pass.
+func UpdateArtistTags(env Env, artist, tagList string, paths []string) (int, error) {
+	fields := map[string]string{
+		"artist": strings.TrimSpace(artist),
+		"tags":   strings.TrimSpace(tagList),
+	}
+	n := 0
+	seen := map[string]struct{}{}
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		if _, err := writeTagFields(env, path, fields); err != nil {
+			return n, err
+		}
+		n++
+	}
+	if n == 0 {
+		return 0, fmt.Errorf("path required")
+	}
+	return n, nil
+}
+
 // UpdateSharedTags writes album and year on each path and leaves the other tags alone.
 func UpdateSharedTags(env Env, paths []string, album, year string) (int, error) {
 	fields := map[string]string{

@@ -3,3 +3,4 @@ BrowsePane 1.0 BrowsePane.qml
 PlaylistPane 1.0 PlaylistPane.qml
 PageHeader 1.0 PageHeader.qml
 IndexGrid 1.0 IndexGrid.qml
+IndexTile 1.0 IndexTile.qml

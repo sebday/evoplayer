@@ -93,12 +93,29 @@ func ListIndex(env Env) ([]IndexItem, error) {
 		if err != nil {
 			return nil, err
 		}
+		seen := map[string]struct{}{}
 		for _, genre := range genres {
+			seen[genre.Name] = struct{}{}
 			out = append(out, IndexItem{
 				Name:    genre.Name,
 				Count:   genre.Count,
 				Kind:    "genre",
 				Starred: isStarred(stars, genre.Name),
+			})
+		}
+		tagLists, err := library.TagPlaylists(db)
+		if err != nil {
+			return nil, err
+		}
+		for _, tag := range tagLists {
+			if _, ok := seen[tag.Name]; ok {
+				continue
+			}
+			out = append(out, IndexItem{
+				Name:    tag.Name,
+				Count:   tag.Count,
+				Kind:    "tag",
+				Starred: isStarred(stars, tag.Name),
 			})
 		}
 	}
@@ -375,6 +392,11 @@ SELECT path FROM tracks WHERE liked=1 ORDER BY path LIMIT ? OFFSET ?`, limit, of
 		}, true, nil
 	default:
 		if paths, err := library.LikedPathsForGenreTag(db, name); err != nil {
+			return TracksPage{}, true, err
+		} else if len(paths) > 0 {
+			return paginatePaths(env, paths, name, offset, limit), true, nil
+		}
+		if paths, err := library.PathsForTag(db, name); err != nil {
 			return TracksPage{}, true, err
 		} else if len(paths) > 0 {
 			return paginatePaths(env, paths, name, offset, limit), true, nil

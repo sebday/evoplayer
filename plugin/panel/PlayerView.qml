@@ -103,6 +103,7 @@ Item {
     property string searchQuery: ""
     property var searchHits: []
     property var searchArtists: []
+    property var searchAlbums: []
     property int searchGen: 0
 
     // An open artist, album, genre, or year page, or the artists / genres directory.
@@ -177,6 +178,7 @@ Item {
     property string tagGenre: ""
     property string tagLabel: ""
     property string tagTags: ""
+    property string tagTagsInitial: ""
     property string tagField: ""
     property string tagFieldValue: ""
     property var tagPaths: []
@@ -438,6 +440,7 @@ Item {
         rows.push({ kind: "lists", type: "", label: "Playlists", path: "", count: others, id: "playlists", depth: 0 })
         rows.push({ kind: "page", type: "", label: "Genres", path: "", count: indexCount("genre"), id: "genres", depth: 0 })
         rows.push({ kind: "page", type: "", label: "Artists", path: "", count: indexCount("artist"), id: "artists", depth: 0 })
+        rows.push({ kind: "page", type: "", label: "Albums", path: "", count: indexCount("album"), id: "albums", depth: 0 })
         sidebar = rows
         var tab = tabIndexForView()
         if (tab >= 0)
@@ -448,7 +451,7 @@ Item {
         var id = "current"
         if (libraryView === "lists")
             id = "playlists"
-        else if (page && (page.kind === "artists" || page.kind === "genres"))
+        else if (page && (page.kind === "artists" || page.kind === "genres" || page.kind === "albums"))
             id = page.kind
         else if (shownPlaylist)
             id = shownPlaylist
@@ -1827,6 +1830,7 @@ Item {
             searchQuery = ""
             searchHits = []
             searchArtists = []
+            searchAlbums = []
             searchGen++
             textCapture = false
         }
@@ -1863,7 +1867,7 @@ Item {
     }
 
     function indexPage() {
-        return !!page && (page.kind === "artists" || page.kind === "genres")
+        return !!page && (page.kind === "artists" || page.kind === "genres" || page.kind === "albums")
     }
 
     function entityPage() {
@@ -1981,7 +1985,7 @@ Item {
         playlistPicks = []
         textCapture = false
         pageBusy = false
-        if (spec.kind === "artists" || spec.kind === "genres") {
+        if (spec.kind === "artists" || spec.kind === "genres" || spec.kind === "albums") {
             pageData = null
             pageTracks = []
             page = spec
@@ -2092,6 +2096,7 @@ Item {
             reloadPage()
         else
             showNowPlaying()
+        loadPlaylistIndex()
     }
 
     function indexCount(kind) {
@@ -2100,7 +2105,7 @@ Item {
     }
 
     function prefetchIndexes() {
-        var kinds = ["artist", "genre"]
+        var kinds = ["artist", "genre", "album"]
         for (var i = 0; i < kinds.length; i++)
             prefetchIndex(kinds[i])
     }
@@ -2115,6 +2120,8 @@ Item {
             root.rebuildSidebar()
             if (kind === "artist" && root.searchActive())
                 root.refreshSearchArtists()
+            if (kind === "album" && root.searchActive())
+                root.refreshSearchAlbums()
             if (root.indexPage() && root.indexKind() === kind)
                 root.applyIndexFilter()
         })
@@ -2123,6 +2130,8 @@ Item {
     function indexKind() {
         if (page && page.kind === "genres")
             return "genre"
+        if (page && page.kind === "albums")
+            return "album"
         return "artist"
     }
 
@@ -2467,6 +2476,32 @@ Item {
             return
         }
         playTrackList(playlistRows(), "")
+    }
+
+    function headerAdd() {
+        var items = playlistRows()
+        var paths = []
+        var queued = {}
+        var existing = queue || []
+        for (var i = 0; i < existing.length; i++) {
+            var have = String(existing[i] && existing[i].path || "")
+            if (have)
+                queued[have] = true
+        }
+        for (var j = 0; j < items.length; j++) {
+            var path = String(items[j] && items[j].path || "")
+            if (!path || queued[path])
+                continue
+            queued[path] = true
+            paths.push(path)
+        }
+        if (!paths.length)
+            return
+        ipc("queue.append", { paths: paths }, function() {
+            root.err = ""
+            root.loadQueue()
+            root.loadPlaylistIndex()
+        })
     }
 
     function headerShuffle() {
@@ -3236,6 +3271,7 @@ Item {
         searchQuery = ""
         searchHits = []
         searchArtists = []
+        searchAlbums = []
         searchGen++
         pane = "playlist"
         textCapture = false
@@ -3258,10 +3294,13 @@ Item {
         if (!q) {
             searchHits = []
             searchArtists = []
+            searchAlbums = []
             return
         }
         refreshSearchArtists()
+        refreshSearchAlbums()
         prefetchIndex("artist")
+        prefetchIndex("album")
         ipc("library.search", { mode: "search", query: q }, function(data) {
             if (gen !== root.searchGen)
                 return
@@ -3299,6 +3338,34 @@ Item {
         if (out.length > 8)
             out = out.slice(0, 8)
         searchArtists = out
+    }
+
+    function refreshSearchAlbums() {
+        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "").toLowerCase()
+        if (!q) {
+            searchAlbums = []
+            return
+        }
+        var all = (indexCache && indexCache.album) || []
+        var out = []
+        for (var i = 0; i < all.length; i++) {
+            var name = String(all[i] && all[i].name || "")
+            if (name.toLowerCase().indexOf(q) < 0)
+                continue
+            out.push(all[i])
+        }
+        out.sort(function(a, b) {
+            var an = String(a && a.name || "").toLowerCase()
+            var bn = String(b && b.name || "").toLowerCase()
+            var as = an.indexOf(q) === 0 ? 0 : 1
+            var bs = bn.indexOf(q) === 0 ? 0 : 1
+            if (as !== bs)
+                return as - bs
+            return (Number(b && b.count) || 0) - (Number(a && a.count) || 0)
+        })
+        if (out.length > 8)
+            out = out.slice(0, 8)
+        searchAlbums = out
     }
 
     function openMove() {
@@ -3425,6 +3492,10 @@ Item {
             root.tagPaths = paths
             root.tagScope = paths.length + " tracks · " + value
             root.tagPath = String(paths[0] || "")
+            root.tagTags = ""
+            if (field === "artist" && data.tags_uniform)
+                root.tagTags = String(data.tags || "")
+            root.tagTagsInitial = root.tagTags
             root.tagBusy = false
             root.tagFocus = 0
             root.pushOverlay("tags")
@@ -3432,9 +3503,11 @@ Item {
     }
 
     function tagLimit() {
+        if (tagField === "artist")
+            return 2
         if (tagField)
             return 1
-        return tagMany ? 2 : 5
+        return tagMany ? 2 : 6
     }
 
     function moveTag(delta) {
@@ -3457,11 +3530,14 @@ Item {
             if (!fieldPaths.length)
                 return
             tagBusy = true
-            ipc("library.track.tags.set_field", {
+            var params = {
                 field: tagField,
                 value: tagFieldValue,
                 paths: fieldPaths
-            }, function() {
+            }
+            if (tagField === "artist" && tagTags !== tagTagsInitial)
+                params.tags = tagTags
+            ipc("library.track.tags.set_field", params, function() {
                 root.tagBusy = false
                 root.err = ""
                 root.closeMode()

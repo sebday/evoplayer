@@ -367,18 +367,34 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if paths == nil {
 			paths = []string{}
 		}
-		return map[string]any{"paths": paths}, nil
+		out := map[string]any{"paths": paths}
+		if q.Field == "artist" {
+			list, uniform, err := library.SharedTagList(db, paths)
+			if err != nil {
+				return nil, err
+			}
+			out["tags"] = list
+			out["tags_uniform"] = uniform
+		}
+		return out, nil
 	case "library.track.tags.set_field":
 		var one struct {
 			Field string   `json:"field"`
 			Value string   `json:"value"`
 			Paths []string `json:"paths"`
+			Tags  *string  `json:"tags"`
 		}
 		if err := ipc.DecodeParams(req.Params, &one); err != nil {
 			return nil, err
 		}
 		libEnv := library.EnvFrom(d.env())
-		n, err := library.UpdateField(libEnv, one.Field, one.Value, one.Paths)
+		var n int
+		var err error
+		if one.Tags != nil && one.Field == "artist" {
+			n, err = library.UpdateArtistTags(libEnv, one.Value, *one.Tags, one.Paths)
+		} else {
+			n, err = library.UpdateField(libEnv, one.Field, one.Value, one.Paths)
+		}
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}

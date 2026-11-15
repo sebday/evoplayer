@@ -130,7 +130,14 @@ Column {
 
                 Text {
                     id: titleText
-                    width: Math.min(implicitWidth, titleRow.width - (artistFav.visible ? artistFav.width + titleRow.spacing : 0))
+                    width: {
+                        var spare = titleRow.width
+                        if (pageActions.visible)
+                            spare -= pageActions.width + titleRow.spacing
+                        if (artistFav.visible)
+                            spare -= artistFav.width + titleRow.spacing
+                        return Math.min(implicitWidth, Math.max(0, spare))
+                    }
                     textFormat: Text.PlainText
                     text: hero.info.title
                     color: hero.onBanner
@@ -140,6 +147,31 @@ Column {
                     font.family: Theme.fontFamily
                     font.bold: true
                     font.pixelSize: Theme.fontSize3xl
+                }
+
+                Item {
+                    id: pageActions
+                    visible: !hero.queueHeader
+                    width: visible ? actionRow.implicitWidth : 0
+                    height: titleText.height
+
+                    Row {
+                        id: actionRow
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 6
+
+                        Chip {
+                            text: "▶"
+                            color: hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1)
+                            onActivated: hero.view.headerPlay()
+                        }
+
+                        Chip {
+                            text: "+"
+                            color: hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1)
+                            onActivated: hero.view.headerAdd()
+                        }
+                    }
                 }
 
                 Text {
@@ -220,14 +252,7 @@ Column {
             Flow {
                 width: parent.width
                 spacing: 8
-                visible: !hero.queueHeader
-
-                Chip {
-                    text: "play all"
-                    prefix: "▶"
-                    color: hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1)
-                    onActivated: hero.view.headerPlay()
-                }
+                visible: !hero.queueHeader && hero.entity && hero.pageKind !== "genre" && (hero.entityData.genres || []).length > 0
 
                 Repeater {
                     model: hero.entity && hero.pageKind !== "genre" ? (hero.entityData.genres || []) : []

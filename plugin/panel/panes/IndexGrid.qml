@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import "../compat"
-import "../widgets"
 
 Item {
     id: root
@@ -76,100 +75,23 @@ Item {
             }
         }
 
-        delegate: Item {
+        delegate: IndexTile {
             required property int index
             required property var modelData
 
             width: grid.cellWidth
             height: grid.cellHeight
-
-            readonly property bool selected: root.view.pane === "playlist" && !root.view.textCapture && index === root.view.indexIdx
-            readonly property bool hot: cellArea.containsMouse || selected
-
-            Rectangle {
-                anchors.fill: parent
-                anchors.margins: 4
-                radius: 8
-                color: selected ? Theme.withOpacity(Theme.border, 0.16) : (cellArea.containsMouse ? Theme.foregroundWash : "transparent")
-                border.width: selected ? 1 : 0
-                border.color: Theme.border
+            view: root.view
+            row: modelData
+            round: root.artists
+            starred: root.artists && !!modelData.starred
+            selected: root.view.pane === "playlist" && !root.view.textCapture && index === root.view.indexIdx
+            onActivated: {
+                root.view.indexIdx = index
+                root.view.focusPane("playlist")
+                root.view.openIndexAt(index)
             }
-
-            Cover {
-                id: face
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.top
-                anchors.topMargin: 12
-                width: parent.width - 36
-                height: width
-                round: root.artists
-                corner: 6
-                name: String(modelData.name || "")
-                source: root.view.rowThumbUrl(modelData)
-                decodeSize: Math.ceil(Math.max(96, grid.cellWidth - 36) * Screen.devicePixelRatio)
-                scale: hot ? 1.04 : 1
-
-                Behavior on scale {
-                    NumberAnimation { duration: Theme.motionFast }
-                }
-            }
-
-            Text {
-                visible: root.artists && !!modelData.starred
-                anchors.right: face.right
-                anchors.top: face.top
-                anchors.rightMargin: 6
-                anchors.topMargin: 4
-                textFormat: Text.PlainText
-                text: "♥"
-                color: Theme.liked
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSizeM
-            }
-
-            Text {
-                id: nameText
-                anchors.top: face.bottom
-                anchors.topMargin: 8
-                anchors.horizontalCenter: parent.horizontalCenter
-                width: parent.width - 16
-                horizontalAlignment: Text.AlignHCenter
-                textFormat: Text.PlainText
-                text: String(modelData.name || "")
-                elide: Text.ElideRight
-                color: hot ? Theme.foreground : Theme.withOpacity(Theme.foreground, 0.85)
-                font.family: Theme.fontFamily
-                font.bold: true
-                font.pixelSize: Theme.fontSizeM
-            }
-
-            Text {
-                anchors.top: nameText.bottom
-                anchors.topMargin: 2
-                anchors.horizontalCenter: parent.horizontalCenter
-                textFormat: Text.PlainText
-                text: root.view.counted(modelData.count, "track")
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSizeXs
-            }
-
-            MouseArea {
-                id: cellArea
-                anchors.fill: parent
-                hoverEnabled: true
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                cursorShape: Qt.PointingHandCursor
-                onClicked: function(mouse) {
-                    if (mouse.button === Qt.RightButton) {
-                        root.view.openFieldTags(root.view.indexKind(), String(modelData.name || ""))
-                        return
-                    }
-                    root.view.indexIdx = index
-                    root.view.focusPane("playlist")
-                    root.view.openIndexAt(index)
-                }
-            }
+            onContextActivated: root.view.openFieldTags(root.view.indexKind(), String(modelData.name || ""))
         }
     }
 }
