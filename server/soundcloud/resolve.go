@@ -25,6 +25,8 @@ type Track struct {
 	CreatedAt    string `json:"created_at"`
 	ArtworkURL   string `json:"artwork_url"`
 	Duration     int64  `json:"duration"`
+	Plays        int64  `json:"playback_count"`
+	Likes        int64  `json:"likes_count"`
 	Policy       string `json:"policy"`
 	Streamable   *bool  `json:"streamable"`
 	User         struct {

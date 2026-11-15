@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Effects
 import "../compat"
 import "../widgets"
 
@@ -34,118 +33,19 @@ Column {
         width: hero.width
         height: 196
 
-        Rectangle {
-            id: bannerBase
-            anchors.fill: parent
-            radius: 8
-            color: Theme.mantle
-        }
-
-        Image {
-            id: blurSource
+        BlurBackdrop {
             anchors.fill: parent
             source: hero.info.blur || ""
-            fillMode: Image.PreserveAspectCrop
-            asynchronous: true
-            sourceSize.width: 160
-            sourceSize.height: 160
-            visible: false
         }
 
-        MultiEffect {
-            anchors.fill: parent
-            source: blurSource
-            visible: blurSource.status === Image.Ready && hero.info.blur !== ""
-            autoPaddingEnabled: false
-            blurEnabled: true
-            blur: 1.0
-            blurMax: 64
-            saturation: 0.15
-            maskEnabled: true
-            maskSource: bannerMask
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 1.0
-        }
-
-        Item {
-            id: bannerMask
-            anchors.fill: parent
-            layer.enabled: true
-            visible: false
-
-            Rectangle {
-                anchors.fill: parent
-                radius: 8
-            }
-        }
-
-        Rectangle {
-            anchors.fill: parent
-            radius: 8
-            gradient: Gradient {
-                orientation: Gradient.Horizontal
-                GradientStop { position: 0.0; color: Theme.withOpacity(Theme.background, 0.86) }
-                GradientStop { position: 0.6; color: Theme.withOpacity(Theme.background, 0.62) }
-                GradientStop { position: 1.0; color: Theme.withOpacity(Theme.background, 0.35) }
-            }
-        }
-
-        Item {
+        PlayCircle {
             id: playCircle
             anchors.left: parent.left
             anchors.leftMargin: 22
             anchors.top: parent.top
             anchors.topMargin: 24
-            width: 56
-            height: 56
-
-            Rectangle {
-                anchors.fill: parent
-                radius: width / 2
-                color: playArea.containsMouse ? Theme.mixColors(Theme.border, Theme.foreground, 0.2) : Theme.border
-                scale: playArea.pressed ? 0.94 : 1
-
-                Behavior on scale {
-                    NumberAnimation { duration: Theme.motionFast }
-                }
-            }
-
-            Canvas {
-                id: playGlyph
-                anchors.fill: parent
-                property bool pause: hero.showPause
-                onPauseChanged: requestPaint()
-                onWidthChanged: requestPaint()
-                onPaint: {
-                    var ctx = getContext("2d")
-                    ctx.clearRect(0, 0, width, height)
-                    ctx.fillStyle = Theme.background
-                    var s = width
-                    var cx = s / 2
-                    var cy = s / 2
-                    if (pause) {
-                        var w = s * 0.1
-                        var h = s * 0.34
-                        ctx.fillRect(cx - w * 1.4, cy - h / 2, w, h)
-                        ctx.fillRect(cx + w * 0.4, cy - h / 2, w, h)
-                        return
-                    }
-                    ctx.beginPath()
-                    ctx.moveTo(cx - s * 0.12, cy - s * 0.19)
-                    ctx.lineTo(cx - s * 0.12, cy + s * 0.19)
-                    ctx.lineTo(cx + s * 0.2, cy)
-                    ctx.closePath()
-                    ctx.fill()
-                }
-            }
-
-            MouseArea {
-                id: playArea
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: hero.view.headerPlay()
-            }
+            pause: hero.showPause
+            onActivated: hero.view.headerPlay()
         }
 
         Column {

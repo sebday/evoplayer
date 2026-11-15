@@ -1,7 +1,11 @@
 module evoPlayer.widgets
 ArtPickerOverlay 1.0 ArtPickerOverlay.qml
+Banner 1.0 Banner.qml
+BlurBackdrop 1.0 BlurBackdrop.qml
 Chip 1.0 Chip.qml
 Cover 1.0 Cover.qml
 LinkText 1.0 LinkText.qml
+PlayCircle 1.0 PlayCircle.qml
 PlayerCavaBars 1.0 PlayerCavaBars.qml
+SoundRow 1.0 SoundRow.qml
 WaveformViz 1.0 WaveformViz.qml

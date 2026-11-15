@@ -1,20 +1,27 @@
 import QtQuick
+import QtQuick.Controls
 import "../compat"
+import "../widgets"
 
 Item {
     id: pane
 
     required property var view
 
-    readonly property int artSide: 32
-    readonly property int rowH: artSide + 8
+    readonly property int artSide: 46
     readonly property bool onResults: view.downloadHit >= 0
     readonly property bool focused: view.pane === "playlist"
+    readonly property bool linkTyped: view.isDownloadLink(view.downloadQuery)
+    readonly property var incoming: view.downloadFiles || []
 
-    FontMetrics {
-        id: metaFont
+    component SectionLabel: Text {
+        textFormat: Text.PlainText
+        color: Theme.muted
         font.family: Theme.fontFamily
-        font.pointSize: 9
+        font.pixelSize: Theme.fontSizeS
+        font.bold: true
+        font.capitalization: Font.AllUppercase
+        font.letterSpacing: 1
     }
 
     component FieldInput: Item {
@@ -22,10 +29,10 @@ Item {
 
         property int index: 0
         property string placeholder: ""
+        readonly property bool editing: field.activeFocus
         signal edited(string text)
         signal accepted()
 
-        width: parent ? parent.width : 0
         height: 24
 
         Text {
@@ -35,7 +42,7 @@ Item {
             text: box.placeholder
             color: Theme.muted
             font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeM
+            font.pixelSize: Theme.fontSizeL
             verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
         }
@@ -45,7 +52,7 @@ Item {
             anchors.fill: parent
             color: Theme.foreground
             font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeM
+            font.pixelSize: Theme.fontSizeL
             clip: true
             selectByMouse: true
             selectionColor: Theme.good
@@ -82,206 +89,254 @@ Item {
         }
     }
 
-    component NoteLine: Text {
-        width: parent ? parent.width : 0
-        textFormat: Text.PlainText
-        text: pane.view.downloadNote
-        color: Theme.muted
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSizeS
-        wrapMode: Text.Wrap
-    }
+    Banner {
+        id: banner
+        width: parent.width
+        caption: "download"
+        title: "Get music"
+        stats: {
+            if (view.downloadNote)
+                return view.downloadNote
+            var n = (view.downloadHits || []).length
+            if (n)
+                return view.counted(n, "result") + " on soundcloud"
+            return "search soundcloud, or paste a soundcloud / youtube link"
+        }
+        art: view.downloadPreviewId && view.isPreviewing(view.downloadPreviewId) ? view.downloadPreviewArt : ""
+        showPlay: false
 
-    Fieldset {
-        id: downloadSet
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        height: downloadCol.implicitHeight + 16 + (hints.length > 0 ? 16 : 10)
-        number: 3
-        legend: "download"
-        active: pane.focused && !pane.onResults
-        hints: pane.onResults ? [] : view.playlistHints()
-
-        Column {
-            id: downloadCol
+        Rectangle {
+            id: searchPill
             width: parent.width
-            spacing: 4
+            height: 40
+            radius: height / 2
+            color: Theme.withOpacity(Theme.background, 0.7)
+            border.width: 1
+            border.color: queryBox.editing ? Theme.border : Theme.foregroundDivider
+
+            Text {
+                id: glyph
+                anchors.left: parent.left
+                anchors.leftMargin: 16
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                text: pane.linkTyped ? "↓" : "›"
+                color: queryBox.editing ? Theme.border : Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeXl
+            }
 
             FieldInput {
                 id: queryBox
+                anchors.left: glyph.right
+                anchors.leftMargin: 10
+                anchors.right: goChip.visible ? goChip.left : parent.right
+                anchors.rightMargin: goChip.visible ? 10 : 18
+                anchors.verticalCenter: parent.verticalCenter
                 index: 0
-                placeholder: "Search youtube, soundcloud or download a link"
+                placeholder: "artist, track, or a link"
                 onEdited: function(text) {
                     if (view.downloadQuery !== text)
                         view.downloadQuery = text
                 }
                 onAccepted: view.runDownloadBox()
             }
+
+            MouseArea {
+                anchors.fill: queryBox
+                cursorShape: Qt.IBeamCursor
+                visible: !queryBox.editing
+                onClicked: {
+                    view.focusPane("playlist")
+                    view.downloadHit = -1
+                    queryBox.grab()
+                }
+            }
+
+            Chip {
+                id: goChip
+                anchors.right: parent.right
+                anchors.rightMargin: 9
+                anchors.verticalCenter: parent.verticalCenter
+                visible: String(view.downloadQuery || "").replace(/^\s+|\s+$/g, "") !== ""
+                text: pane.linkTyped ? "download" : "search"
+                inverted: true
+                color: hovered ? Theme.mixColors(Theme.border, Theme.foreground, 0.2) : Theme.border
+                onActivated: view.runDownloadBox()
+            }
+        }
+
+        Row {
+            spacing: 8
+
+            Chip {
+                text: "sync soundcloud likes"
+                color: hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1)
+                onActivated: view.syncLikes()
+            }
         }
     }
 
-    Fieldset {
+    ListView {
+        id: hits
+        anchors.top: banner.bottom
+        anchors.topMargin: 14
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: downloadSet.bottom
-        anchors.topMargin: view.paneGap
         anchors.bottom: parent.bottom
-        legend: "results"
-        active: pane.focused && pane.onResults
-        hints: pane.onResults ? view.playlistHints() : []
-
-        NoteLine {
-            id: searchNote
-            anchors.top: parent.top
-            visible: view.downloadNote !== ""
-            height: visible ? implicitHeight : 0
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        highlightMoveDuration: 0
+        highlightFollowsCurrentItem: false
+        model: view.downloadHits || []
+        ScrollBar.vertical: ScrollBar {
+            policy: ScrollBar.AsNeeded
+            implicitWidth: 7
+            leftPadding: 3
+            rightPadding: 1
+            contentItem: Rectangle {
+                implicitWidth: 3
+                radius: width / 2
+                color: Theme.muted
+                opacity: 0.5
+            }
+            background: Item {}
         }
 
-        Flickable {
-            id: logView
-            anchors.top: searchNote.bottom
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.topMargin: searchNote.height > 0 ? 4 : 0
-            readonly property real cap: hits.count > 0 ? parent.height * 0.45 : Math.max(0, parent.height - searchNote.height - anchors.topMargin)
-            height: logCol.implicitHeight > 0 ? Math.min(logCol.implicitHeight, cap) : 0
-            visible: height > 0
-            contentWidth: width
-            contentHeight: logCol.implicitHeight
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            onContentHeightChanged: {
-                if (contentHeight > height)
-                    contentY = contentHeight - height
+        header: Column {
+            width: hits.width
+            spacing: 8
+            bottomPadding: hits.count > 0 ? 6 : 0
+            onHeightChanged: {
+                if (view.downloadHit <= 0)
+                    Qt.callLater(hits.positionViewAtBeginning)
+            }
+
+            Rectangle {
+                width: parent.width
+                height: logView.height + 20
+                visible: view.downloadLog !== ""
+                radius: 8
+                color: Theme.mantle
+
+                Flickable {
+                    id: logView
+                    x: 12
+                    y: 10
+                    width: parent.width - 24
+                    height: Math.min(logText.implicitHeight, 6 * 16)
+                    contentWidth: width
+                    contentHeight: logText.implicitHeight
+                    clip: true
+                    boundsBehavior: Flickable.StopAtBounds
+                    onContentHeightChanged: {
+                        if (contentHeight > height)
+                            contentY = contentHeight - height
+                    }
+
+                    Text {
+                        id: logText
+                        width: logView.width
+                        textFormat: Text.PlainText
+                        text: view.downloadLog
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeS
+                        wrapMode: Text.Wrap
+                    }
+                }
+            }
+
+            SectionLabel {
+                visible: hits.count > 0
+                topPadding: view.downloadLog !== "" ? 6 : 0
+                text: "soundcloud"
+            }
+        }
+
+        delegate: SoundRow {
+            id: hitRow
+            required property int index
+            required property var modelData
+
+            width: hits.width
+            artSide: pane.artSide
+            art: view.soundcloudArtURL(modelData.artwork)
+            upper: String(modelData.artist || "")
+            title: String(modelData.title || "")
+            genre: String(modelData.genre || "")
+            plays: Number(modelData.plays) || 0
+            likes: Number(modelData.likes) || 0
+            year: modelData.year ? String(modelData.year) : ""
+            clock: view.trackClock(modelData)
+            selected: pane.focused && view.downloadHit === index
+            current: view.isPreviewing(modelData.id)
+            audible: view.playing
+            onClicked: {
+                view.downloadHit = index
+                view.focusPane("playlist")
+            }
+            onActivated: view.downloadAction(index, "play")
+            onPlayRequested: view.downloadAction(index, "play")
+
+            Chip {
+                text: "download"
+                prefix: "↓"
+                inverted: hitRow.filled
+                onActivated: view.downloadAction(hitRow.index, "download")
+            }
+        }
+
+        footer: Column {
+            width: hits.width
+            topPadding: hits.count > 0 ? 18 : 0
+            spacing: 8
+            visible: pane.incoming.length > 0
+
+            SectionLabel {
+                text: "recent downloads  " + pane.incoming.length
             }
 
             Column {
-                id: logCol
-                width: logView.width
-                spacing: 2
-
-                Text {
-                    textFormat: Text.PlainText
-                    width: logCol.width
-                    visible: view.downloadLog !== ""
-                    text: view.downloadLog
-                    color: Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeS
-                    wrapMode: Text.Wrap
-                }
+                width: parent.width
 
                 Repeater {
-                    model: view.downloadFiles || []
+                    model: pane.incoming
 
-                    Text {
+                    SoundRow {
                         required property var modelData
-                        textFormat: Text.PlainText
-                        width: logCol.width
-                        elide: Text.ElideRight
-                        text: view.trackLabel(modelData)
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeM
-                    }
-                }
-            }
-        }
 
-        ListView {
-            id: hits
-            anchors.top: logView.bottom
-            anchors.topMargin: logView.height > 0 ? 4 : 0
-            anchors.bottom: parent.bottom
-            width: parent.width
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            highlightMoveDuration: 0
-            model: view.downloadHits || []
-
-            delegate: Item {
-                required property int index
-                required property var modelData
-                width: hits.width
-                height: pane.rowH
-
-                readonly property bool selected: view.downloadHit === index
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 2
-                    color: selected ? Theme.good : "transparent"
-                }
-
-                Row {
-                    anchors.fill: parent
-                    anchors.leftMargin: 2
-                    anchors.rightMargin: 8
-                    spacing: 8
-
-                    Rectangle {
-                        id: cover
-                        width: pane.artSide
-                        height: width
-                        radius: 2
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: selected ? Theme.background : Theme.mantle
-                        clip: true
-
-                        Image {
-                            anchors.fill: parent
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: true
-                            sourceSize.width: 72
-                            sourceSize.height: 72
-                            source: view.soundcloudArtURL(modelData.artwork)
+                        width: parent.width
+                        artSide: 38
+                        titlePt: 11
+                        art: modelData.art ? Util.fileUrl(String(modelData.art)) : ""
+                        upper: String(modelData.artist || "")
+                        upperNote: String(modelData.album || "")
+                        title: String(modelData.title || "")
+                        genre: String(modelData.genre || "")
+                        badge: modelData.needs_folder ? "unsorted" : ""
+                        year: String(modelData.year || "")
+                        clock: view.trackClock(modelData)
+                        current: String(modelData.path || "") === view.trackPath
+                        audible: view.playing
+                        onActivated: pane.playIncoming(String(modelData.path || ""))
+                        onPlayRequested: {
+                            if (current)
+                                view.togglePlay()
+                            else
+                                pane.playIncoming(String(modelData.path || ""))
                         }
                     }
-
-                    Text {
-                        textFormat: Text.PlainText
-                        width: Math.max(40, parent.width - cover.width - Math.ceil(metaFont.advanceWidth("000:00")) - 16)
-                        height: pane.rowH
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        text: view.trackLabel(modelData)
-                        color: selected ? Theme.background : Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pointSize: 12
-                    }
-
-                    Text {
-                        textFormat: Text.PlainText
-                        width: Math.ceil(metaFont.advanceWidth("000:00"))
-                        height: pane.rowH
-                        verticalAlignment: Text.AlignVCenter
-                        horizontalAlignment: Text.AlignRight
-                        text: view.trackClock(modelData)
-                        color: selected ? Theme.background : Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pointSize: 9
-                    }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    onClicked: function(mouse) {
-                        view.downloadHit = index
-                        if (mouse.button === Qt.RightButton)
-                            view.downloadSoundCloudHit()
-                    }
-                    onDoubleClicked: function(mouse) {
-                        if (mouse.button !== Qt.LeftButton)
-                            return
-                        view.downloadHit = index
-                        view.playSoundCloudHit()
-                    }
                 }
             }
         }
+    }
+
+    function playIncoming(path) {
+        var paths = []
+        for (var i = 0; i < incoming.length; i++)
+            paths.push(String(incoming[i].path || ""))
+        view.playPaths(paths, path)
     }
 
     Connections {
@@ -292,7 +347,9 @@ Item {
         }
         function onDownloadIdxChanged() { pane.focusCurrent() }
         function onDownloadHitChanged() {
-            if (view.downloadHit >= 0 && view.downloadHit < hits.count)
+            if (view.downloadHit === 0)
+                hits.positionViewAtBeginning()
+            else if (view.downloadHit > 0 && view.downloadHit < hits.count)
                 hits.positionViewAtIndex(view.downloadHit, ListView.Contain)
             pane.focusCurrent()
         }

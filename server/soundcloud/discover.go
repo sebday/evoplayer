@@ -46,6 +46,10 @@ type SimilarTrack struct {
 	Duration  float64 `json:"duration"`
 	Artwork   string  `json:"artwork"`
 	Permalink string  `json:"permalink"`
+	Genre     string  `json:"genre,omitempty"`
+	Year      int     `json:"year,omitempty"`
+	Plays     int64   `json:"plays,omitempty"`
+	Likes     int64   `json:"likes,omitempty"`
 }
 
 // SimilarResult is the discover feed for one seed track.
@@ -160,7 +164,23 @@ func similarTrack(track Track) SimilarTrack {
 		Duration:  dur,
 		Artwork:   artworkThumb(track),
 		Permalink: strings.TrimSpace(track.PermalinkURL),
+		Genre:     strings.TrimSpace(track.Genre),
+		Year:      createdYear(track.CreatedAt),
+		Plays:     track.Plays,
+		Likes:     track.Likes,
 	}
+}
+
+func createdYear(created string) int {
+	created = strings.TrimSpace(created)
+	if len(created) < 4 {
+		return 0
+	}
+	year, err := strconv.Atoi(created[:4])
+	if err != nil {
+		return 0
+	}
+	return year
 }
 
 // Track fetches one SoundCloud track by id.

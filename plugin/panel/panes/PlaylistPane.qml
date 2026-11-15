@@ -28,8 +28,6 @@ Fieldset {
 
     readonly property int artSide: 46
     readonly property int rowH: artSide + 14
-    readonly property int discoverArt: 32
-    readonly property int discoverRowH: discoverArt + 8
 
     component ThinScrollBar: ScrollBar {
         id: bar
@@ -55,8 +53,7 @@ Fieldset {
     number: 3
     legend: view.playlistLegend()
     active: view.pane === "playlist"
-    framed: view.mode !== "download"
-    hints: view.mode === "download" ? [] : view.playlistHints()
+    hints: view.playlistHints()
 
     Item {
         anchors.fill: parent
@@ -69,20 +66,6 @@ Fieldset {
             height: visible ? 18 : 0
             text: view.err
             color: Theme.liked
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeS
-            elide: Text.ElideRight
-        }
-
-        Text {
-            id: noteLine
-            textFormat: Text.PlainText
-            anchors.top: errLine.bottom
-            visible: view.mode === "discover" && view.discoverNote !== ""
-            width: parent.width
-            height: visible ? 18 : 0
-            text: view.discoverNote
-            color: Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontSizeS
             elide: Text.ElideRight
@@ -550,7 +533,7 @@ Fieldset {
 
         ListView {
             id: discoverList
-            anchors.top: noteLine.bottom
+            anchors.top: errLine.bottom
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
@@ -558,16 +541,52 @@ Fieldset {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
+            highlightFollowsCurrentItem: false
             ScrollBar.vertical: ThinScrollBar {}
             model: view.discoverTracks
 
-            Text {
+            header: Item {
+                width: discoverList.width
+                height: seedBanner.height + 14
+                onHeightChanged: {
+                    if (view.discoverIdx <= 0)
+                        Qt.callLater(discoverList.positionViewAtBeginning)
+                }
+
+                Banner {
+                    id: seedBanner
+                    width: parent.width
+                    caption: view.discoverSeed.title ? "similar to" : "discover"
+                    title: view.discoverSeed.title || "Discover"
+                    subtitle: view.discoverSeed.artist || ""
+                    stats: view.discoverStats()
+                    art: view.discoverSeed.art || ""
+                    pause: view.playing && !!view.currentDiscover() && view.isPreviewing(view.currentDiscover().id)
+                    onPlay: view.discoverPlay()
+
+                    Row {
+                        spacing: 8
+
+                        Chip {
+                            visible: view.trackPath !== ""
+                            text: "seed from now playing"
+                            color: hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1)
+                            onActivated: view.loadDiscover()
+                        }
+                    }
+                }
+            }
+
+            footer: Text {
+                width: discoverList.width
+                topPadding: 8
+                visible: discoverList.count === 0
                 textFormat: Text.PlainText
-                visible: discoverList.count === 0 && view.discoverNote === ""
-                text: "nothing new"
+                horizontalAlignment: Text.AlignHCenter
+                text: view.discoverNote === "finding similar…" ? "finding similar…" : "nothing new"
                 color: Theme.muted
                 font.family: Theme.fontFamily
-                font.pointSize: pane.termPt
+                font.pixelSize: Theme.fontSizeM
             }
 
             Connections {
@@ -576,91 +595,55 @@ Fieldset {
                     if (view.mode !== "discover" || view.discoverIdx < 0)
                         return
                     discoverList.currentIndex = view.discoverIdx
-                    if (view.discoverIdx < discoverList.count)
+                    if (view.discoverIdx === 0)
+                        discoverList.positionViewAtBeginning()
+                    else if (view.discoverIdx < discoverList.count)
                         discoverList.positionViewAtIndex(view.discoverIdx, ListView.Contain)
                 }
             }
 
-            delegate: Item {
+            delegate: SoundRow {
+                id: discoverRow
                 required property int index
                 required property var modelData
 
                 width: discoverList.width
-                height: pane.discoverRowH
+                artSide: pane.artSide
+                titlePt: pane.termPt
+                art: view.soundcloudArtURL(modelData.artwork)
+                upper: String(modelData.artist || "")
+                title: String(modelData.title || "")
+                genre: String(modelData.genre || "")
+                plays: Number(modelData.plays) || 0
+                likes: Number(modelData.likes) || 0
+                year: modelData.year ? String(modelData.year) : ""
+                clock: view.trackClock(modelData)
+                badge: modelData.kept ? "kept" : ""
+                selected: view.pane === "playlist" && view.mode === "discover" && index === view.discoverIdx
+                current: view.isPreviewing(modelData.id)
+                audible: view.playing
+                onClicked: view.clickDiscover(index)
+                onActivated: view.discoverAction(index, "play")
+                onPlayRequested: view.discoverAction(index, "play")
 
-                readonly property bool selected: view.pane === "playlist" && view.mode === "discover" && index === view.discoverIdx
-                readonly property string mark: view.discoverMark(modelData)
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 2
-                    color: selected ? Theme.good : "transparent"
+                Chip {
+                    visible: !discoverRow.modelData.kept
+                    text: "keep"
+                    prefix: "+"
+                    inverted: discoverRow.filled
+                    onActivated: view.discoverAction(discoverRow.index, "keep")
                 }
 
-                Row {
-                    anchors.fill: parent
-                    anchors.leftMargin: 2
-                    anchors.rightMargin: 8
-                    spacing: 8
-
-                    Rectangle {
-                        id: discoverCover
-                        width: pane.discoverArt
-                        height: width
-                        radius: 2
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: selected ? Theme.background : Theme.mantle
-                        clip: true
-
-                        Image {
-                            anchors.fill: parent
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: true
-                            sourceSize.width: 72
-                            sourceSize.height: 72
-                            source: view.soundcloudArtURL(modelData.artwork)
-                        }
-                    }
-
-                    Text {
-                        textFormat: Text.PlainText
-                        width: Math.max(40, parent.width - discoverCover.width - Math.ceil(term.advanceWidth("♥")) - Math.ceil(term.advanceWidth("000:00")) - 24)
-                        text: view.trackLabel(modelData)
-                        elide: Text.ElideRight
-                        color: selected ? Theme.background : (mark !== "" ? Theme.good : Theme.foreground)
-                        font.family: Theme.fontFamily
-                        font.pointSize: pane.termPt
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    Text {
-                        textFormat: Text.PlainText
-                        width: Math.ceil(term.advanceWidth("♥"))
-                        horizontalAlignment: Text.AlignHCenter
-                        text: mark
-                        color: selected ? Theme.background : Theme.good
-                        font.family: Theme.fontFamily
-                        font.pointSize: pane.termPt
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-
-                    Text {
-                        textFormat: Text.PlainText
-                        width: Math.ceil(term.advanceWidth("000:00"))
-                        horizontalAlignment: Text.AlignRight
-                        text: view.trackClock(modelData)
-                        color: selected ? Theme.background : Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pointSize: pane.termPt
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
+                Chip {
+                    text: "similar"
+                    inverted: discoverRow.filled
+                    onActivated: view.discoverAction(discoverRow.index, "more")
                 }
 
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: view.clickDiscover(index)
-                    onDoubleClicked: view.previewDiscover()
+                Chip {
+                    text: "✕"
+                    inverted: discoverRow.filled
+                    onActivated: view.discoverAction(discoverRow.index, "dismiss")
                 }
             }
         }
@@ -708,10 +691,8 @@ Fieldset {
         }
 
         DownloadOverlay {
-            parent: pane
             anchors.fill: parent
-            anchors.topMargin: errLine.visible ? errLine.y + errLine.height + 24 : 0
-            z: 3
+            anchors.topMargin: errLine.height
             visible: view.mode === "download"
             view: pane.view
         }

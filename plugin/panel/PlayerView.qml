@@ -61,6 +61,7 @@ Item {
     property int discoverIdx: 0
     property string discoverNote: ""
     property string discoverSeedTitle: ""
+    property var discoverSeed: ({})
     property string downloadUrl: ""
     property string downloadQuery: ""
     property var downloadHits: []
@@ -802,9 +803,18 @@ Item {
         else {
             discoverTracks = []
             discoverSeedTitle = ""
+            discoverSeed = ({})
             discoverNote = ""
             err = "nothing playing"
             return
+        }
+        var seedArt = ""
+        if (id) {
+            var from = currentDiscover() || selectedDownloadHit()
+            if (from && Number(from.id) === Number(id))
+                seedArt = soundcloudArtURL(from.artwork)
+        } else {
+            seedArt = artSource()
         }
         discoverCall("discover.similar", params, function(data) {
             if (root.mode !== "discover")
@@ -814,6 +824,7 @@ Item {
             var artist = String(data.seed_artist || "").replace(/^\s+|\s+$/g, "")
             var title = String(data.seed_title || "").replace(/^\s+|\s+$/g, "")
             root.discoverSeedTitle = artist && title ? artist + " — " + title : (artist || title)
+            root.discoverSeed = { artist: artist, title: title, art: seedArt }
             root.discoverIdx = 0
             root.showDiscoverSeed()
         })
@@ -869,10 +880,61 @@ Item {
             return ""
         if (row.kept)
             return "ok"
-        var id = String(row.id || "")
-        if (id && trackPath.indexOf("/discover/" + id + ".mp3") >= 0)
+        if (isPreviewing(row.id))
             return ">"
         return ""
+    }
+
+    function isPreviewing(id) {
+        id = String(id || "")
+        return id !== "" && trackPath.indexOf("/discover/" + id + ".mp3") >= 0
+    }
+
+    function discoverStats() {
+        var rows = discoverTracks || []
+        var kept = 0
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i] && rows[i].kept)
+                kept++
+        }
+        var parts = [counted(rows.length, "new track")]
+        if (kept)
+            parts.push(kept + " kept")
+        if (discoverNote && discoverNote !== discoverSeedTitle)
+            parts.push(discoverNote)
+        return parts.join("  ·  ")
+    }
+
+    function discoverPlay() {
+        var row = currentDiscover()
+        if (row && isPreviewing(row.id))
+            togglePlay()
+        else
+            previewDiscover()
+    }
+
+    function discoverAction(index, action) {
+        clickDiscover(index)
+        if (action === "keep")
+            keepDiscover()
+        else if (action === "dismiss")
+            dismissDiscover()
+        else if (action === "more")
+            moreDiscover()
+        else if (action === "play")
+            discoverPlay()
+    }
+
+    function downloadAction(index, action) {
+        downloadHit = index
+        focusPane("playlist")
+        var row = selectedDownloadHit()
+        if (action === "download")
+            downloadSoundCloudHit()
+        else if (action === "play" && row && isPreviewing(row.id))
+            togglePlay()
+        else if (action === "play")
+            playSoundCloudHit()
     }
 
     function previewDiscover() {
