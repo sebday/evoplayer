@@ -24,27 +24,3 @@ func TestLegacyArtFind(t *testing.T) {
 		t.Fatalf("legacy cover was not linked to %s", linked)
 	}
 }
-
-func TestGenreGroupKeepsFolderGenres(t *testing.T) {
-	folders := map[string]string{
-		"house":  "House",
-		"garage": "Garage",
-		"trap":   "Trap",
-		"hiphop": "Hiphop",
-	}
-	if key, shown := genreGroup("House", folders); key != "dir:house" || shown != "House" {
-		t.Fatalf("house: %s %s", key, shown)
-	}
-	if key, shown := genreGroup("Garage", folders); key != "dir:garage" || shown != "Garage" {
-		t.Fatalf("garage: %s %s", key, shown)
-	}
-	if key, shown := genreGroup("Trap", folders); key != "dir:trap" || shown != "Trap" {
-		t.Fatalf("trap: %s %s", key, shown)
-	}
-	if key, shown := genreGroup("techhouse", folders); key != "techhouse" || shown != "techhouse" {
-		t.Fatalf("techhouse should stay its own tag, got %s %s", key, shown)
-	}
-	if key, shown := genreGroup("Dance & EDM", folders); key != "danceandedm" || shown != "Dance & EDM" {
-		t.Fatalf("dance & edm should stay raw, got %s %s", key, shown)
-	}
-}

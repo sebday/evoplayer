@@ -135,7 +135,11 @@ func PathsForField(db *sql.DB, field, value string) ([]string, error) {
 	if value == "" {
 		return nil, fmt.Errorf("%s required", field)
 	}
-	rows, err := db.Query(`SELECT path FROM tracks WHERE lower(`+col+`)=lower(?) ORDER BY path`, value)
+	match := `lower(` + col + `)=lower(?)`
+	if field == "genre" {
+		match = `trim(` + col + `)=?`
+	}
+	rows, err := db.Query(`SELECT path FROM tracks WHERE `+match+` ORDER BY path`, value)
 	if err != nil {
 		return nil, err
 	}
