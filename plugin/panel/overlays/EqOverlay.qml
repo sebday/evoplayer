@@ -137,6 +137,7 @@ Item {
         Item {
             id: head
             anchors.top: parent.top
+            anchors.topMargin: 12
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.leftMargin: 8

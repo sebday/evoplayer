@@ -88,35 +88,17 @@ func ListIndex(env Env) ([]IndexItem, error) {
 		})
 	}
 
-	for _, genre := range library.GenreChoices(env.Env) {
-		if genre == "mixes" {
-			continue
-		}
-		count, err := countLikedGenre(env, db, dbErr, genre)
-		if err != nil {
-			return nil, err
-		}
-		if count <= 0 {
-			continue
-		}
-		out = append(out, IndexItem{
-			Name:    genre,
-			Count:   count,
-			Kind:    playlistKind(env, genre),
-			Starred: isStarred(stars, genre),
-		})
-	}
 	if dbErr == nil && db != nil {
-		tagged, err := library.LikedTagPlaylists(db, env.Env)
+		genres, err := library.LikedGenrePlaylists(db)
 		if err != nil {
 			return nil, err
 		}
-		for _, tag := range tagged {
+		for _, genre := range genres {
 			out = append(out, IndexItem{
-				Name:    tag.Name,
-				Count:   tag.Count,
-				Kind:    "tag",
-				Starred: isStarred(stars, tag.Name),
+				Name:    genre.Name,
+				Count:   genre.Count,
+				Kind:    "genre",
+				Starred: isStarred(stars, genre.Name),
 			})
 		}
 	}
@@ -232,15 +214,17 @@ func favoriteLikes(env Env, path string) (map[string]likeEntry, os.FileInfo, err
 }
 
 func writeFavorite(env Env, path string, likes map[string]likeEntry, liked bool) (FavoriteResult, error) {
-	if liked {
-		title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		artist := ""
-		if row, err := library.Meta(env.Env, path, ""); err == nil {
-			if row.Title != "" {
-				title = row.Title
-			}
-			artist = row.Artist
+	title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	artist := ""
+	genre := ""
+	if row, err := library.Meta(env.Env, path, ""); err == nil {
+		if row.Title != "" {
+			title = row.Title
 		}
+		artist = row.Artist
+		genre = strings.TrimSpace(row.Genre)
+	}
+	if liked {
 		likes[path] = likeEntry{
 			Title:   title,
 			Artist:  artist,
@@ -253,17 +237,17 @@ func writeFavorite(env Env, path string, likes map[string]likeEntry, liked bool)
 		return FavoriteResult{}, err
 	}
 	library.InvalidateLikesCache(env.LikesFile)
-	_ = writeLikesM3U(env, filepath.Join(env.PlaylistDir, "all.m3u"))
-	_ = writeMixesM3U(env)
-	if genre := library.GenreFromPath(env.MusicRoot, path); genre != "" {
-		_ = writeGenreM3U(env, genre)
-	}
 	if db, err := library.EnsureDB(env.Env); err == nil && db != nil {
 		val := 0
 		if liked {
 			val = 1
 		}
 		_, _ = db.Exec(`UPDATE tracks SET liked=? WHERE path=?`, val, path)
+	}
+	_ = writeLikesM3U(env, filepath.Join(env.PlaylistDir, "all.m3u"))
+	_ = writeMixesM3U(env)
+	if genre != "" {
+		_ = writeGenreM3U(env, genre)
 	}
 	return FavoriteResult{Path: path, Liked: liked}, nil
 }
@@ -390,30 +374,7 @@ SELECT path FROM tracks WHERE liked=1 ORDER BY path LIMIT ? OFFSET ?`, limit, of
 			Items:  tracksFromPaths(env.Env, paths, name),
 		}, true, nil
 	default:
-		if isGenreDir(env, name) {
-			lo, hi := library.PathPrefixRange(filepath.Join(env.MusicRoot, name))
-			var total int
-			if err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE liked=1 AND path >= ? AND path < ?`, lo, hi).Scan(&total); err != nil || total == 0 {
-				return TracksPage{}, false, nil
-			}
-			rows, err := db.Query(`
-SELECT path FROM tracks WHERE liked=1 AND path >= ? AND path < ? ORDER BY path LIMIT ? OFFSET ?`,
-				lo, hi, limit, offset)
-			if err != nil {
-				return TracksPage{}, true, err
-			}
-			defer rows.Close()
-			paths, err := scanPaths(rows)
-			if err != nil {
-				return TracksPage{}, true, err
-			}
-			return TracksPage{
-				Total:  total,
-				Offset: offset,
-				Items:  tracksFromPaths(env.Env, paths, name),
-			}, true, nil
-		}
-		if paths, err := library.LikedPathsForTag(db, name); err != nil {
+		if paths, err := library.LikedPathsForGenreTag(db, name); err != nil {
 			return TracksPage{}, true, err
 		} else if len(paths) > 0 {
 			return paginatePaths(env, paths, name, offset, limit), true, nil
@@ -512,27 +473,6 @@ func countLikedMixes(env Env, db *sql.DB, dbErr error) (int, error) {
 	return len(paths), nil
 }
 
-func countLikedGenre(env Env, db *sql.DB, dbErr error, genre string) (int, error) {
-	paths, err := likedPathsForGenre(env, genre)
-	if err != nil {
-		return 0, err
-	}
-	if len(paths) > 0 {
-		return len(paths), nil
-	}
-	if dbErr == nil && db != nil && library.Ready(db) {
-		lo, hi := library.PathPrefixRange(filepath.Join(env.MusicRoot, genre))
-		var n int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE liked=1 AND path >= ? AND path < ?`, lo, hi).Scan(&n); err == nil && n > 0 {
-			return n, nil
-		}
-	}
-	if paths, err := readM3UPaths(filepath.Join(env.PlaylistDir, genre+".m3u")); err == nil {
-		return len(paths), nil
-	}
-	return 0, nil
-}
-
 func listExtraPlaylists(env Env, stars []string, existing []IndexItem) []IndexItem {
 	seen := map[string]struct{}{}
 	for _, item := range existing {
@@ -551,7 +491,7 @@ func listExtraPlaylists(env Env, stars []string, existing []IndexItem) []IndexIt
 		if name == "" || name == "all" || name == "favorites" || name == "current" || name == "mixes" {
 			continue
 		}
-		if _, ok := seen[name]; ok {
+		if _, ok := seen[name]; ok || isGenreDir(env, name) {
 			continue
 		}
 		paths, err := readM3UPaths(filepath.Join(env.PlaylistDir, e.Name()))

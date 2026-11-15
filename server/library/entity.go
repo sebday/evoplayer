@@ -403,12 +403,14 @@ func yearGroup(raw string) string {
 	return yearDigits.FindString(raw)
 }
 
-// Index lists every artist, label, genre, or year with a track count and a cover.
+// Index lists every artist, album, label, genre, or year with a track count and a cover.
 func Index(env Env, kind string) ([]EntityRef, error) {
 	var col string
 	switch kind {
 	case "artist":
 		col = "artist"
+	case "album":
+		col = "album"
 	case "label":
 		col = "label"
 	case "genre":

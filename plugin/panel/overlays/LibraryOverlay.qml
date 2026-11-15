@@ -7,10 +7,12 @@ Item {
 
     required property var view
 
-    function jobLine() {
+    function jobActive() {
         var job = view.libraryJob
-        if (!job || !job.status || job.status === "idle")
-            return ""
+        return !!(job && job.status && job.status !== "idle")
+    }
+
+    function jobTitle() {
         var names = {
             "cache": "Rebuild",
             "import": "Import",
@@ -18,27 +20,49 @@ Item {
             "download": "Sync likes",
             "download-url": "Download"
         }
-        var line = (names[String(job.name || "")] || String(job.name || "job")) + " · " + String(job.status || "")
-        var progress = job.progress
-        if (progress && Number(progress.total) > 0)
-            line += " · " + (Number(progress.done) || 0) + "/" + Number(progress.total)
-        if (progress && progress.phase)
-            line += " · " + progress.phase
-        if (job.status === "error" && job.error)
-            return String(job.error)
-        return line
+        var name = String(view.libraryJob && view.libraryJob.name || "")
+        return names[name] || name || "Job"
     }
 
-    function jobLog() {
+    function jobDetail() {
+        var job = view.libraryJob || {}
+        if (job.status === "error" && job.error)
+            return String(job.error)
+        var parts = []
+        var status = String(job.status || "")
+        if (status)
+            parts.push(status.charAt(0).toUpperCase() + status.slice(1))
+        var progress = job.progress
+        if (progress && Number(progress.total) > 0)
+            parts.push((Number(progress.done) || 0) + " / " + Number(progress.total))
+        if (progress && progress.phase)
+            parts.push(String(progress.phase))
+        return parts.join("   ·   ")
+    }
+
+    function jobLines() {
         var log = String(view.libraryJob && view.libraryJob.log || "")
-        if (!log)
-            return ""
         var lines = log.split("\n")
-        for (var i = lines.length - 1; i >= 0; i--) {
-            if (String(lines[i]).trim() !== "")
-                return String(lines[i])
+        var out = []
+        for (var i = 0; i < lines.length; i++) {
+            var line = String(lines[i]).replace(/^\s+|\s+$/g, "")
+            if (line)
+                out.push(line)
         }
-        return ""
+        if (out.length > 4)
+            out = out.slice(out.length - 4)
+        return out
+    }
+
+    function logColor(line) {
+        var text = String(line || "")
+        if (text.indexOf("✗") === 0)
+            return Theme.liked
+        if (text.indexOf("✓") === 0)
+            return Theme.good
+        if (text.indexOf("!") === 0)
+            return Theme.border
+        return Theme.muted
     }
 
     Rectangle {
@@ -55,7 +79,7 @@ Item {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        width: Math.min(440, Math.max(300, parent.width * 0.38))
+        width: Math.min(280, Math.max(220, parent.width * 0.26))
 
         Rectangle {
             anchors.left: parent.left
@@ -92,6 +116,7 @@ Item {
             Repeater {
                 model: [
                     { title: "Rebuild", method: "library.cache", params: { force: true } },
+                    { title: "Restart", method: "restart", params: {} },
                     { title: "Import", method: "library.import", params: {} },
                     { title: "Artwork", method: "library.art.maintain", params: {} },
                     { title: "Sync likes", method: "library.soundcloud.download", params: { import: false } }
@@ -101,6 +126,10 @@ Item {
                     required property var modelData
                     text: modelData.title
                     onActivated: {
+                        if (modelData.method === "restart") {
+                            view.restartPlayer()
+                            return
+                        }
                         if (view.libraryJob && view.libraryJob.status === "running")
                             return
                         view.startLibraryJob(modelData.method, modelData.params)
@@ -115,36 +144,60 @@ Item {
             }
         }
 
-        Text {
+        Rectangle {
             width: parent.width
-            visible: text !== ""
-            textFormat: Text.PlainText
-            text: pane.jobLine()
-            color: view.libraryJob && view.libraryJob.status === "error" ? Theme.liked : Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeS
-            elide: Text.ElideRight
-        }
+            visible: pane.jobActive()
+            radius: 8
+            color: Theme.foregroundFaint
+            height: jobCol.implicitHeight + 16
 
-        Text {
-            width: parent.width
-            visible: text !== ""
-            textFormat: Text.PlainText
-            text: pane.jobLog()
-            color: Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeS
-            elide: Text.ElideRight
-        }
+            Column {
+                id: jobCol
+                x: 12
+                y: 8
+                width: parent.width - 24
+                spacing: 2
 
-        Text {
-            width: parent.width
-            textFormat: Text.PlainText
-            wrapMode: Text.WordWrap
-            text: "Left in incoming until the genre matches a library folder. Set a folder, then run Import."
-            color: Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeS
+                Row {
+                    width: parent.width
+                    spacing: 10
+
+                    Text {
+                        id: jobName
+                        textFormat: Text.PlainText
+                        text: pane.jobTitle()
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeS
+                        font.bold: true
+                    }
+
+                    Text {
+                        width: Math.max(0, parent.width - jobName.implicitWidth - parent.spacing)
+                        textFormat: Text.PlainText
+                        text: pane.jobDetail()
+                        color: view.libraryJob && view.libraryJob.status === "error" ? Theme.liked : Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeS
+                        elide: Text.ElideRight
+                    }
+                }
+
+                Repeater {
+                    model: pane.jobLines()
+
+                    Text {
+                        required property string modelData
+                        width: jobCol.width
+                        textFormat: Text.PlainText
+                        text: modelData
+                        color: pane.logColor(modelData)
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeS
+                        elide: Text.ElideRight
+                    }
+                }
+            }
         }
     }
 
@@ -225,6 +278,7 @@ Item {
         anchors.left: parent.left
         anchors.right: helpCol.left
         anchors.bottom: eqPanel.top
+        anchors.bottomMargin: 16
         anchors.leftMargin: 8
         anchors.rightMargin: 16
         height: visible ? 40 : 0

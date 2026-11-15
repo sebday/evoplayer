@@ -138,6 +138,7 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 			continue
 		}
+		_ = tags.Write(dest, map[string]string{"tags": "", "publisher": ""})
 		st, statErr := os.Stat(dest)
 		if statErr != nil {
 			failed++
@@ -146,11 +147,11 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 			continue
 		}
 		imported = append(imported, base)
-		genre := probed.Tag.Genre
-		if genre == "" {
-			genre = GenreFromPath(env.MusicRoot, dest)
-		}
-		if err := upsertTrack(tx, env, trackFromProbe(dest, genre, probed), st.ModTime().UnixNano(), st.Size()); err != nil {
+		genre := tags.TrimFrame(probed.Tag.Genre)
+		item := trackFromProbe(dest, genre, probed)
+		item.Label = ""
+		item.Tags = nil
+		if err := upsertTrack(tx, env, item, st.ModTime().UnixNano(), st.Size()); err != nil {
 			_ = tx.Rollback()
 			return err
 		}

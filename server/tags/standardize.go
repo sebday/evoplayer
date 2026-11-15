@@ -205,7 +205,10 @@ func writeMP3Tags(path string, targets map[string]string) bool {
 		tag.SetAlbum(v)
 	}
 	if v, ok := targets["publisher"]; ok {
-		tag.AddTextFrame("TPUB", tag.DefaultEncoding(), v)
+		tag.DeleteFrames("TPUB")
+		if strings.TrimSpace(v) != "" {
+			tag.AddTextFrame("TPUB", tag.DefaultEncoding(), v)
+		}
 	}
 	if v, ok := targets["catalognumber"]; ok {
 		setUserText(tag, "CATALOGNUMBER", v)
@@ -261,13 +264,13 @@ func writeM4ATags(path string, targets map[string]string) bool {
 		add("album", v)
 	}
 	if v, ok := targets["publisher"]; ok {
-		add("label", v)
+		args = append(args, "-metadata", "publisher="+v, "-metadata", "label="+v)
 	}
 	if v, ok := targets["catalognumber"]; ok {
 		add("CATALOGNUMBER", v)
 	}
 	if v, ok := targets["tags"]; ok {
-		add("TAGS", FormatTagList(ParseTagList(v)))
+		args = append(args, "-metadata", "TAGS="+FormatTagList(ParseTagList(v)))
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".evo-tag-*"+filepath.Ext(path))
 	if err != nil {

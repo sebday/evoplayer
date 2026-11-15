@@ -34,7 +34,6 @@ Column {
 
         BlurBackdrop {
             anchors.fill: parent
-            visible: !hero.queueHeader
             source: hero.info.blur || ""
         }
 
@@ -232,7 +231,7 @@ Column {
         Item {
             id: artSlot
             anchors.right: parent.right
-            anchors.rightMargin: 18
+            anchors.rightMargin: hero.queueHeader ? 0 : 18
             anchors.verticalCenter: parent.verticalCenter
             height: hero.queueHeader ? parent.height : 150
             width: banner.width > 520 ? height : 0

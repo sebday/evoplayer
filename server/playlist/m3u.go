@@ -79,7 +79,11 @@ func writeMixesM3U(env Env) error {
 }
 
 func writeGenreM3U(env Env, genre string) error {
-	paths, err := likedPathsForGenre(env, genre)
+	db, err := library.EnsureDB(env.Env)
+	if err != nil {
+		db = nil
+	}
+	paths, err := library.LikedPathsForGenreTag(db, genre)
 	if err != nil {
 		return err
 	}
@@ -102,33 +106,4 @@ func writeM3U(path string, paths []string) error {
 		b.WriteString(p + "\n")
 	}
 	return library.WriteFileAtomic(path, []byte(b.String()), 0o644)
-}
-
-func likedPathsForGenre(env Env, genre string) ([]string, error) {
-	raw, err := os.ReadFile(env.LikesFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var likes map[string]json.RawMessage
-	if json.Unmarshal(raw, &likes) != nil {
-		return nil, nil
-	}
-	paths := make([]string, 0)
-	for p := range likes {
-		if library.GenreFromPath(env.MusicRoot, p) != genre {
-			continue
-		}
-		if st, err := os.Stat(p); err != nil || st.IsDir() {
-			continue
-		}
-		if !audio.IsAudio(p) {
-			continue
-		}
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	return paths, nil
 }

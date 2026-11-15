@@ -13,77 +13,51 @@ type TagPlaylist struct {
 	Count int
 }
 
-// LikedTagPlaylists lists tags that appear on at least one liked track.
-// A tag whose name matches a genre folder is skipped so it does not duplicate that playlist.
-func LikedTagPlaylists(db *sql.DB, env Env) ([]TagPlaylist, error) {
+// LikedGenrePlaylists lists genre tags that appear on at least one liked track.
+// The folder a file sits in is not a genre.
+func LikedGenrePlaylists(db *sql.DB) ([]TagPlaylist, error) {
 	if db == nil || !Ready(db) {
 		return nil, nil
 	}
 	rows, err := db.Query(`
-SELECT t.tag_key, t.tag, t.path
-FROM track_tags t
-JOIN tracks tr ON tr.path = t.path
-WHERE tr.liked = 1
-ORDER BY t.rowid`)
+SELECT replace(trim(COALESCE(genre,'')), char(0), '') AS name, COUNT(*)
+FROM tracks
+WHERE liked=1 AND replace(trim(COALESCE(genre,'')), char(0), '') != ''
+GROUP BY replace(trim(COALESCE(genre,'')), char(0), '')
+ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	skip := genreFolderKeys(env)
-	type acc struct {
-		name  string
-		paths map[string]struct{}
-	}
-	order := []string{}
-	byKey := map[string]*acc{}
+	var out []TagPlaylist
 	for rows.Next() {
-		var key, tag, path string
-		if err := rows.Scan(&key, &tag, &path); err != nil {
+		var name string
+		var count int
+		if err := rows.Scan(&name, &count); err != nil {
 			return nil, err
 		}
-		if key == "" || reservedTag(key) {
+		name = strings.TrimSpace(name)
+		if name == "" || reservedTag(tags.TagKey(name)) {
 			continue
 		}
-		if _, blocked := skip[key]; blocked {
-			continue
-		}
-		item := byKey[key]
-		if item == nil {
-			item = &acc{name: tag, paths: map[string]struct{}{}}
-			byKey[key] = item
-			order = append(order, key)
-		}
-		item.paths[path] = struct{}{}
+		out = append(out, TagPlaylist{Name: name, Count: count})
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	out := make([]TagPlaylist, 0, len(order))
-	for _, key := range order {
-		item := byKey[key]
-		if len(item.paths) == 0 {
-			continue
-		}
-		out = append(out, TagPlaylist{Name: item.name, Count: len(item.paths)})
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
-// LikedPathsForTag returns liked tracks carrying the tag name.
-func LikedPathsForTag(db *sql.DB, name string) ([]string, error) {
+// LikedPathsForGenreTag returns liked tracks whose genre tag is name.
+func LikedPathsForGenreTag(db *sql.DB, name string) ([]string, error) {
 	if db == nil || !Ready(db) {
 		return nil, nil
 	}
-	key := tags.TagKey(name)
-	if key == "" {
+	name = strings.TrimSpace(name)
+	if name == "" {
 		return nil, nil
 	}
 	rows, err := db.Query(`
-SELECT tr.path
-FROM track_tags t
-JOIN tracks tr ON tr.path = t.path
-WHERE tr.liked = 1 AND t.tag_key = ?
-ORDER BY tr.path`, key)
+SELECT path FROM tracks
+WHERE liked=1 AND replace(trim(COALESCE(genre,'')), char(0), '') = ?
+ORDER BY path`, name)
 	if err != nil {
 		return nil, err
 	}
@@ -106,16 +80,6 @@ func reservedTag(key string) bool {
 	default:
 		return false
 	}
-}
-
-func genreFolderKeys(env Env) map[string]struct{} {
-	out := map[string]struct{}{}
-	for _, name := range GenreChoices(env) {
-		if key := tags.TagKey(name); key != "" {
-			out[key] = struct{}{}
-		}
-	}
-	return out
 }
 
 // PathsForField returns every track whose artist or label matches value, ignoring case.
@@ -180,7 +144,7 @@ func pathsForYear(db *sql.DB, value string) ([]string, error) {
 
 func fieldColumn(field string) (string, error) {
 	switch field {
-	case "artist", "label", "genre", "year":
+	case "artist", "album", "label", "genre", "year":
 		return field, nil
 	default:
 		return "", fmt.Errorf("unsupported field: %s", field)
@@ -218,7 +182,7 @@ func UpdateField(env Env, field, value string, paths []string) (int, error) {
 
 func fieldWriteKey(field string) (string, error) {
 	switch field {
-	case "artist", "genre", "year":
+	case "artist", "album", "genre", "year":
 		return field, nil
 	case "label":
 		return "publisher", nil

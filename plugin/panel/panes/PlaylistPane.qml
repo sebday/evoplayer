@@ -265,7 +265,7 @@ Card {
                     height: width
                     corner: 6
                     name: String(modelData.title || "")
-                    source: view.rowCoverUrl(modelData)
+                    source: view.playlistCoverUrl(String(modelData.id || ""), modelData)
                     decodeSize: Math.ceil((width > 0 ? width : 160) * Screen.devicePixelRatio)
                     scale: hot ? 1.04 : 1
 
@@ -421,7 +421,7 @@ Card {
                         view.playlistIdx = index
                         view.focusPane("playlist")
                         if (modelData.path)
-                            view.playTrackList(view.playlistRows(), String(modelData.path))
+                            view.playTrack(String(modelData.path))
                     }
                 }
             }
@@ -606,6 +606,104 @@ Card {
                 }
             }
             model: view.playlistRows()
+            header: Column {
+                width: list.width
+                spacing: 0
+                visible: view.listSource() === "search" && (view.searchArtists || []).length > 0
+                height: visible ? implicitHeight : 0
+
+                Text {
+                    width: parent.width
+                    topPadding: 8
+                    bottomPadding: 6
+                    leftPadding: 8
+                    textFormat: Text.PlainText
+                    text: "Artists"
+                    color: Theme.withOpacity(Theme.foreground, 0.38)
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                    font.bold: true
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 1
+                }
+
+                Repeater {
+                    model: view.searchArtists || []
+
+                    delegate: Item {
+                        id: artistHit
+                        required property var modelData
+                        width: list.width
+                        height: pane.rowH
+
+                        readonly property bool hovered: artistHover.hovered
+
+                        HoverHandler {
+                            id: artistHover
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.topMargin: 1
+                            anchors.bottomMargin: 1
+                            radius: 6
+                            color: artistHit.hovered ? Theme.foregroundWash : "transparent"
+                        }
+
+                        Cover {
+                            x: 6
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: pane.artSide
+                            height: width
+                            round: true
+                            name: String(artistHit.modelData.name || "")
+                            source: view.rowThumbUrl(artistHit.modelData)
+                            decodeSize: 96
+                        }
+
+                        Column {
+                            anchors.left: parent.left
+                            anchors.leftMargin: pane.artSide + 18
+                            anchors.right: parent.right
+                            anchors.rightMargin: 16
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+
+                            Text {
+                                width: parent.width
+                                textFormat: Text.PlainText
+                                text: String(artistHit.modelData.name || "")
+                                elide: Text.ElideRight
+                                color: Theme.foreground
+                                font.family: Theme.fontFamily
+                                font.pointSize: pane.termPt
+                                font.bold: true
+                            }
+
+                            Text {
+                                width: parent.width
+                                textFormat: Text.PlainText
+                                text: view.counted(artistHit.modelData.count, "track")
+                                elide: Text.ElideRight
+                                color: Theme.muted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeS
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: view.openArtist(String(artistHit.modelData.name || ""))
+                        }
+                    }
+                }
+
+                Item {
+                    width: parent.width
+                    height: 8
+                }
+            }
             onHeightChanged: view.playlistPage = Math.max(1, Math.floor(height / pane.rowH))
             onContentYChanged: {
                 if (view.reorderScroll < 0)
@@ -619,13 +717,14 @@ Card {
                 spacing: 0
 
                 Item {
+                    readonly property bool searchArtists: view.listSource() === "search" && (view.searchArtists || []).length > 0
                     width: parent.width
-                    height: list.count === 0 ? 48 : 12
+                    height: list.count === 0 && !searchArtists ? 48 : 12
 
                     Text {
                         anchors.centerIn: parent
                         textFormat: Text.PlainText
-                        visible: list.count === 0
+                        visible: list.count === 0 && !parent.searchArtists
                         text: view.pageBusy ? "loading…"
                             : (view.listSource() === "search" ? "no matches"
                             : (view.listSource() === "files" ? "empty folder" : "no tracks"))
@@ -1164,9 +1263,16 @@ Card {
                         }
 
                         Text {
+                            id: dur
                             anchors.verticalCenter: parent.verticalCenter
-                            width: Math.ceil(metaFont.advanceWidth("000:00"))
-                            horizontalAlignment: Text.AlignRight
+                            readonly property bool clock: !row.folder && !row.listPick
+                            readonly property int slot: Math.ceil(metaFont.advanceWidth("000:00"))
+                            readonly property int used: text === "" ? 0 : Math.ceil(metaFont.advanceWidth(text))
+                            readonly property int spare: clock && text !== "" ? Math.max(0, slot - used) : 0
+                            width: text === "" ? 0 : (clock ? used + spare * 2 : slot)
+                            leftPadding: spare
+                            rightPadding: spare
+                            horizontalAlignment: clock ? Text.AlignLeft : Text.AlignRight
                             textFormat: Text.PlainText
                             text: row.folder || row.listPick
                                 ? (Number(modelData.count) > 0 ? String(modelData.count) : "")
@@ -1183,7 +1289,7 @@ Card {
                             width: row.folder || row.listPick ? 0 : Math.ceil(term.advanceWidth("♥"))
                             horizontalAlignment: Text.AlignHCenter
                             text: modelData.liked || row.hovered ? "♥" : ""
-                            color: row.filled ? Theme.background : (modelData.liked ? Theme.liked : Theme.muted)
+                            color: modelData.liked ? Theme.liked : (row.filled ? Theme.background : Theme.muted)
                             font.family: Theme.fontFamily
                             font.pointSize: pane.termPt
 

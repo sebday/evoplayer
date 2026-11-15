@@ -439,6 +439,21 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		}
 		status.InvalidateMeta(p.Path)
 		return warm.Result{Path: p.Path, Waveform: file}, nil
+	case "library.soundcloud.like":
+		var likeParams struct {
+			ID     int64  `json:"id"`
+			Artist string `json:"artist"`
+			Title  string `json:"title"`
+			Like   *bool  `json:"like"`
+		}
+		if err := ipc.DecodeParams(req.Params, &likeParams); err != nil {
+			return nil, err
+		}
+		want := true
+		if likeParams.Like != nil {
+			want = *likeParams.Like
+		}
+		return d.likeSoundCloud(likeParams.ID, likeParams.Artist, likeParams.Title, want)
 	default:
 		return nil, ipc.ErrUnknownMethod(req.Method)
 	}
@@ -523,21 +538,6 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		return st, nil
-	case "library.soundcloud.like":
-		var likeParams struct {
-			ID     int64  `json:"id"`
-			Artist string `json:"artist"`
-			Title  string `json:"title"`
-			Like   *bool  `json:"like"`
-		}
-		if err := ipc.DecodeParams(req.Params, &likeParams); err != nil {
-			return nil, err
-		}
-		want := true
-		if likeParams.Like != nil {
-			want = *likeParams.Like
-		}
-		return d.likeSoundCloud(likeParams.ID, likeParams.Artist, likeParams.Title, want)
 	case "library.download":
 		var p struct {
 			URL    string `json:"url"`

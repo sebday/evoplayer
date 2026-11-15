@@ -113,10 +113,7 @@ func writeTagFields(env Env, path string, targets map[string]string) (Track, err
 		return Track{}, err
 	}
 	probed, _ := tags.Probe(path)
-	genre := strings.TrimSpace(probed.Tag.Genre)
-	if genre == "" {
-		genre = GenreFromPath(env.MusicRoot, path)
-	}
+	genre := tags.TrimFrame(probed.Tag.Genre)
 	item := Track{
 		Path:     path,
 		Genre:    genre,

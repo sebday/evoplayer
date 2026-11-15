@@ -231,13 +231,7 @@ func CacheFolderLabel(env Env, path string) string {
 
 func probeCacheFile(env Env, f cacheFile) probedFile {
 	res, _ := tags.Probe(f.path)
-	genre := strings.TrimSpace(res.Tag.Genre)
-	if genre == "" {
-		genre = f.genre
-	}
-	if genre == "" {
-		genre = GenreFromPath(env.MusicRoot, f.path)
-	}
+	genre := tags.TrimFrame(res.Tag.Genre)
 	return probedFile{track: trackFromProbe(f.path, genre, res), mtime: f.mtime, size: f.size}
 }
 
