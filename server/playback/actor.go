@@ -45,6 +45,7 @@ type Actor struct {
 	follow             []string
 	followIdx          int
 	followWait         int
+	continued          bool
 	followReady        func(string) bool
 	onFollow           func(int, string)
 	cmdCh              chan func()
@@ -204,6 +205,7 @@ func (a *Actor) Stop() {
 		a.queue = nil
 		a.index = 0
 		a.shuffleOrd = nil
+		a.continued = false
 		a.bumpQueueRevLocked()
 		a.mu.Unlock()
 		a.haltPlayback()
@@ -269,6 +271,7 @@ func (a *Actor) ReplaceQueue(paths []string, startPath string) error {
 		a.queue = filtered
 		a.index = idx
 		a.shuffleOrd = nil
+		a.continued = false
 		a.bumpQueueRevLocked()
 		a.mu.Unlock()
 		return a.loadCurrent()
@@ -292,6 +295,7 @@ func (a *Actor) SetQueue(paths []string, startPath string) error {
 		a.queue = filtered
 		a.index = indexOrFirst(filtered, want)
 		a.shuffleOrd = nil
+		a.continued = false
 		a.bumpQueueRevLocked()
 		a.mu.Unlock()
 		a.emit()
@@ -474,7 +478,7 @@ func (a *Actor) Next() error {
 	return a.dispatchErr(func() error {
 		a.mu.Lock()
 		a.detached = false
-		mode, idx := followSkip(a.followIdx, len(a.follow), a.advancesPastEndLocked(1), 1)
+		mode, idx := followSkip(a.followIdx, len(a.follow), a.advancesPastEndLocked(1), a.continued, 1)
 		a.mu.Unlock()
 		switch mode {
 		case "follow", "replay":
@@ -511,7 +515,7 @@ func (a *Actor) Prev() error {
 			a.mu.Unlock()
 			return a.seekPlayback(0)
 		}
-		mode, idx := followSkip(a.followIdx, len(a.follow), false, -1)
+		mode, idx := followSkip(a.followIdx, len(a.follow), false, a.continued, -1)
 		a.detached = false
 		a.mu.Unlock()
 		if mode == "follow" {
@@ -604,6 +608,7 @@ func (a *Actor) Restore(paths []string, startPath string, position float64) erro
 		a.queue = filtered
 		a.index = idx
 		a.shuffleOrd = nil
+		a.continued = false
 		a.bumpQueueRevLocked()
 		a.path = path
 		a.positionSec = position
@@ -792,7 +797,7 @@ func (a *Actor) watchPlaybackEnd(path string, gen uint64, done <-chan struct{}) 
 			return
 		}
 		a.mu.Lock()
-		mode, idx := followAdvance(a.followIdx, len(a.follow), repeat, a.advancesPastEndLocked(1))
+		mode, idx := followAdvance(a.followIdx, len(a.follow), repeat, a.advancesPastEndLocked(1), a.continued)
 		if mode == "queue" && !repeat {
 			a.index = a.nextIndexLocked(1)
 		}

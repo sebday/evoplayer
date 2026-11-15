@@ -60,20 +60,55 @@ func (a *Actor) playFollow(index int) error {
 	path := a.follow[index]
 	readyFn := a.followReady
 	cb := a.onFollow
-	a.followIdx = index
-	a.detached = false
-	a.followWait = -1
 	a.mu.Unlock()
 	if !followPathReady(path, readyFn) {
 		a.mu.Lock()
+		a.followIdx = index
 		a.followWait = index
+		a.detached = false
 		a.mu.Unlock()
 		if cb != nil {
 			cb(index, path)
 		}
 		return nil
 	}
+	a.mu.Lock()
+	if index < 0 || index >= len(a.follow) || a.follow[index] != path {
+		a.mu.Unlock()
+		return nil
+	}
+	queue, follow := takeFollow(a.queue, a.follow, index)
+	a.queue = queue
+	a.follow = follow
+	a.index = slices.Index(queue, path)
+	if a.index < 0 {
+		a.index = 0
+	}
+	if a.shuffle && !slices.Contains(a.shuffleOrd, a.index) {
+		a.shuffleOrd = append(a.shuffleOrd, a.index)
+	}
+	a.followIdx = -1
+	a.followWait = -1
+	a.detached = false
+	a.continued = true
+	a.bumpQueueRevLocked()
+	a.mu.Unlock()
 	return a.loadPath(path, 0, false)
+}
+
+// takeFollow moves follow[index] onto the end of the queue.
+func takeFollow(queue, follow []string, index int) ([]string, []string) {
+	path := follow[index]
+	nextFollow := make([]string, 0, len(follow)-1)
+	nextFollow = append(nextFollow, follow[:index]...)
+	nextFollow = append(nextFollow, follow[index+1:]...)
+	if slices.Contains(queue, path) {
+		return queue, nextFollow
+	}
+	nextQueue := make([]string, len(queue)+1)
+	copy(nextQueue, queue)
+	nextQueue[len(queue)] = path
+	return nextQueue, nextFollow
 }
 
 func (a *Actor) finishFollow() {
@@ -117,7 +152,7 @@ func (a *Actor) advancesPastEndLocked(step int) bool {
 }
 
 // followAdvance chooses what plays when the current track finishes.
-func followAdvance(followIdx, followN int, repeat, wrap bool) (string, int) {
+func followAdvance(followIdx, followN int, repeat, wrap, continued bool) (string, int) {
 	if followIdx >= 0 {
 		if repeat {
 			return "replay", followIdx
@@ -130,11 +165,14 @@ func followAdvance(followIdx, followN int, repeat, wrap bool) (string, int) {
 	if !repeat && wrap && followN > 0 {
 		return "follow", 0
 	}
+	if !repeat && wrap && continued {
+		return "stop", -1
+	}
 	return "queue", -1
 }
 
 // followSkip chooses what plays for next and previous.
-func followSkip(followIdx, followN int, wrap bool, dir int) (string, int) {
+func followSkip(followIdx, followN int, wrap, continued bool, dir int) (string, int) {
 	if dir > 0 {
 		if followIdx >= 0 {
 			if followIdx+1 < followN {
@@ -144,6 +182,9 @@ func followSkip(followIdx, followN int, wrap bool, dir int) (string, int) {
 		}
 		if wrap && followN > 0 {
 			return "follow", 0
+		}
+		if wrap && continued {
+			return "stop", -1
 		}
 		return "queue", -1
 	}

@@ -73,6 +73,8 @@ Item {
     property int shownGen: 0
     property var discoverTracks: []
     property var relatedTracks: []
+    property var adoptedRelated: []
+    property string adoptedFor: ""
     property string relatedFor: ""
     property string relatedPending: ""
     property string relatedNote: ""
@@ -193,6 +195,7 @@ Item {
         seekPreview = -1
         loadWave()
         loadChannels()
+        adoptPlayedRelated()
         revealPlaying()
     }
     onWaveFileChanged: loadWave()
@@ -309,8 +312,8 @@ Item {
         return s
     }
 
-    function playingPreviewArt() {
-        var path = String(trackPath || "")
+    function discoverPreviewId(path) {
+        path = String(path || "")
         var mark = "/discover/"
         var at = path.lastIndexOf(mark)
         if (at < 0 || path.slice(-4) !== ".mp3")
@@ -318,20 +321,32 @@ Item {
         var id = path.slice(at + mark.length, path.length - 4)
         if (!id || id.replace(/[0-9]/g, "") !== "")
             return ""
-        if (String(downloadPreviewId) === id && downloadPreviewArt)
-            return downloadPreviewArt
-        var lists = [downloadHits, discoverTracks]
+        return id
+    }
+
+    function previewRowForPath(path) {
+        var id = discoverPreviewId(path)
+        if (!id)
+            return null
+        var lists = [adoptedRelated, relatedTracks, discoverTracks, downloadHits]
         for (var n = 0; n < lists.length; n++) {
             var rows = lists[n] || []
             for (var i = 0; i < rows.length; i++) {
-                if (rows[i] && String(rows[i].id) === id) {
-                    var url = soundcloudArtURL(rows[i].artwork)
-                    if (url)
-                        return url
-                }
+                if (rows[i] && String(rows[i].id) === id)
+                    return rows[i]
             }
         }
-        return ""
+        return null
+    }
+
+    function playingPreviewArt() {
+        var id = discoverPreviewId(trackPath)
+        if (!id)
+            return ""
+        if (String(downloadPreviewId) === id && downloadPreviewArt)
+            return downloadPreviewArt
+        var row = previewRowForPath(trackPath)
+        return row ? soundcloudArtURL(row.artwork) : ""
     }
 
     function artSource() {
@@ -1075,18 +1090,136 @@ Item {
         loadDiscover(row.id)
     }
 
-    function queuePaths() {
-        var rows = queue || []
+    function queuePathsFrom(rows) {
+        var list = rows || []
         var paths = []
         var seen = {}
-        for (var i = 0; i < rows.length; i++) {
-            var path = String(rows[i] && rows[i].path || "")
+        for (var i = 0; i < list.length; i++) {
+            var path = String(list[i] && list[i].path || "")
             if (!path || path.indexOf("/discover/") >= 0 || seen[path])
                 continue
             seen[path] = true
             paths.push(path)
         }
         return paths
+    }
+
+    function queuePaths() {
+        return queuePathsFrom(queue)
+    }
+
+    function libraryQueueKey(rows) {
+        return queuePathsFrom(rows).join("\n")
+    }
+
+    function relatedAsQueueItem(row, path) {
+        var art = soundcloudArtURL(row && row.artwork)
+        var dur = Number(row && row.duration) || 0
+        return {
+            id: row && row.id,
+            path: path,
+            title: String(row && row.title || ""),
+            artist: String(row && row.artist || ""),
+            genre: String(row && row.genre || ""),
+            year: row && row.year ? String(row.year) : "",
+            duration: dur,
+            duration_label: clock(dur),
+            art: art,
+            thumb: art,
+            artwork: row && row.artwork || ""
+        }
+    }
+
+    function rememberAdopted(item) {
+        var path = String(item && item.path || "")
+        if (!path)
+            return
+        if (!adoptedFor)
+            adoptedFor = libraryQueueKey(queue)
+        var next = []
+        var rows = adoptedRelated || []
+        var found = false
+        for (var i = 0; i < rows.length; i++) {
+            if (String(rows[i] && rows[i].path || "") === path) {
+                next.push(item)
+                found = true
+            } else
+                next.push(rows[i])
+        }
+        if (!found)
+            next.push(item)
+        adoptedRelated = next
+    }
+
+    function withAdopted(items) {
+        var key = libraryQueueKey(items)
+        if (adoptedFor && key !== adoptedFor) {
+            adoptedRelated = []
+            adoptedFor = key
+            return items || []
+        }
+        if (!adoptedFor)
+            adoptedFor = key
+        var next = (items || []).slice()
+        var seen = {}
+        for (var i = 0; i < next.length; i++)
+            seen[String(next[i] && next[i].path || "")] = true
+        var extra = adoptedRelated || []
+        for (var j = 0; j < extra.length; j++) {
+            var path = String(extra[j] && extra[j].path || "")
+            if (!path || seen[path])
+                continue
+            seen[path] = true
+            next.push(extra[j])
+        }
+        return next
+    }
+
+    function adoptPlayedRelated() {
+        var path = String(trackPath || "")
+        var id = discoverPreviewId(path)
+        if (!id)
+            return
+        var known = null
+        var kept = adoptedRelated || []
+        for (var n = 0; n < kept.length; n++) {
+            if (kept[n] && String(kept[n].id) === id) {
+                known = kept[n]
+                break
+            }
+        }
+        if (!known) {
+            var count = Number(player.playlist_count) || 0
+            var lib = queuePaths().length
+            if (count <= lib + kept.length)
+                return
+            known = relatedRowById(id) || { id: Number(id) }
+        }
+        var item = relatedAsQueueItem(known, path)
+        rememberAdopted(item)
+        var rows = (queue || []).slice()
+        var found = false
+        for (var i = 0; i < rows.length; i++) {
+            if (String(rows[i] && rows[i].path || "") === path) {
+                rows[i] = Object.assign({}, rows[i], item)
+                found = true
+                break
+            }
+        }
+        if (!found)
+            rows.push(item)
+        queue = rows
+        if (relatedRowById(id))
+            removeRelated(id)
+    }
+
+    function relatedRowById(id) {
+        var rows = relatedTracks || []
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i] && String(rows[i].id) === String(id))
+                return rows[i]
+        }
+        return null
     }
 
     function scheduleRelated() {
@@ -1323,7 +1456,7 @@ Item {
     }
 
     function applyQueue(items, keep) {
-        queue = items || []
+        queue = withAdopted(items || [])
         var idx = 0
         if (keep) {
             for (var i = 0; i < queue.length; i++) {
@@ -2233,6 +2366,16 @@ Item {
         var title = String(player.title || "").replace(/^\s+|\s+$/g, "")
         if (!title && trackPath)
             title = trackPath.slice(trackPath.lastIndexOf("/") + 1)
+        var artist = String(player.artist || "")
+        var preview = previewRowForPath(trackPath)
+        if (preview) {
+            var previewTitle = String(preview.title || "").replace(/^\s+|\s+$/g, "")
+            var previewArtist = String(preview.artist || "").replace(/^\s+|\s+$/g, "")
+            if (previewTitle)
+                title = previewTitle
+            if (previewArtist)
+                artist = previewArtist
+        }
         return {
             kind: "queue",
             caption: "now playing",
@@ -2241,7 +2384,7 @@ Item {
             blur: art,
             round: false,
             mosaic: [],
-            artist: String(player.artist || ""),
+            artist: artist,
             album: String(player.album || ""),
             label: String(player.label || ""),
             year: String(player.year || ""),
