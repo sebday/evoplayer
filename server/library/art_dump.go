@@ -83,11 +83,7 @@ func ReplaceTrackCover(env Env, trackPath, imagePath string) error {
 	if _, err := InstallImage(env, trackPath, imagePath, "track"); err != nil {
 		return err
 	}
-	art := artPathTrack(env, trackPath)
-	if err := embedAudio(trackPath, art); err != nil {
-		return err
-	}
-	_, _ = EnsureThumb(env, art)
+	_, _ = EnsureThumb(env, artPathTrack(env, trackPath))
 	return nil
 }
 

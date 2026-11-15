@@ -36,9 +36,9 @@ Flickable {
                 { key: "- =", label: "volume" },
                 { key: "/", label: "find" },
                 { key: "l", label: "like" },
-                { key: "e", label: "edit tags" },
+                { key: "e", label: "edit" },
                 { key: "esc", label: "back (pages, search, overlays)" },
-                { key: "h", label: "help" },
+                { key: "h", label: "settings" },
                 { key: "q", label: "quit" }
             ]
 

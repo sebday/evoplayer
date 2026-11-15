@@ -30,6 +30,16 @@ Card {
 
     readonly property int artSide: 46
     readonly property int rowH: artSide + 14
+    readonly property int genreCol: 140
+    readonly property int yearCol: Math.ceil(chipFont.advanceWidth("0000")) + 18
+    readonly property int timeCol: Math.ceil(metaFont.advanceWidth("000:00"))
+    readonly property int heartCol: Math.ceil(term.advanceWidth("♥")) + 4
+
+    FontMetrics {
+        id: chipFont
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSizeS
+    }
 
     component ThinScrollBar: ScrollBar {
         id: bar
@@ -1242,37 +1252,48 @@ Card {
                             onActivated: view.addFolder(String(modelData.path || ""))
                         }
 
-                        Chip {
+                        Item {
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: row.roomy && list.width > 820 && String(modelData.genre || "") !== ""
-                            text: String(modelData.genre || "")
-                            prefix: "#"
-                            maxWidth: 140
-                            inverted: row.filled
-                            onActivated: view.openGenre(text)
-                            onContextActivated: view.openFieldTags("genre", text)
+                            visible: row.roomy && list.width > 820 && !row.folder && !row.listPick
+                            width: visible ? pane.genreCol : 0
+                            height: 22
+
+                            Chip {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: String(modelData.genre || "") !== ""
+                                text: String(modelData.genre || "")
+                                prefix: "#"
+                                maxWidth: pane.genreCol
+                                inverted: row.filled
+                                onActivated: view.openGenre(text)
+                                onContextActivated: view.openFieldTags("genre", text)
+                            }
                         }
 
-                        Chip {
+                        Item {
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: !row.folder && !row.listPick && row.year !== ""
-                            text: row.year
-                            inverted: row.filled
-                            onActivated: view.openYear(text)
-                            onContextActivated: view.openFieldTags("year", text)
+                            visible: !row.folder && !row.listPick
+                            width: visible ? pane.yearCol : 0
+                            height: 22
+
+                            Chip {
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                visible: row.year !== ""
+                                text: row.year
+                                inverted: row.filled
+                                onActivated: view.openYear(text)
+                                onContextActivated: view.openFieldTags("year", text)
+                            }
                         }
 
                         Text {
                             id: dur
                             anchors.verticalCenter: parent.verticalCenter
                             readonly property bool clock: !row.folder && !row.listPick
-                            readonly property int slot: Math.ceil(metaFont.advanceWidth("000:00"))
-                            readonly property int used: text === "" ? 0 : Math.ceil(metaFont.advanceWidth(text))
-                            readonly property int spare: clock && text !== "" ? Math.max(0, slot - used) : 0
-                            width: text === "" ? 0 : (clock ? used + spare * 2 : slot)
-                            leftPadding: spare
-                            rightPadding: spare
-                            horizontalAlignment: clock ? Text.AlignLeft : Text.AlignRight
+                            width: text === "" && !clock ? 0 : pane.timeCol
+                            horizontalAlignment: Text.AlignRight
                             textFormat: Text.PlainText
                             text: row.folder || row.listPick
                                 ? (Number(modelData.count) > 0 ? String(modelData.count) : "")
@@ -1286,7 +1307,7 @@ Card {
                             anchors.verticalCenter: parent.verticalCenter
                             textFormat: Text.PlainText
                             visible: !row.folder && !row.listPick
-                            width: row.folder || row.listPick ? 0 : Math.ceil(term.advanceWidth("♥"))
+                            width: visible ? pane.heartCol : 0
                             horizontalAlignment: Text.AlignHCenter
                             text: modelData.liked || row.hovered ? "♥" : ""
                             color: modelData.liked ? Theme.liked : (row.filled ? Theme.background : Theme.muted)
@@ -1440,14 +1461,6 @@ Card {
             view: pane.view
         }
 
-        HelpOverlay {
-            anchors.fill: parent
-            anchors.topMargin: errLine.height
-            anchors.rightMargin: pane.sideMargin
-            visible: view.mode === "help"
-            view: pane.view
-        }
-
         TagEditor {
             z: 8
             anchors.fill: parent
@@ -1462,14 +1475,6 @@ Card {
             anchors.topMargin: errLine.height
             anchors.rightMargin: pane.sideMargin
             visible: view.mode === "move"
-            view: pane.view
-        }
-
-        ArtPickerOverlay {
-            anchors.fill: parent
-            anchors.topMargin: errLine.height
-            anchors.rightMargin: pane.sideMargin
-            visible: view.mode === "art"
             view: pane.view
         }
 

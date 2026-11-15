@@ -1,5 +1,6 @@
 import QtQuick
 import "../compat"
+import "../widgets"
 
 Item {
     id: editor
@@ -38,6 +39,8 @@ Item {
         list[n].grab()
     }
 
+    readonly property bool showArt: view.tagField === "" && !view.tagMany
+
     Rectangle {
         anchors.fill: parent
         color: Qt.rgba(0, 0, 0, 0.46)
@@ -50,8 +53,10 @@ Item {
 
     Rectangle {
         id: card
-        width: Math.min(440, parent.width - 32)
-        height: form.implicitHeight + 36
+        width: Math.min(editor.showArt ? 780 : 440, parent.width - 32)
+        height: editor.showArt
+            ? Math.min(parent.height - 40, Math.max(form.implicitHeight + 36, 520))
+            : form.implicitHeight + 36
         anchors.centerIn: parent
         radius: 14
         color: Theme.overlaySurface
@@ -62,13 +67,19 @@ Item {
             anchors.fill: parent
         }
 
-        Column {
-            id: form
+        Row {
+            id: body
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
+            anchors.bottom: parent.bottom
             anchors.margins: 18
-            spacing: 14
+            spacing: 18
+
+            Column {
+                id: form
+                width: editor.showArt ? Math.min(340, body.width * 0.46) : body.width
+                spacing: 14
 
             Text {
                 width: parent.width
@@ -192,6 +203,14 @@ Item {
                     }
                 }
             }
+            }
+
+            ArtPickerOverlay {
+                visible: editor.showArt
+                width: editor.showArt ? body.width - form.width - body.spacing : 0
+                height: body.height
+                view: editor.view
+            }
         }
     }
 
@@ -243,8 +262,11 @@ Item {
                     if (!parent.parent.view)
                         return
                     parent.parent.view.textCapture = activeFocus
-                    if (activeFocus)
+                    if (activeFocus) {
+                        parent.parent.view.artPicking = false
+                        parent.parent.view.artQueryFocus = false
                         parent.parent.view.tagFocus = parent.parent.index
+                    }
                 }
                 Keys.priority: Keys.BeforeItem
                 Keys.onPressed: function(event) {

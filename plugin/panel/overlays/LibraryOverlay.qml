@@ -118,7 +118,6 @@ Item {
                     { title: "Rebuild", method: "library.cache", params: { force: true } },
                     { title: "Restart", method: "restart", params: {} },
                     { title: "Import", method: "library.import", params: {} },
-                    { title: "Artwork", method: "library.art.maintain", params: {} },
                     { title: "Sync likes", method: "library.soundcloud.download", params: { import: false } }
                 ]
 

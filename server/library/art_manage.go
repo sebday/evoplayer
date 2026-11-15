@@ -99,12 +99,15 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 		}
 		rememberTrackArt(env, p, trackArt)
 	}
-	if folderWide {
-		markArtDirty(env, trackPath, "album")
-	} else {
-		for _, p := range paths {
-			markArtDirty(env, p, "track")
+	if err := writeArtBack(destArt, paths); err != nil {
+		if folderWide {
+			markArtDirty(env, trackPath, "album")
+		} else {
+			for _, p := range paths {
+				markArtDirty(env, p, "track")
+			}
 		}
+		return InstallResult{}, err
 	}
 	return InstallResult{
 		Art:     destArt,
@@ -214,7 +217,7 @@ func coversPaths(paths, files []string) bool {
 
 func rememberTrackArt(env Env, path, art string) {
 	db, err := EnsureDB(env)
-	if err != nil || db == nil || path == "" || art == "" {
+	if err != nil || db == nil || path == "" {
 		return
 	}
 	_, _ = db.Exec(`UPDATE tracks SET art=? WHERE path=?`, art, path)
@@ -269,6 +272,9 @@ func validateImageBytes(body []byte) error {
 }
 
 func ClearArt(env Env, trackPath string) error {
+	if err := stripEmbeddedArt(trackPath); err != nil {
+		return err
+	}
 	trackArt := artPathTrack(env, trackPath)
 	folder := artPathFolder(env, trackPath)
 	if trackArt != folder && nonEmptyFile(trackArt) {
@@ -276,8 +282,21 @@ func ClearArt(env Env, trackPath string) error {
 	} else if nonEmptyFile(folder) {
 		_ = os.Remove(folder)
 	}
-	markArtDirty(env, trackPath, "track")
+	rememberTrackArt(env, trackPath, "")
 	return nil
+}
+
+func writeArtBack(art string, paths []string) error {
+	if !nonEmptyFile(art) {
+		return fmt.Errorf("missing art")
+	}
+	var first error
+	for _, p := range paths {
+		if err := embedAudio(p, art); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
 }
 
 func normalizeJPG(src, dest string) error {

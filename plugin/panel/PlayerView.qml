@@ -105,7 +105,7 @@ Item {
     property var searchArtists: []
     property int searchGen: 0
 
-    // An open artist, album, genre, or year page, or the genres directory.
+    // An open artist, album, genre, or year page, or the artists / genres directory.
     property var page: null
     property var pageData: null
     property var pageTracks: []
@@ -156,6 +156,7 @@ Item {
     property string artTarget: ""
     property string artQuery: ""
     property bool artQueryFocus: false
+    property bool artPicking: false
     property bool artRestart: false
     property string artNextQuery: ""
     property bool artFromDrop: false
@@ -357,10 +358,10 @@ Item {
 
     function artSource() {
         var url = ""
-        if (mode === "art" && artPreview)
+        if (artPreview)
             url = artPreview
-        else if (mode === "art" && artTarget && artTarget !== trackPath)
-            url = Util.fileUrl(rowArt(artTarget))
+        else if (mode === "tags" && tagPath && tagPath !== trackPath)
+            url = Util.fileUrl(rowArt(tagPath))
         else if (artOverride && artOverridePath === trackPath)
             url = Util.fileUrl(artOverride)
         else
@@ -436,6 +437,7 @@ Item {
         rows.push({ kind: "playlist", type: "", label: "Now Playing", path: "", count: current, id: "current", depth: 0 })
         rows.push({ kind: "lists", type: "", label: "Playlists", path: "", count: others, id: "playlists", depth: 0 })
         rows.push({ kind: "page", type: "", label: "Genres", path: "", count: indexCount("genre"), id: "genres", depth: 0 })
+        rows.push({ kind: "page", type: "", label: "Artists", path: "", count: indexCount("artist"), id: "artists", depth: 0 })
         sidebar = rows
         var tab = tabIndexForView()
         if (tab >= 0)
@@ -446,7 +448,7 @@ Item {
         var id = "current"
         if (libraryView === "lists")
             id = "playlists"
-        else if (page && page.kind === "genres")
+        else if (page && (page.kind === "artists" || page.kind === "genres"))
             id = page.kind
         else if (shownPlaylist)
             id = shownPlaylist
@@ -1861,7 +1863,7 @@ Item {
     }
 
     function indexPage() {
-        return !!page && page.kind === "genres"
+        return !!page && (page.kind === "artists" || page.kind === "genres")
     }
 
     function entityPage() {
@@ -1941,7 +1943,7 @@ Item {
         playlistPicks = []
         textCapture = false
         pageBusy = false
-        if (spec.kind === "genres") {
+        if (spec.kind === "artists" || spec.kind === "genres") {
             pageData = null
             pageTracks = []
             page = spec
@@ -2081,7 +2083,9 @@ Item {
     }
 
     function indexKind() {
-        return "genre"
+        if (page && page.kind === "genres")
+            return "genre"
+        return "artist"
     }
 
     function openIndex(kind) {
@@ -2592,7 +2596,7 @@ Item {
                 runDownloadBox()
             return
         }
-        if (mode === "help" || mode === "tags")
+        if (mode === "tags")
             return
         if (listSource() === "files") {
             openFileSelection()
@@ -2928,8 +2932,8 @@ Item {
     }
 
     function artEditPath() {
-        if (mode === "art" && artTarget)
-            return artTarget
+        if (mode === "tags" && tagPath)
+            return tagPath
         return trackPath
     }
 
@@ -3164,6 +3168,7 @@ Item {
         artBusy = false
         artRestart = false
         artQueryFocus = false
+        artPicking = false
         tagMany = false
         tagField = ""
         tagPaths = []
@@ -3177,13 +3182,6 @@ Item {
         if (host && host.forceKeyFocus)
             host.forceKeyFocus()
         rebuildSidebar()
-    }
-
-    function toggleHelp() {
-        if (mode === "help")
-            closeMode()
-        else
-            pushOverlay("help")
     }
 
     function openSearch() {
@@ -3339,8 +3337,21 @@ Item {
         tagLabel = ""
         tagTags = ""
         pushOverlay("tags")
-        if (tagMany)
+        if (tagMany) {
+            artTarget = ""
+            artPreview = ""
+            artHits = []
+            artPicking = false
             return
+        }
+        artTarget = path
+        artQuery = ""
+        artQueryFocus = false
+        artPicking = false
+        artPreview = ""
+        artHits = []
+        artIdx = 0
+        runArtSearch("")
         ipc("library.track.tags.get", { path: tagPath }, function(data) {
             data = data || {}
             root.tagBusy = false
@@ -3462,18 +3473,16 @@ Item {
     }
 
     function openArt(path) {
-        if (mode === "help")
-            return
         var target = String(path || "")
         if (!target)
-            target = mode === "queue" ? playlistArtPath() : trackPath
+            target = trackPath
         if (!target)
             return
-        artTarget = target
-        artQuery = ""
-        artQueryFocus = false
-        pushOverlay("art")
-        runArtSearch("")
+        if (mode !== "queue" && mode !== "tags")
+            return
+        if (mode === "tags" && !tagMany && tagField === "" && tagPath === target)
+            return
+        beginTagEdit([target], target)
     }
 
     function searchDiscogs() {
@@ -3522,7 +3531,7 @@ Item {
     }
 
     function applyArt(scope) {
-        if (artBusy || mode !== "art")
+        if (artBusy || mode !== "tags" || tagMany || tagField)
             return
         var hit = artHits[artIdx]
         var url = hit ? safeArtURL(hit.url) || safeArtURL(hit.thumb) : ""
@@ -3582,7 +3591,6 @@ Item {
     }
 
     function finishArt(ok, artPath, paths) {
-        var fromDrop = artFromDrop
         artFromDrop = false
         artBusy = false
         if (!ok) {
@@ -3607,8 +3615,6 @@ Item {
             pageTracks = patchListArtPaths(pageTracks, targets, artPath)
         }
         err = ""
-        if (!fromDrop)
-            closeMode()
         if (service && service.requestEnrich)
             service.requestEnrich(target)
     }
@@ -4018,6 +4024,7 @@ Item {
     function clickArt(index) {
         artIdx = index
         artQueryFocus = false
+        artPicking = true
         focusPane("playlist")
         showArtPreview()
     }
@@ -4076,10 +4083,39 @@ Item {
                     toggleIncomingGenre(String(genreRow.path))
                 return true
             }
+            if (text === "h" || text === "H") { toggleLibrary(); return true }
             return false
         }
         if (mode === "tags") {
             if (key === Qt.Key_Escape) { closeMode(); return true }
+            if (artQueryFocus && !tagMany && tagField === "") {
+                if (key === Qt.Key_Down) {
+                    artQueryFocus = false
+                    artPicking = true
+                    textCapture = false
+                    if (host && host.forceKeyFocus)
+                        host.forceKeyFocus()
+                    return true
+                }
+                if (key === Qt.Key_Up)
+                    return true
+                return false
+            }
+            if (artPicking && !tagMany && tagField === "") {
+                if (key === Qt.Key_Up) {
+                    if (artIdx <= 0) {
+                        artPicking = false
+                        artQueryFocus = true
+                        return true
+                    }
+                    stepIndex("art", (artHits || []).length, -1)
+                    return true
+                }
+                if (key === Qt.Key_Down) {
+                    stepIndex("art", (artHits || []).length, 1)
+                    return true
+                }
+            }
             if (key === Qt.Key_Up) { moveTag(-1); return true }
             if (key === Qt.Key_Down) { moveTag(1); return true }
             return false
@@ -4204,7 +4240,7 @@ Item {
                 host.requestClose()
             return true
         }
-        if (text === "h" || text === "H") { toggleHelp(); return true }
+        if (text === "h" || text === "H") { toggleLibrary(); return true }
         if (key === Qt.Key_Escape) { onEsc(); return true }
         if (text === "/") { openSearch(); return true }
         if (key === Qt.Key_Space) { togglePlay(); return true }
@@ -4413,7 +4449,7 @@ Item {
             }
         }
         onExited: function(code) {
-            if (root.artRestart && root.mode === "art") {
+            if (root.artRestart && root.mode === "tags" && !root.tagMany && root.tagField === "") {
                 root.artRestart = false
                 var next = root.artNextQuery
                 Qt.callLater(function() { root.launchArtSearch(next) })
@@ -4421,7 +4457,7 @@ Item {
             }
             root.artRestart = false
             root.artBusy = false
-            if (root.mode !== "art") {
+            if (root.mode !== "tags" || root.tagMany || root.tagField !== "") {
                 root._artBuf = ""
                 return
             }
@@ -4442,7 +4478,7 @@ Item {
             root.err = ""
             root.artHits = parsed.results || []
             root.artIdx = 0
-            root.showArtPreview()
+            root.artPreview = ""
         }
     }
 

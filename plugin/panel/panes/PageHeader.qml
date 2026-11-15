@@ -11,6 +11,8 @@ Column {
     readonly property bool entity: view.entityPage()
     readonly property var entityData: entity && view.pageData ? view.pageData : ({})
     readonly property bool queueHeader: info.kind === "queue"
+    readonly property bool liveTrack: !queueHeader && String(view.trackPath || "") !== ""
+    readonly property string liveArt: view.artSource()
     readonly property color onBanner: Theme.foreground
     readonly property string pageKind: view.page ? String(view.page.kind) : ""
 
@@ -30,11 +32,14 @@ Column {
     Item {
         id: banner
         width: hero.width
-        height: hero.queueHeader ? 252 : Math.max(188, textCol.implicitHeight + textCol.anchors.topMargin + 28)
+        height: hero.queueHeader ? 252
+            : (hero.liveTrack
+                ? Math.max(240, textCol.implicitHeight + textCol.anchors.topMargin + 116)
+                : Math.max(188, textCol.implicitHeight + textCol.anchors.topMargin + 28))
 
         BlurBackdrop {
             anchors.fill: parent
-            source: hero.info.blur || ""
+            source: hero.liveTrack ? (hero.liveArt || hero.info.blur || "") : (hero.info.blur || "")
         }
 
         Column {
@@ -201,7 +206,7 @@ Column {
 
         Row {
             id: seekRow
-            visible: hero.queueHeader
+            visible: hero.queueHeader || hero.liveTrack
             anchors.left: parent.left
             anchors.right: artSlot.visible ? artSlot.left : parent.right
             anchors.top: textCol.bottom
@@ -239,17 +244,17 @@ Column {
 
             Cover {
                 anchors.fill: parent
-                visible: hero.info.mosaic.length === 0
-                source: hero.info.art || ""
-                round: hero.info.round
-                name: hero.info.title
+                visible: hero.liveTrack || hero.info.mosaic.length === 0
+                source: hero.liveTrack ? (hero.liveArt || hero.info.art || "") : (hero.info.art || "")
+                round: hero.liveTrack ? false : hero.info.round
+                name: hero.liveTrack ? (hero.view.player.title || hero.info.title) : hero.info.title
                 decodeSize: 400
-                cached: !hero.queueHeader
+                cached: !hero.queueHeader && !hero.liveTrack
             }
 
             Grid {
                 anchors.fill: parent
-                visible: hero.info.mosaic.length > 0
+                visible: !hero.liveTrack && hero.info.mosaic.length > 0
                 columns: 2
                 spacing: 2
 
@@ -270,7 +275,7 @@ Column {
             DropArea {
                 id: drop
                 anchors.fill: parent
-                enabled: hero.queueHeader
+                enabled: hero.queueHeader || hero.liveTrack
                 onDropped: function(dropEvent) {
                     var raw = ""
                     if (dropEvent.hasUrls && dropEvent.urls && dropEvent.urls.length)
@@ -294,12 +299,9 @@ Column {
 
             MouseArea {
                 anchors.fill: parent
-                enabled: hero.queueHeader && hero.view.trackPath !== ""
+                enabled: (hero.queueHeader || hero.liveTrack) && hero.view.trackPath !== ""
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    if (hero.view.mode !== "art")
-                        hero.view.openArt(hero.view.trackPath)
-                }
+                onClicked: hero.view.openArt(hero.view.trackPath)
             }
         }
     }
