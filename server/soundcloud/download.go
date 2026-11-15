@@ -12,6 +12,7 @@ import (
 	"github.com/sebday/evoplayer/server/audio"
 	"github.com/sebday/evoplayer/server/config"
 	"github.com/sebday/evoplayer/server/jobs"
+	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/secrets"
 	"github.com/sebday/evoplayer/server/syncarchive"
@@ -30,6 +31,7 @@ type DownloadOptions struct {
 	MusicConfig string
 	StateDir    string
 	ArchivePath string
+	LibraryDB   string
 }
 
 func LoadOptions(env paths.Env) (DownloadOptions, error) {
@@ -51,6 +53,7 @@ func LoadOptions(env paths.Env) (DownloadOptions, error) {
 		MusicConfig: env.MusicConfig,
 		StateDir:    env.StateDir,
 		ArchivePath: syncarchive.Path(env.StateDir),
+		LibraryDB:   env.LibraryDB,
 	}, nil
 }
 
@@ -104,6 +107,7 @@ func DownloadReportCtx(ctx context.Context, opts DownloadOptions, rep jobs.Repor
 	}
 	archived := len(tracks) - len(pending)
 	rep.Line(jobs.LogInfof("%d already archived", archived))
+	known := loadLibraryBasenames(opts.LibraryDB)
 	total := len(pending)
 	if total == 0 {
 		rep.Line(jobs.LogInfo("no new likes to download"))
@@ -122,6 +126,15 @@ func DownloadReportCtx(ctx context.Context, opts DownloadOptions, rep jobs.Repor
 			archiveSC(archive, track.ID, rep)
 			done++
 			msg := jobs.LogSkip(filepath.Base(dest))
+			fmt.Fprintf(os.Stderr, "evoplayer: %s\n", msg)
+			rep.Line(msg)
+			rep.Progress(jobs.Progress{Phase: msg, Done: done, Total: total})
+			continue
+		}
+		if libraryHasBasename(known, track.User.Username, track.Title) {
+			archiveSC(archive, track.ID, rep)
+			done++
+			msg := jobs.LogSkip(label + " (already in library)")
 			fmt.Fprintf(os.Stderr, "evoplayer: %s\n", msg)
 			rep.Line(msg)
 			rep.Progress(jobs.Progress{Phase: msg, Done: done, Total: total})
@@ -181,6 +194,12 @@ func DownloadTrackURLCtx(ctx context.Context, env paths.Env, pageURL string, rep
 		return "", nil
 	}
 	dest := trackDestPath(incoming, *track)
+	if libraryHasBasename(loadLibraryBasenames(opts.LibraryDB), track.User.Username, track.Title) {
+		archiveSC(archive, track.ID, rep)
+		msg := jobs.LogSkip(label + " (already in library)")
+		rep.Line(msg)
+		return "", nil
+	}
 	rep.Progress(jobs.Progress{Phase: label, Done: 0, Total: 1})
 	if err := downloadTrack(ctx, client, track, dest, opts); err != nil {
 		if isDRMError(err) {
@@ -222,7 +241,7 @@ func DownloadCollectionURLCtx(ctx context.Context, env paths.Env, pageURL string
 	if err != nil {
 		return err
 	}
-	added, err := downloadYtDlpCollection(ctx, pageURL, incoming, opts.OAuthToken, opts.ClientID, archive, rep)
+	added, err := downloadYtDlpCollection(ctx, pageURL, incoming, opts.OAuthToken, opts.ClientID, archive, loadLibraryBasenames(opts.LibraryDB), rep)
 	if err != nil {
 		rep.Line(jobs.LogFail(err.Error()))
 		return err
@@ -231,6 +250,38 @@ func DownloadCollectionURLCtx(ctx context.Context, env paths.Env, pageURL string
 		rep.Line(jobs.LogInfo("no new tracks downloaded"))
 	}
 	return NormalizeIncoming(ctx, opts.MusicRoot)
+}
+
+func loadLibraryBasenames(dbPath string) map[string]bool {
+	known := map[string]bool{}
+	if dbPath == "" {
+		return known
+	}
+	db, err := library.OpenDB(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "evoplayer: warn: library index: %v\n", err)
+		return known
+	}
+	defer db.Close()
+	rows, err := db.Query(`SELECT path FROM tracks`)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "evoplayer: warn: library index: %v\n", err)
+		return known
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			continue
+		}
+		known[filepath.Base(path)] = true
+	}
+	return known
+}
+
+func libraryHasBasename(known map[string]bool, artist, title string) bool {
+	base := library.ImportBasename(artist, title)
+	return base != "" && known[base]
 }
 
 func archiveSC(archive *syncarchive.Archive, id int64, rep jobs.Reporter) {

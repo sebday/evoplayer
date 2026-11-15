@@ -1319,6 +1319,7 @@ Card {
         }
 
         EqOverlay {
+            z: 6
             anchors.fill: parent
             anchors.topMargin: errLine.height
             anchors.rightMargin: pane.sideMargin

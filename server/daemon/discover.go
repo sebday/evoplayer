@@ -15,11 +15,15 @@ func (d *Daemon) handleDiscover(req ipc.Request) (interface{}, error) {
 	switch req.Method {
 	case "discover.similar":
 		var p struct {
-			Path string `json:"path"`
-			ID   int64  `json:"id"`
+			Path  string   `json:"path"`
+			Paths []string `json:"paths"`
+			ID    int64    `json:"id"`
 		}
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
+		}
+		if len(p.Paths) > 0 {
+			return d.similarQueue(p.Paths)
 		}
 		p.Path = strings.TrimSpace(p.Path)
 		if p.ID == 0 && p.Path == "" {
@@ -106,6 +110,102 @@ func (d *Daemon) handleDiscover(req ipc.Request) (interface{}, error) {
 	default:
 		return nil, ipc.ErrUnknownMethod(req.Method)
 	}
+}
+
+func (d *Daemon) similarQueue(paths []string) (soundcloud.SimilarResult, error) {
+	seeds := queueSeeds(paths, 8)
+	if len(seeds) == 0 {
+		return soundcloud.SimilarResult{}, ipc.ErrInvalidParams("path or id required")
+	}
+	var lists [][]soundcloud.SimilarTrack
+	var firstErr error
+	for _, path := range seeds {
+		if res, ok := d.discoverLookup(path, 0); ok {
+			lists = append(lists, res.Tracks)
+			continue
+		}
+		res, err := soundcloud.Similar(d.env(), soundcloud.Seed{Path: path})
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		d.discoverStore(path, res)
+		lists = append(lists, res.Tracks)
+	}
+	tracks := mergeSimilar(lists, 8)
+	if len(tracks) == 0 && firstErr != nil {
+		return soundcloud.SimilarResult{}, firstErr
+	}
+	return soundcloud.SimilarResult{Tracks: tracks}, nil
+}
+
+// queueSeeds picks tracks spread across the whole queue.
+func queueSeeds(paths []string, limit int) []string {
+	if limit < 1 {
+		return nil
+	}
+	clean := make([]string, 0, len(paths))
+	seen := map[string]struct{}{}
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" || strings.Contains(path, "/discover/") {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		clean = append(clean, path)
+	}
+	if len(clean) <= limit {
+		return clean
+	}
+	out := make([]string, 0, limit)
+	used := map[int]struct{}{}
+	for i := 0; i < limit; i++ {
+		idx := i * len(clean) / limit
+		if _, ok := used[idx]; ok {
+			continue
+		}
+		used[idx] = struct{}{}
+		out = append(out, clean[idx])
+	}
+	return out
+}
+
+func mergeSimilar(lists [][]soundcloud.SimilarTrack, limit int) []soundcloud.SimilarTrack {
+	if limit < 1 {
+		return nil
+	}
+	seen := map[int64]struct{}{}
+	out := make([]soundcloud.SimilarTrack, 0, limit)
+	for n := 0; len(out) < limit; n++ {
+		added := false
+		for _, rows := range lists {
+			if n >= len(rows) {
+				continue
+			}
+			track := rows[n]
+			if track.ID == 0 {
+				continue
+			}
+			if _, ok := seen[track.ID]; ok {
+				continue
+			}
+			seen[track.ID] = struct{}{}
+			out = append(out, track)
+			added = true
+			if len(out) >= limit {
+				break
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	return out
 }
 
 func discoverID(req ipc.Request) (int64, error) {

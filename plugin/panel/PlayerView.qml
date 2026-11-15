@@ -74,8 +74,10 @@ Item {
     property var discoverTracks: []
     property var relatedTracks: []
     property string relatedFor: ""
+    property string relatedPending: ""
     property string relatedNote: ""
     property int relatedGen: 0
+    property string relatedFollowKey: ""
     property int discoverIdx: 0
     property string discoverNote: ""
     property string discoverSeedTitle: ""
@@ -180,6 +182,7 @@ Item {
     property string _applyBuf: ""
     property bool _applyOverflow: false
 
+    onQueueChanged: scheduleRelated()
     onQueueRevisionChanged: {
         if (active && reorderPending === 0)
             loadQueue()
@@ -191,7 +194,6 @@ Item {
         loadWave()
         loadChannels()
         revealPlaying()
-        scheduleRelated()
     }
     onWaveFileChanged: loadWave()
     onPlayingChanged: syncViz()
@@ -1073,33 +1075,59 @@ Item {
         loadDiscover(row.id)
     }
 
+    function queuePaths() {
+        var rows = queue || []
+        var paths = []
+        var seen = {}
+        for (var i = 0; i < rows.length; i++) {
+            var path = String(rows[i] && rows[i].path || "")
+            if (!path || path.indexOf("/discover/") >= 0 || seen[path])
+                continue
+            seen[path] = true
+            paths.push(path)
+        }
+        return paths
+    }
+
     function scheduleRelated() {
-        var path = trackPath
-        if (!active || !path || path.indexOf("/discover/") >= 0)
+        if (!active)
             return
-        if (path !== relatedFor) {
+        var key = queuePaths().join("\n")
+        if (key === relatedFor && relatedNote === "ready")
+            return
+        if (key === relatedPending && relatedNote === "finding similar…")
+            return
+        relatedPending = key
+        if (key !== relatedFor) {
             relatedTracks = []
             relatedFor = ""
-            relatedNote = "finding similar…"
+            publishRelated()
         }
+        if (!key) {
+            relatedNote = ""
+            return
+        }
+        relatedNote = "finding similar…"
         relatedTimer.restart()
     }
 
     function loadRelated() {
-        var path = trackPath
-        if (!active || !path || path.indexOf("/discover/") >= 0)
+        var paths = queuePaths()
+        var key = paths.join("\n")
+        if (!active || !paths.length)
             return
-        if (path === relatedFor && relatedNote !== "finding similar…")
+        if (key === relatedFor && relatedNote === "ready")
             return
         if (!service || !service.ipcCall)
             return
         var gen = ++relatedGen
-        service.ipcCall("discover.similar", { path: path }, function(ok, msg) {
-            if (gen !== root.relatedGen || root.trackPath !== path)
+        service.ipcCall("discover.similar", { paths: paths }, function(ok, msg) {
+            if (gen !== root.relatedGen || root.queuePaths().join("\n") !== key)
                 return
             if (!ok) {
                 root.relatedNote = ""
                 root.relatedTracks = []
+                root.publishRelated()
                 return
             }
             var data = msg && msg.data ? msg.data : {}
@@ -1108,10 +1136,29 @@ Item {
             var cap = Math.min(8, src.length)
             for (var i = 0; i < cap; i++)
                 next.push(src[i])
-            root.relatedFor = path
+            root.relatedFor = key
+            root.relatedPending = key
             root.relatedTracks = next
             root.relatedNote = next.length ? "ready" : ""
+            root.publishRelated()
         })
+    }
+
+    function publishRelated() {
+        var ids = []
+        var rows = relatedTracks || []
+        for (var i = 0; i < rows.length; i++) {
+            var id = Number(rows[i] && rows[i].id)
+            if (id)
+                ids.push(id)
+        }
+        var key = ids.join(",")
+        if (key === relatedFollowKey)
+            return
+        relatedFollowKey = key
+        if (!service || !service.ipcCall)
+            return
+        service.ipcCall("playback.follow", { ids: ids }, function() {})
     }
 
     function relatedRow(index) {
@@ -1166,6 +1213,7 @@ Item {
 
     function removeRelated(id) {
         relatedTracks = patchRelated(relatedTracks, id, false)
+        publishRelated()
     }
 
     function patchRelated(rows, id, keep) {
@@ -3762,8 +3810,6 @@ Item {
         if (mode === "eq") {
             if (key === Qt.Key_Escape && eqSaveArmed) { eqSaveArmed = false; return true }
             if (key === Qt.Key_Escape) { onEsc(); return true }
-            if (eqPanel !== "eq")
-                return true
             if (text === "1" || text === "2" || text === "3") { pickEqPreset(Number(text)); return true }
             if (text === "s" || text === "S") { eqSaveArmed = !eqSaveArmed; return true }
             if (key === Qt.Key_Left) { eqIdx = Math.max(0, eqIdx - 1); return true }

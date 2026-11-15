@@ -111,7 +111,7 @@ func placeAudio(ctx context.Context, src, dest string) error {
 	return ytdlp.ToMP3(ctx, src, dest, nil)
 }
 
-func downloadYtDlpCollection(ctx context.Context, pageURL, incomingDir, oauthToken, clientID string, archive *syncarchive.Archive, rep jobs.Reporter) ([]string, error) {
+func downloadYtDlpCollection(ctx context.Context, pageURL, incomingDir, oauthToken, clientID string, archive *syncarchive.Archive, known map[string]bool, rep jobs.Reporter) ([]string, error) {
 	rep.Progress(jobs.Progress{Phase: "fetching track list"})
 	rep.Line(jobs.LogInfo("fetching track list"))
 	stopBeat := startProgressHeartbeat(ctx, rep, "fetching track list")
@@ -131,6 +131,11 @@ func downloadYtDlpCollection(ctx context.Context, pageURL, incomingDir, oauthTok
 		if dest := flatDestPath(incomingDir, e); fileExists(dest) {
 			_ = archiveAddFlatEntry(archive, e)
 			rep.Line(jobs.LogSkip(filepath.Base(dest)))
+			continue
+		}
+		if libraryHasBasename(known, e.Uploader, e.Title) {
+			_ = archiveAddFlatEntry(archive, e)
+			rep.Line(jobs.LogSkip(strings.TrimSpace(e.Uploader+" - "+e.Title) + " (already in library)"))
 			continue
 		}
 		pending = append(pending, e)

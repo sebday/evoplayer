@@ -63,6 +63,9 @@ type Daemon struct {
 	discoverMu        sync.Mutex
 	discoverByID      map[int64]soundcloud.SimilarResult
 	discoverByPath    map[string]int64
+	followMu          sync.Mutex
+	followGen         int
+	followBusy        map[string]bool
 	eqMu              sync.Mutex
 	eqPresets         [eqPresetCount]*playback.EQConfig
 }
@@ -112,6 +115,13 @@ func New(env paths.Env) *Daemon {
 		d.onPlaybackNotify(st)
 		d.broadcastState()
 		d.persistPlayerState(st)
+	})
+	d.Actor.SetFollowReady(d.followFileReady)
+	d.Actor.SetOnFollow(func(index int, path string) {
+		d.followMu.Lock()
+		gen := d.followGen
+		d.followMu.Unlock()
+		go d.ensureFollowFile(gen, index, path)
 	})
 	if vol, ok := status.SavedVolume(env); ok {
 		d.persistVolume = vol
@@ -233,6 +243,15 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 	case "playback.next":
 		go func() { _ = d.Actor.Next() }()
 		return nil, nil
+	case "playback.follow":
+		var p struct {
+			IDs []int64 `json:"ids"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, ipc.ErrInvalidParams("%v", err)
+		}
+		d.setPlaybackFollow(p.IDs)
+		return map[string]any{"tracks": len(p.IDs)}, nil
 	case "playback.prev":
 		go func() { _ = d.Actor.Prev() }()
 		return nil, nil

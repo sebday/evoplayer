@@ -42,6 +42,11 @@ type Actor struct {
 	loadGen            uint64
 	detached           bool
 	resumePos          float64
+	follow             []string
+	followIdx          int
+	followWait         int
+	followReady        func(string) bool
+	onFollow           func(int, string)
 	cmdCh              chan func()
 	viz                *viz.Analyzer
 	eq                 *EQ
@@ -49,12 +54,14 @@ type Actor struct {
 
 func NewActor(notify func(Status)) *Actor {
 	a := &Actor{
-		volumePct: 100,
-		notify:    notify,
-		notifyCh:  make(chan struct{}, 1),
-		cmdCh:     make(chan func(), 64),
-		viz:       viz.NewAnalyzer(float64(outputSampleRate)),
-		eq:        NewEQ(),
+		volumePct:  100,
+		notify:     notify,
+		notifyCh:   make(chan struct{}, 1),
+		cmdCh:      make(chan func(), 64),
+		viz:        viz.NewAnalyzer(float64(outputSampleRate)),
+		eq:         NewEQ(),
+		followIdx:  -1,
+		followWait: -1,
 	}
 	a.output.SetVolume(volumeGain(a.volumePct))
 	a.viz.SetDelayFunc(func() int {
@@ -467,6 +474,16 @@ func (a *Actor) Next() error {
 	return a.dispatchErr(func() error {
 		a.mu.Lock()
 		a.detached = false
+		mode, idx := followSkip(a.followIdx, len(a.follow), a.advancesPastEndLocked(1), 1)
+		a.mu.Unlock()
+		switch mode {
+		case "follow", "replay":
+			return a.playFollow(idx)
+		case "stop":
+			a.finishFollow()
+			return nil
+		}
+		a.mu.Lock()
 		if len(a.queue) == 0 {
 			a.mu.Unlock()
 			return nil
@@ -494,7 +511,16 @@ func (a *Actor) Prev() error {
 			a.mu.Unlock()
 			return a.seekPlayback(0)
 		}
+		mode, idx := followSkip(a.followIdx, len(a.follow), false, -1)
 		a.detached = false
+		a.mu.Unlock()
+		if mode == "follow" {
+			return a.playFollow(idx)
+		}
+		if mode == "back" {
+			return a.loadCurrent()
+		}
+		a.mu.Lock()
 		a.index = a.nextIndexLocked(-1)
 		a.mu.Unlock()
 		return a.loadCurrent()
@@ -597,6 +623,8 @@ func (a *Actor) loadCurrent() error {
 func (a *Actor) loadCurrentAt(position float64, paused bool) error {
 	a.mu.Lock()
 	a.detached = false
+	a.followIdx = -1
+	a.followWait = -1
 	if len(a.queue) == 0 {
 		a.mu.Unlock()
 		a.haltPlayback()
@@ -763,12 +791,20 @@ func (a *Actor) watchPlaybackEnd(path string, gen uint64, done <-chan struct{}) 
 			_ = a.loadCurrentAt(resume, false)
 			return
 		}
-		if !repeat {
-			a.mu.Lock()
+		a.mu.Lock()
+		mode, idx := followAdvance(a.followIdx, len(a.follow), repeat, a.advancesPastEndLocked(1))
+		if mode == "queue" && !repeat {
 			a.index = a.nextIndexLocked(1)
-			a.mu.Unlock()
 		}
-		_ = a.loadCurrent()
+		a.mu.Unlock()
+		switch mode {
+		case "follow", "replay":
+			_ = a.playFollow(idx)
+		case "stop":
+			a.finishFollow()
+		default:
+			_ = a.loadCurrent()
+		}
 	})
 }
 

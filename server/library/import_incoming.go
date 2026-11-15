@@ -2,6 +2,7 @@ package library
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/sebday/evoplayer/server/audio"
 	"github.com/sebday/evoplayer/server/jobs"
 	"github.com/sebday/evoplayer/server/paths"
+	"github.com/sebday/evoplayer/server/syncarchive"
 	"github.com/sebday/evoplayer/server/tags"
 )
 
@@ -48,8 +50,20 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 	moved := 0
 	failed := 0
 	skipped := 0
+	removed := 0
 	var imported []string
 	defer func() { _ = removeIncomingOverlay(env, imported) }()
+	known, err := trackBases(db)
+	if err != nil {
+		return err
+	}
+	var scArchive *syncarchive.Archive
+	if env.StateDir != "" {
+		scArchive, err = syncarchive.Load(syncarchive.Path(env.StateDir))
+		if err != nil {
+			return err
+		}
+	}
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -69,8 +83,28 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 			continue
 		}
 		probed, _ := tags.ProbeImport(src)
-		dest, err := incomingDest(env, src, probed)
-		if err != nil {
+		ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(src), "."))
+		name := trackFilename(probed.Tag.Artist, probed.Tag.Title, src, ext)
+		dest, destErr := incomingDest(env, src, probed)
+		candidates := []string{name}
+		if destErr == nil {
+			candidates = append(candidates, filepath.Base(dest))
+		}
+		gone, rmErr := removeIncomingDuplicate(src, known, candidates...)
+		if rmErr != nil {
+			failed++
+			rep.Line(jobs.LogFail(base))
+			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
+			continue
+		}
+		if gone {
+			noteSoundcloudID(scArchive, probed.Tag.SoundcloudID)
+			removed++
+			rep.Line(jobs.LogSkip(base + " (already in library)"))
+			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
+			continue
+		}
+		if destErr != nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: skip import (no dest): %s\n", src)
 			rep.Line(jobs.LogSkip(base + " (no genre)"))
 			skipped++
@@ -84,9 +118,16 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 			continue
 		}
 		if _, err := os.Stat(dest); err == nil {
-			fmt.Fprintf(os.Stderr, "evoplayer: skip existing dest: %s\n", dest)
-			rep.Line(jobs.LogSkip(relMusicPath(env.MusicRoot, dest) + " (exists)"))
-			skipped++
+			if err := os.Remove(src); err != nil {
+				failed++
+				rep.Line(jobs.LogFail(base))
+				rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
+				continue
+			}
+			noteSoundcloudID(scArchive, probed.Tag.SoundcloudID)
+			removed++
+			fmt.Fprintf(os.Stderr, "evoplayer: removed existing %s\n", relMusicPath(env.MusicRoot, dest))
+			rep.Line(jobs.LogSkip(base + " (already in library)"))
 			rep.Progress(jobs.Progress{Phase: base, Done: i + 1, Total: total})
 			continue
 		}
@@ -122,6 +163,10 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 	_ = SyncLiked(db, env)
 	rep.Line(jobs.LogInfof("imported %d", moved))
 	fmt.Fprintf(os.Stderr, "evoplayer: imported %d file(s) from .incoming/\n", moved)
+	if removed > 0 {
+		rep.Line(jobs.LogInfof("removed %d already in library", removed))
+		fmt.Fprintf(os.Stderr, "evoplayer: removed %d incoming file(s) already in the library\n", removed)
+	}
 	if skipped > 0 {
 		rep.Line(jobs.LogInfof("skipped %d", skipped))
 	}
@@ -160,6 +205,55 @@ func relMusicPath(root, path string) string {
 		return filepath.Base(path)
 	}
 	return rel
+}
+
+func noteSoundcloudID(archive *syncarchive.Archive, id string) {
+	if archive == nil {
+		return
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
+	if err != nil || n == 0 {
+		return
+	}
+	_ = archive.AddSC(n)
+}
+
+func trackBases(db *sql.DB) (map[string]string, error) {
+	rows, err := db.Query(`SELECT path FROM tracks`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	known := map[string]string{}
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		known[filepath.Base(path)] = path
+	}
+	return known, rows.Err()
+}
+
+// removeIncomingDuplicate deletes src when one of bases is already a real library file.
+func removeIncomingDuplicate(src string, known map[string]string, bases ...string) (bool, error) {
+	for _, base := range bases {
+		if base == "" {
+			continue
+		}
+		prev, ok := known[base]
+		if !ok {
+			continue
+		}
+		if _, err := os.Stat(prev); err != nil {
+			continue
+		}
+		if err := os.Remove(src); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func incomingSkipFile(path string) bool {
@@ -240,6 +334,11 @@ func capitaliseFirst(name string) string {
 		return name
 	}
 	return strings.ToUpper(name[:1]) + name[1:]
+}
+
+// ImportBasename is the filename import uses for an artist and title.
+func ImportBasename(artist, title string) string {
+	return trackFilename(artist, title, "", "mp3")
 }
 
 func trackFilename(artist, title, path, ext string) string {
