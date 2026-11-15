@@ -120,7 +120,7 @@ Column {
             Row {
                 width: parent.width
                 spacing: 6
-                visible: hero.info.artist !== "" || hero.info.album !== "" || hero.info.label !== ""
+                visible: hero.info.artist !== "" || hero.info.album !== ""
                 clip: true
 
                 LinkText {
@@ -136,7 +136,7 @@ Column {
                 }
 
                 Text {
-                    visible: hero.info.artist !== "" && (hero.info.album !== "" || hero.info.label !== "")
+                    visible: hero.info.artist !== "" && hero.info.album !== ""
                     textFormat: Text.PlainText
                     text: "·"
                     color: Theme.muted
@@ -150,15 +150,6 @@ Column {
                     font.pixelSize: Theme.fontSizeM
                     width: Math.min(implicitWidth, parent.width * 0.3)
                     onActivated: hero.view.openAlbum(text, hero.info.path)
-                }
-
-                LinkText {
-                    visible: text !== ""
-                    text: hero.info.label
-                    font.pixelSize: Theme.fontSizeM
-                    width: Math.min(implicitWidth, parent.width * 0.3)
-                    onActivated: hero.view.openLabel(text)
-                    onContextActivated: hero.view.openFieldTags("label", text)
                 }
 
                 Text {

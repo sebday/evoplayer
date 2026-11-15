@@ -32,7 +32,6 @@ Flickable {
                 { key: "tab", label: "list / browse" },
                 { key: "shift+tab", label: "browse / list" },
                 { key: "g", label: "artist page for the highlighted track" },
-                { key: "G", label: "label page for the highlighted track" },
                 { key: "← →", label: "back a page, parent / enter folder" },
                 { key: "backspace", label: "back a page, parent folder" },
                 { key: "⏎", label: "play / run" },

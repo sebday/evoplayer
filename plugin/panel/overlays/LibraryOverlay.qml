@@ -50,13 +50,38 @@ Item {
         }
     }
 
+    Item {
+        id: helpCol
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        width: Math.min(440, Math.max(300, parent.width * 0.38))
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: 1
+            color: Theme.foregroundFaint
+        }
+
+        HelpOverlay {
+            anchors.fill: parent
+            anchors.leftMargin: 18
+            anchors.rightMargin: 16
+            anchors.topMargin: 8
+            anchors.bottomMargin: 8
+            view: pane.view
+        }
+    }
+
     Column {
         id: tools
         anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.right: helpCol.left
         anchors.top: parent.top
         anchors.leftMargin: 8
-        anchors.rightMargin: 12
+        anchors.rightMargin: 16
         spacing: 8
 
         Row {
@@ -128,7 +153,8 @@ Item {
         anchors.top: tools.bottom
         anchors.topMargin: 10
         anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.right: helpCol.left
+        anchors.rightMargin: 8
         anchors.bottom: folders.top
         clip: true
         boundsBehavior: Flickable.StopAtBounds
@@ -162,12 +188,6 @@ Item {
                 inverted: fileRow.filled
                 onActivated: view.toggleIncomingGenre(String(fileRow.modelData.path || ""))
             }
-
-            Chip {
-                text: "tags"
-                inverted: fileRow.filled
-                onActivated: view.editIncoming(fileRow.index)
-            }
         }
 
         footer: Text {
@@ -187,10 +207,10 @@ Item {
         id: folders
         visible: view.incomingGenrePath !== ""
         anchors.left: parent.left
-        anchors.right: parent.right
+        anchors.right: helpCol.left
         anchors.bottom: parent.bottom
         anchors.leftMargin: 8
-        anchors.rightMargin: 12
+        anchors.rightMargin: 16
         height: visible ? 40 : 0
 
         Flickable {

@@ -57,7 +57,7 @@ Card {
     readonly property int scrollGutter: 12
     readonly property bool likesOpen: view.shownPlaylist === "all" && view.listSource() === "shown"
     readonly property bool likesGrid: likesOpen && view.asGrid
-    readonly property bool showLibrary: view.mode === "queue" || view.mode === "tags" || view.mode === "eq" || view.mode === "library"
+    readonly property bool showLibrary: view.mode === "queue" || view.mode === "tags" || view.mode === "eq"
     readonly property bool coverList: view.mode === "eq" || view.mode === "library"
     readonly property bool trackGrid: view.asGrid && pane.showLibrary && !view.indexPage()
         && (view.listSource() === "shown" || view.listSource() === "page" || view.listSource() === "search")
@@ -503,7 +503,7 @@ Card {
                     width: releaseList.width
                     height: 60
 
-                    readonly property string meta: [String(modelData.year || ""), view.page && view.page.kind === "artist" ? String(modelData.label || "") : String(modelData.artist || "")]
+                    readonly property string meta: [String(modelData.year || ""), view.page && view.page.kind === "artist" ? "" : String(modelData.artist || "")]
                         .filter(function(s) { return s !== "" }).join(" · ")
 
                     Rectangle {
@@ -1123,7 +1123,7 @@ Card {
                     Row {
                         id: meta
                         anchors.right: parent.right
-                        anchors.rightMargin: 10
+                        anchors.rightMargin: 22
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 8
 
@@ -1380,10 +1380,9 @@ Card {
 
         LibraryOverlay {
             z: 6
-            anchors.top: pane.trackHeading ? tracksLabel.bottom : head.bottom
+            anchors.top: errLine.bottom
             anchors.left: parent.left
-            anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
-            anchors.rightMargin: pane.releaseColumn ? 16 : pane.sideMargin
+            anchors.right: parent.right
             anchors.bottom: parent.bottom
             visible: view.mode === "library"
             view: pane.view

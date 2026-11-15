@@ -37,11 +37,7 @@ Item {
     property bool scanRunning: false
 
     property string browsePath: ""
-    property bool browseFiles: false
     property string libraryView: ""
-    property var treeOpen: ({})
-    property bool treeRootOpen: false
-    property var treeChildren: ({})
     property int playlistColumns: 4
     property bool asGrid: false
     property string browseParent: ""
@@ -433,15 +429,10 @@ Item {
             else if (name)
                 others++
         }
-        var rows = [
-            { kind: "files", type: "", label: "Files", path: "", count: 0, id: "filesystem", depth: 0 }
-        ]
-        if (treeOpen.root)
-            appendTree(rows, "", 1)
+        var rows = []
         rows.push({ kind: "playlist", type: "", label: "Now Playing", path: "", count: current, id: "current", depth: 0 })
         rows.push({ kind: "lists", type: "", label: "Playlists", path: "", count: others, id: "playlists", depth: 0 })
         rows.push({ kind: "page", type: "", label: "Artists", path: "", count: indexCount("artist"), id: "artists", depth: 0 })
-        rows.push({ kind: "page", type: "", label: "Labels", path: "", count: indexCount("label"), id: "labels", depth: 0 })
         rows.push({ kind: "page", type: "", label: "Genres", path: "", count: indexCount("genre"), id: "genres", depth: 0 })
         rows.push({ kind: "page", type: "", label: "Years", path: "", count: indexCount("year"), id: "years", depth: 0 })
         sidebar = rows
@@ -470,120 +461,15 @@ Item {
         var rows = sidebar || []
         var out = []
         for (var i = 0; i < rows.length; i++) {
-            if (rows[i] && rows[i].kind !== "tree" && rows[i].kind !== "rule" && rows[i].id !== "filesystem")
+            if (rows[i] && rows[i].kind !== "tree" && rows[i].kind !== "rule")
                 out.push({ index: i, row: rows[i] })
         }
         return out
-    }
-
-    function treeRows() {
-        var rows = sidebar || []
-        var out = []
-        for (var i = 0; i < rows.length; i++) {
-            if (rows[i] && rows[i].kind === "tree")
-                out.push({ index: i, row: rows[i] })
-        }
-        return out
-    }
-
-    function treeKey(path) {
-        var p = String(path || "")
-        return p === "" ? "root" : p
-    }
-
-    function appendTree(rows, path, depth) {
-        var kids = treeChildren[treeKey(path)] || []
-        for (var i = 0; i < kids.length; i++) {
-            var kid = kids[i]
-            var key = treeKey(kid.path)
-            var open = !!treeOpen[key]
-            rows.push({
-                kind: "tree",
-                type: "dir",
-                label: String(kid.name || ""),
-                path: String(kid.path || ""),
-                count: Number(kid.count) || 0,
-                id: String(kid.path || ""),
-                depth: depth,
-                open: open
-            })
-            if (open)
-                appendTree(rows, kid.path, depth + 1)
-        }
-    }
-
-    function loadTree(path) {
-        var key = treeKey(path)
-        ipc("library.browse", { path: String(path || ""), offset: 0, limit: 500 }, function(data) {
-            var entries = (data && data.entries) || []
-            var dirs = []
-            for (var i = 0; i < entries.length; i++) {
-                var en = entries[i] || {}
-                if (String(en.type || "") !== "dir")
-                    continue
-                dirs.push({
-                    name: String(en.name || en.path || ""),
-                    path: String(en.path || ""),
-                    count: Number(en.count) || 0
-                })
-            }
-            var next = Object.assign({}, root.treeChildren)
-            next[key] = dirs
-            root.treeChildren = next
-            root.rebuildSidebar()
-        })
-    }
-
-    function refreshTrees() {
-        var open = treeOpen || {}
-        var keys = Object.keys(open)
-        for (var i = 0; i < keys.length; i++) {
-            if (!open[keys[i]])
-                continue
-            loadTree(keys[i] === "root" ? "" : keys[i])
-        }
-    }
-
-    function closeTree() {
-        if (!treeRootOpen)
-            return
-        treeOpen = ({})
-        treeRootOpen = false
-        rebuildSidebar()
-    }
-
-    function toggleTree(path) {
-        var key = treeKey(path)
-        var open = Object.assign({}, treeOpen)
-        if (open[key]) {
-            delete open[key]
-            treeRootOpen = !!open.root
-            treeOpen = open
-            rebuildSidebar()
-            return
-        }
-        open[key] = true
-        treeRootOpen = !!open.root
-        treeOpen = open
-        if (!treeChildren[key])
-            loadTree(path)
-        else
-            rebuildSidebar()
     }
 
     function showBrowseTab(row, fromKey) {
         if (!row)
             return
-        if (row.id === "filesystem") {
-            openFilesystem()
-            return
-        }
-        if (row.kind === "tree") {
-            if (!fromKey)
-                toggleTree(row.path)
-            return
-        }
-        closeTree()
         beginViewChange()
         if (row.id === "playlists") {
             openPlaylists()
@@ -1577,10 +1463,25 @@ Item {
         }
         if (shownPlaylist || page || libraryView)
             return
+        var playing = discoverPreviewId(trackPath) ? queueIndexOf(trackPath) : -1
+        if (playing >= 0)
+            idx = playing
         playlistIdx = idx
         playlistAnchor = idx
         playlistPicks = queue[idx] && queue[idx].path ? [String(queue[idx].path)] : []
         revealPlaying()
+    }
+
+    function queueIndexOf(path) {
+        path = String(path || "")
+        if (!path)
+            return -1
+        var rows = queue || []
+        for (var i = 0; i < rows.length; i++) {
+            if (String(rows[i] && rows[i].path || "") === path)
+                return i
+        }
+        return -1
     }
 
     function loadQueue() {
@@ -1593,15 +1494,16 @@ Item {
     function revealPlaying() {
         if (shownPlaylist || page)
             return
-        if (pane === "playlist" && mode === "queue")
+        var at = queueIndexOf(trackPath)
+        if (at < 0)
             return
-        var rows = queue || []
-        for (var i = 0; i < rows.length; i++) {
-            if (String(rows[i].path || "") === trackPath) {
-                playlistIdx = i
-                return
-            }
-        }
+        var onQueue = pane === "playlist" && mode === "queue"
+        if (onQueue && !discoverPreviewId(trackPath))
+            return
+        playlistIdx = at
+        playlistAnchor = at
+        if (onQueue)
+            playingReveal++
     }
 
     function focusPlayingRow() {
@@ -1693,31 +1595,12 @@ Item {
     }
 
     function enterFolder() {
-        var row = currentRow()
-        if (!row)
-            return
-        if (row.id === "filesystem")
-            openFilesystem()
-        else if (row.kind === "tree")
-            toggleTree(row.path)
     }
 
     function leaveFolder() {
         if (libraryView !== "files" || !browsePath)
             return
         loadBrowse(browseParent)
-    }
-
-    function openFilesystem() {
-        leaveOverlays()
-        libraryView = "files"
-        closePages()
-        clearShownPlaylist()
-        browsePath = ""
-        browseParent = ""
-        browseEntries = []
-        playlistIdx = 0
-        loadBrowse("")
     }
 
     function scrollKey() {
@@ -1801,8 +1684,7 @@ Item {
     }
 
     function openBrowsePath(path) {
-        libraryView = "files"
-        loadBrowse(String(path || ""))
+        playFolder(String(path || ""))
     }
 
     function openListedPlaylist(name) {
@@ -1972,8 +1854,6 @@ Item {
             return "index"
         if (searchActive())
             return "search"
-        if (libraryView === "files")
-            return "files"
         if (libraryView === "lists" && !shownPlaylist)
             return "lists"
         if (shownPlaylist)
@@ -2159,7 +2039,7 @@ Item {
     }
 
     function prefetchIndexes() {
-        var kinds = ["artist", "label", "genre", "year"]
+        var kinds = ["artist", "genre", "year"]
         for (var i = 0; i < kinds.length; i++)
             prefetchIndex(kinds[i])
     }
@@ -2562,7 +2442,7 @@ Item {
     }
 
     function syncShownPlaylist() {
-        if (libraryView === "files" || libraryView === "lists")
+        if (libraryView === "lists")
             return
         var row = sidebar[browseIdx]
         if (row && row.kind === "playlist" && row.id && row.id !== "current")
@@ -2641,10 +2521,6 @@ Item {
             return
         if (row.kind === "playlist") {
             playPlaylist(row.id)
-            return
-        }
-        if (row.id === "filesystem") {
-            enterFolder()
             return
         }
         if (row.type === "dir") {
@@ -2759,10 +2635,6 @@ Item {
         }
         if (row.kind === "playlist") {
             playPlaylist(row.id)
-            return
-        }
-        if (row.id === "filesystem") {
-            enterFolder()
             return
         }
         if (row.type === "dir") {
@@ -3296,7 +3168,6 @@ Item {
     }
 
     function openSearch() {
-        closeTree()
         dismissDownload()
         if (mode !== "queue")
             closeMode()
@@ -3460,7 +3331,7 @@ Item {
     function tagLimit() {
         if (tagField)
             return 1
-        return tagMany ? 3 : 7
+        return tagMany ? 2 : 5
     }
 
     function moveTag(delta) {
@@ -3505,8 +3376,7 @@ Item {
             ipc("library.track.tags.set_many", {
                 paths: paths,
                 album: tagAlbum,
-                year: tagYear,
-                label: tagLabel
+                year: tagYear
             }, function() {
                 root.tagBusy = false
                 root.err = ""
@@ -4073,15 +3943,6 @@ Item {
             host.forceKeyFocus()
     }
 
-    function toggleFilesMenu() {
-        if (libraryView === "files") {
-            showNowPlaying()
-            return
-        }
-        closeTree()
-        openFilesystem()
-    }
-
     function clickBrowse(index) {
         if (mode === "eq" || mode === "library") {
             eqSaveArmed = false
@@ -4368,8 +4229,7 @@ Item {
                 openArt(trackPath)
             return true
         }
-        if (text === "g") { gotoSelected("artist"); return true }
-        if (text === "G") { gotoSelected("label"); return true }
+        if (text === "g" || text === "G") { gotoSelected("artist"); return true }
         if ((key === Qt.Key_Backspace || key === Qt.Key_Left) && libraryView === "lists" && shownPlaylist && !page) {
             backToPlaylists()
             return true
@@ -4484,7 +4344,6 @@ Item {
                     root.indexShown = ""
                     root.prefetchIndexes()
                     root.loadBrowse(root.browsePath)
-                    root.refreshTrees()
                     if (name === "import")
                         root.loadIncoming()
                     if (root.entityPage())

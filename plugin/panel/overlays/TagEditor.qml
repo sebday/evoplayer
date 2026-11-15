@@ -24,8 +24,8 @@ Item {
         if (editor.view.tagField)
             return [fieldOnly]
         if (editor.view.tagMany)
-            return [albumField, yearField, labelField]
-        return [titleField, artistField, albumField, yearField, genreField, labelField, tagsField]
+            return [albumField, yearField]
+        return [titleField, artistField, albumField, yearField, genreField]
     }
 
     function focusIndex(i) {
@@ -137,25 +137,6 @@ Item {
                 value: editor.view.tagGenre
                 onEdited: function(text) { if (editor.view.tagGenre !== text) editor.view.tagGenre = text }
             }
-            TagField {
-                id: labelField
-                visible: editor.view.tagField === ""
-                label: "label"
-                index: editor.view.tagMany ? 2 : 5
-                view: editor.view
-                value: editor.view.tagLabel
-                onEdited: function(text) { if (editor.view.tagLabel !== text) editor.view.tagLabel = text }
-            }
-            TagField {
-                id: tagsField
-                visible: editor.view.tagField === "" && !editor.view.tagMany
-                label: "tags"
-                index: 6
-                view: editor.view
-                value: editor.view.tagTags
-                onEdited: function(text) { if (editor.view.tagTags !== text) editor.view.tagTags = text }
-            }
-
             Row {
                 width: parent.width
                 spacing: 8

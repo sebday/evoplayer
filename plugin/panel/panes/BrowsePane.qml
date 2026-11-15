@@ -2,7 +2,7 @@ import QtQuick
 import "../compat"
 import "../widgets"
 
-// Library menu along the top. The folder tree drops down under filesystem.
+// Library menu along the top.
 Item {
     id: pane
 
@@ -17,47 +17,6 @@ Item {
         anchors.top: parent.top
         height: pane.barHeight
         spacing: 10
-
-        Item {
-            id: menuBtn
-            width: 34
-            height: parent.height
-
-            Rectangle {
-                anchors.centerIn: parent
-                width: 34
-                height: 34
-                radius: 8
-                color: view.libraryView === "files"
-                    ? Theme.withOpacity(Theme.border, 0.22)
-                    : (menuArea.containsMouse ? Theme.foregroundFaint : "transparent")
-            }
-
-            Column {
-                anchors.centerIn: parent
-                spacing: 4
-
-                Repeater {
-                    model: 3
-                    Rectangle {
-                        width: 14
-                        height: 2
-                        radius: 1
-                        color: view.libraryView === "files"
-                            ? Theme.border
-                            : Theme.withOpacity(Theme.foreground, menuArea.containsMouse ? 1 : 0.78)
-                    }
-                }
-            }
-
-            MouseArea {
-                id: menuArea
-                anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: view.toggleFilesMenu()
-            }
-        }
 
         Item {
             id: transport
@@ -389,7 +348,7 @@ Item {
 
         Item {
             id: tabs
-            width: parent.width - searchSlot.width - transport.width - menuBtn.width - bar.spacing * 3
+            width: parent.width - searchSlot.width - transport.width - bar.spacing * 2
             height: parent.height
             clip: true
 
@@ -409,7 +368,7 @@ Item {
                         readonly property int sourceIndex: modelData.index
                         readonly property bool currentPage: row.kind === "page" && view.page && view.page.kind === row.id
                         readonly property bool shownList: row.kind === "playlist" && view.libraryView === "" && !view.page
-                            && view.mode !== "download" && view.mode !== "discover" && !view.searchActive()
+                            && view.mode !== "download" && view.mode !== "discover" && view.mode !== "library" && !view.searchActive()
                             && row.id === (view.shownPlaylist !== "" ? view.shownPlaylist : "current")
                         readonly property bool shownLists: row.id === "playlists" && view.libraryView === "lists" && !view.searchActive()
                         readonly property bool on: currentPage || shownList || shownLists
@@ -468,8 +427,6 @@ Item {
                                 view.clickBrowse(tab.sourceIndex)
                             }
                             onDoubleClicked: {
-                                if (row.id === "filesystem")
-                                    return
                                 view.clickBrowse(tab.sourceIndex)
                                 view.playBrowseAt(tab.sourceIndex)
                             }

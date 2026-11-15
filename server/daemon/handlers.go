@@ -12,7 +12,6 @@ import (
 	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/library/find"
 	"github.com/sebday/evoplayer/server/mpris"
-	"github.com/sebday/evoplayer/server/notify"
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
 	"github.com/sebday/evoplayer/server/soundcloud"
@@ -249,7 +248,6 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		status.InvalidateMeta(p.Path)
-		notify.Favorite(d.env(), row.Liked, p.Path)
 		return row, nil
 	case "library.track.move":
 		var p struct {
@@ -318,13 +316,12 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			Paths []string `json:"paths"`
 			Album string   `json:"album"`
 			Year  string   `json:"year"`
-			Label string   `json:"label"`
 		}
 		if err := ipc.DecodeParams(req.Params, &many); err != nil {
 			return nil, err
 		}
 		libEnv := library.EnvFrom(d.env())
-		n, err := library.UpdateSharedTags(libEnv, many.Paths, many.Album, many.Year, many.Label)
+		n, err := library.UpdateSharedTags(libEnv, many.Paths, many.Album, many.Year)
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
 		}

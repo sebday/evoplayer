@@ -57,9 +57,6 @@ type Daemon struct {
 	persistState      string
 	persistVolume     int
 	lastWarmPath      string
-	notifyMu          sync.Mutex
-	notifyPrev        playback.Status
-	notifyReady       bool
 	discoverMu        sync.Mutex
 	discoverByID      map[int64]soundcloud.SimilarResult
 	discoverByPath    map[string]int64
@@ -112,7 +109,6 @@ func New(env paths.Env) *Daemon {
 			d.warm.Enqueue(st.Path, warm.PriorityHigh)
 		}
 		d.autoScrobble(st)
-		d.onPlaybackNotify(st)
 		d.broadcastState()
 		d.persistPlayerState(st)
 	})

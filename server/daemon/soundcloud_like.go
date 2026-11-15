@@ -7,7 +7,6 @@ import (
 
 	"github.com/sebday/evoplayer/server/ipc"
 	"github.com/sebday/evoplayer/server/library"
-	"github.com/sebday/evoplayer/server/notify"
 	"github.com/sebday/evoplayer/server/playlist"
 	"github.com/sebday/evoplayer/server/soundcloud"
 	"github.com/sebday/evoplayer/server/status"
@@ -96,7 +95,6 @@ func (d *Daemon) finishSoundCloudLike(env playlist.Env, id int64, path string, l
 		return nil, err
 	}
 	status.InvalidateMeta(path)
-	notify.Favorite(d.env(), row.Liked, path)
 	return map[string]any{
 		"id":       id,
 		"path":     row.Path,

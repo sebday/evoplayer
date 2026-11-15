@@ -69,12 +69,11 @@ func UpdateTrackTags(env Env, path string, patch TrackTagsPatch) (Track, error) 
 	})
 }
 
-// UpdateSharedTags writes album, year, and label on each path and leaves the other tags alone.
-func UpdateSharedTags(env Env, paths []string, album, year, label string) (int, error) {
+// UpdateSharedTags writes album and year on each path and leaves the other tags alone.
+func UpdateSharedTags(env Env, paths []string, album, year string) (int, error) {
 	fields := map[string]string{
-		"album":     strings.TrimSpace(album),
-		"year":      strings.TrimSpace(year),
-		"publisher": strings.TrimSpace(label),
+		"album": strings.TrimSpace(album),
+		"year":  strings.TrimSpace(year),
 	}
 	n := 0
 	seen := map[string]struct{}{}
