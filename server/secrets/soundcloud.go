@@ -9,7 +9,12 @@ import (
 
 const soundcloudPassRel = "soundcloud/oauth-token"
 
-var soundcloudOAuthRe = regexp.MustCompile(`\d+-\d+-\d+-[A-Za-z0-9]+`)
+var (
+	// Legacy SoundCloud cookie: "2-12345-67890-abcdef".
+	soundcloudOAuthRe = regexp.MustCompile(`\d+-\d+-\d+-[A-Za-z0-9]+`)
+	// Current SoundCloud access token is an at+JWT.
+	soundcloudJWTRe = regexp.MustCompile(`[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}`)
+)
 
 type Token struct {
 	Token  string
@@ -62,6 +67,9 @@ func resolveSoundcloud(home string, show passFunc, keyring func(string) []byte) 
 }
 
 func matchSoundcloudOAuth(s string) string {
+	if jwt := soundcloudJWTRe.FindString(s); jwt != "" {
+		return jwt
+	}
 	var best string
 	for _, m := range soundcloudOAuthRe.FindAllString(s, -1) {
 		if len(m) > len(best) {
