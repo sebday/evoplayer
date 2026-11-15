@@ -56,7 +56,11 @@ Flickable {
                 { key: "q", label: "quit" },
                 { key: "k", label: "keep discover" },
                 { key: "x", label: "dismiss discover" },
-                { key: "n", label: "more like this" }
+                { key: "n", label: "more like this" },
+                { key: "s", label: "sync likes (in download)" },
+                { key: "←→ ↑↓", label: "eq band / gain" },
+                { key: "0 r e", label: "eq flat / reset / on-off" },
+                { key: "1-3 s", label: "eq preset / save" }
             ]
 
             Row {

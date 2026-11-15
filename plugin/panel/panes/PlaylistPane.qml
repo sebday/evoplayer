@@ -4,7 +4,7 @@ import "../compat"
 import "../overlays"
 import "../widgets"
 
-Fieldset {
+Card {
     id: pane
 
     required property var view
@@ -50,10 +50,7 @@ Fieldset {
         background: Item {}
     }
 
-    number: 3
-    legend: view.playlistLegend()
     active: view.pane === "playlist"
-    hints: view.playlistHints()
 
     Item {
         anchors.fill: parent

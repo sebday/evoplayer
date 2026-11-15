@@ -2,17 +2,12 @@ import QtQuick
 import "../compat"
 import "../widgets"
 
-Fieldset {
+Card {
     id: pane
 
     required property var view
 
-    number: 1
-    legend: "now playing"
-    active: false
-    hints: view.nowHints()
-    hintsRight: true
-    implicitHeight: metaCol.implicitHeight + 32
+    implicitHeight: metaCol.implicitHeight + pad * 2
 
     Row {
         anchors.fill: parent

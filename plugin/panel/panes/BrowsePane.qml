@@ -1,19 +1,13 @@
 import QtQuick
 import "../compat"
+import "../widgets"
 
-Fieldset {
+Card {
     id: pane
 
     required property var view
 
-    number: 2
-    legend: "browse"
-    legendRight: view.browsePath || (view.browseFiles ? "filesystem" : "")
     active: view.pane === "browse" || view.pane === "search"
-    hints: [
-        { key: "⏎", label: "play" },
-        { key: "d", label: "add dir" }
-    ]
 
     Column {
         anchors.fill: parent
