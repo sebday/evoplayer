@@ -11,8 +11,21 @@ Column {
     readonly property bool entity: view.entityPage()
     readonly property var entityData: entity && view.pageData ? view.pageData : ({})
     readonly property bool queueHeader: info.kind === "queue"
-    readonly property bool liveTrack: !queueHeader && String(view.trackPath || "") !== ""
+    readonly property bool liveTrack: {
+        if (queueHeader)
+            return false
+        var path = String(view.trackPath || "")
+        if (!path)
+            return false
+        var rows = view.playlistRows() || []
+        for (var i = 0; i < rows.length; i++) {
+            if (String(rows[i] && rows[i].path || "") === path)
+                return true
+        }
+        return false
+    }
     readonly property string liveArt: view.artSource()
+    readonly property int waveH: 72
     readonly property color onBanner: Theme.foreground
     readonly property string pageKind: view.page ? String(view.page.kind) : ""
 
@@ -32,10 +45,12 @@ Column {
     Item {
         id: banner
         width: hero.width
-        height: hero.queueHeader ? 252
-            : (hero.liveTrack
-                ? Math.max(240, textCol.implicitHeight + textCol.anchors.topMargin + 116)
-                : Math.max(188, textCol.implicitHeight + textCol.anchors.topMargin + 28))
+        height: {
+            var textH = textCol.implicitHeight + textCol.anchors.topMargin
+            if (hero.queueHeader || hero.liveTrack)
+                return textH + 8 + hero.waveH + 14
+            return Math.max(188, textH + 28)
+        }
 
         BlurBackdrop {
             anchors.fill: parent
@@ -108,17 +123,42 @@ Column {
                 }
             }
 
-            Text {
+            Row {
+                id: titleRow
                 width: parent.width
-                textFormat: Text.PlainText
-                text: hero.info.title
-                color: hero.onBanner
-                elide: Text.ElideRight
-                wrapMode: Text.Wrap
-                maximumLineCount: 2
-                font.family: Theme.fontFamily
-                font.bold: true
-                font.pixelSize: Theme.fontSize3xl
+                spacing: 12
+
+                Text {
+                    id: titleText
+                    width: Math.min(implicitWidth, titleRow.width - (artistFav.visible ? artistFav.width + titleRow.spacing : 0))
+                    textFormat: Text.PlainText
+                    text: hero.info.title
+                    color: hero.onBanner
+                    elide: Text.ElideRight
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    font.family: Theme.fontFamily
+                    font.bold: true
+                    font.pixelSize: Theme.fontSize3xl
+                }
+
+                Text {
+                    id: artistFav
+                    visible: hero.pageKind === "artist"
+                    topPadding: 8
+                    textFormat: Text.PlainText
+                    text: "♥"
+                    color: hero.info.starred ? Theme.liked : Theme.withOpacity(hero.onBanner, 0.45)
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeL
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -8
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: hero.view.toggleArtistFav()
+                    }
+                }
             }
 
             Row {
@@ -209,12 +249,11 @@ Column {
             visible: hero.queueHeader || hero.liveTrack
             anchors.left: parent.left
             anchors.right: artSlot.visible ? artSlot.left : parent.right
-            anchors.top: textCol.bottom
-            anchors.bottom: parent.bottom
             anchors.leftMargin: 18
             anchors.rightMargin: 16
+            anchors.top: textCol.bottom
             anchors.topMargin: 8
-            anchors.bottomMargin: 12
+            height: hero.waveH
 
             WaveformViz {
                 id: wave
@@ -236,9 +275,9 @@ Column {
         Item {
             id: artSlot
             anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
             anchors.rightMargin: hero.queueHeader ? 0 : 18
-            anchors.verticalCenter: parent.verticalCenter
-            height: hero.queueHeader ? parent.height : 150
             width: banner.width > 520 ? height : 0
             visible: width > 0
 

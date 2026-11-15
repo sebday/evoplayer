@@ -200,6 +200,21 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		return library.Index(libEnv, p.Kind)
+	case "library.artist.favorite":
+		var fav struct {
+			Name string `json:"name"`
+		}
+		if err := ipc.DecodeParams(req.Params, &fav); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(fav.Name) == "" {
+			return nil, ipc.ErrInvalidParams("name required")
+		}
+		starred, err := library.ToggleArtistStar(libEnv, fav.Name)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"name": strings.TrimSpace(fav.Name), "starred": starred}, nil
 	case "library.soundcloud.search":
 		var search struct {
 			Query string `json:"query"`

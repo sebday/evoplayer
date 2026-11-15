@@ -19,10 +19,11 @@ const (
 )
 
 type EntityRef struct {
-	Name  string `json:"name"`
-	Count int    `json:"count"`
-	Art   string `json:"art,omitempty"`
-	Thumb string `json:"thumb,omitempty"`
+	Name    string `json:"name"`
+	Count   int    `json:"count"`
+	Art     string `json:"art,omitempty"`
+	Thumb   string `json:"thumb,omitempty"`
+	Starred bool   `json:"starred,omitempty"`
 }
 
 type EntityRelease struct {
@@ -43,6 +44,7 @@ type EntityPage struct {
 	Total    int             `json:"total"`
 	Duration float64         `json:"duration"`
 	Liked    int             `json:"liked"`
+	Starred  bool            `json:"starred"`
 	Years    string          `json:"years,omitempty"`
 	Credits  []string        `json:"credits,omitempty"`
 	Art      string          `json:"art,omitempty"`
@@ -199,6 +201,7 @@ FROM tracks WHERE `
 		if credits := ArtistCredits(name); len(credits) > 1 {
 			page.Credits = credits[1:]
 		}
+		page.Starred = artistStarred(env, page.Name)
 	}
 	sortEntityTracks(matched)
 	summarizeEntity(env, &page, matched)
@@ -482,6 +485,17 @@ WHERE trim(COALESCE(` + col + `,'')) != '' ORDER BY path`)
 	if kind == "year" {
 		sort.SliceStable(out, func(i, j int) bool {
 			return out[i].Name > out[j].Name
+		})
+	} else if kind == "artist" {
+		stars := artistStarSet(env)
+		for i := range out {
+			out[i].Starred = stars[strings.ToLower(out[i].Name)]
+		}
+		sort.SliceStable(out, func(i, j int) bool {
+			if out[i].Starred != out[j].Starred {
+				return out[i].Starred
+			}
+			return indexSortKey(out[i].Name) < indexSortKey(out[j].Name)
 		})
 	} else {
 		sort.SliceStable(out, func(i, j int) bool {

@@ -115,6 +115,19 @@ Item {
             }
 
             Text {
+                visible: root.artists && !!modelData.starred
+                anchors.right: face.right
+                anchors.top: face.top
+                anchors.rightMargin: 6
+                anchors.topMargin: 4
+                textFormat: Text.PlainText
+                text: "♥"
+                color: Theme.liked
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeM
+            }
+
+            Text {
                 id: nameText
                 anchors.top: face.bottom
                 anchors.topMargin: 8

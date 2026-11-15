@@ -1908,6 +1908,44 @@ Item {
     }
 
     function openArtist(name) { openPage("artist", name, "") }
+
+    function toggleArtistFav() {
+        if (!page || page.kind !== "artist")
+            return
+        var name = String(page.name || "")
+        if (!name)
+            return
+        ipc("library.artist.favorite", { name: name }, function(data) {
+            var starred = !!(data && data.starred)
+            if (root.page && root.page.kind === "artist" && String(root.page.name || "") === name && root.pageData)
+                root.pageData = Object.assign({}, root.pageData, { starred: starred })
+            root.placeArtistStar(name, starred)
+        })
+    }
+
+    function placeArtistStar(name, starred) {
+        var rows = (indexCache && indexCache.artist) || []
+        if (!rows.length)
+            return
+        var key = String(name || "").toLowerCase()
+        var fav = []
+        var rest = []
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i]
+            if (String(row && row.name || "").toLowerCase() === key)
+                row = Object.assign({}, row, { starred: !!starred })
+            if (row && row.starred)
+                fav.push(row)
+            else
+                rest.push(row)
+        }
+        var next = Object.assign({}, indexCache)
+        next.artist = fav.concat(rest)
+        indexCache = next
+        indexShown = ""
+        if (indexPage() && page && page.kind === "artists")
+            applyIndexFilter()
+    }
     function openGenre(name) { openPage("genre", name, "") }
     function openYear(name) { openPage("year", name, "") }
 
@@ -2368,7 +2406,8 @@ Item {
                 label: album ? String(first.label || "") : "",
                 year: album ? String(first.year || "") : "",
                 stats: stats.join("  ·  "),
-                path: ""
+                path: "",
+                starred: !!d.starred
             }
         }
         if (src === "search" || src === "shown") {
@@ -2386,7 +2425,8 @@ Item {
                 label: "",
                 year: "",
                 stats: [counted(rows.length, src === "search" ? "result" : "track"), longClock(rowsDuration(rows))].join("  ·  "),
-                path: ""
+                path: "",
+                starred: false
             }
         }
         var art = artSource()
@@ -2416,7 +2456,8 @@ Item {
             label: String(player.label || ""),
             year: String(player.year || ""),
             stats: ["queue  " + counted(rows.length, "track"), longClock(rowsDuration(rows))].join("  ·  "),
-            path: trackPath
+            path: trackPath,
+            starred: false
         }
     }
 
