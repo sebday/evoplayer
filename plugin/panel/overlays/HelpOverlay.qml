@@ -50,7 +50,6 @@ Flickable {
                 { key: "tab", label: "next tag field (in editor)" },
                 { key: "a", label: "art for the highlighted track" },
                 { key: "t", label: "set art on this track" },
-                { key: "v", label: "visualizer on / off" },
                 { key: "esc", label: "back (pages, search, overlays)" },
                 { key: "h", label: "help" },
                 { key: "q", label: "quit" },

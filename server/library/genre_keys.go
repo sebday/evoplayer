@@ -45,6 +45,32 @@ func genreConfigFor(env Env) genreConfig {
 	return cfg
 }
 
+// libraryGenreFolders maps a normalized tag to the on-disk genre folder.
+// A tag that names one of those folders stays its own genre, so House is not
+// swallowed by the garage alias and Trap is not swallowed by hip-hop.
+func libraryGenreFolders(env Env) map[string]string {
+	out := map[string]string{}
+	for _, folder := range GenreChoices(env) {
+		key := config.NormalizeGenreKey(folder)
+		if key == "" {
+			continue
+		}
+		if _, ok := out[key]; !ok {
+			out[key] = folder
+		}
+	}
+	return out
+}
+
+func genreGroup(name string, aliases, folders map[string]string) (key, shown string) {
+	trimmed := strings.TrimSpace(name)
+	norm := config.NormalizeGenreKey(trimmed)
+	if display, ok := folders[norm]; ok {
+		return "dir:" + norm, display
+	}
+	return canonicalGenreKey(trimmed, aliases), trimmed
+}
+
 func canonicalGenreKey(name string, aliases map[string]string) string {
 	norm := config.NormalizeGenreKey(name)
 	if norm == "" {

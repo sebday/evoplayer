@@ -43,11 +43,12 @@ Item {
     property bool treeRootOpen: false
     property var treeChildren: ({})
     property int playlistColumns: 4
-    property bool asGrid: true
+    property bool asGrid: false
     property string browseParent: ""
     property var browseEntries: []
     property var playlists: []
     property var playlistCovers: ({})
+    property var likesCoverChoices: []
     property int playlistCoverGen: 0
     property var sidebar: []
     property int browseIdx: 0
@@ -359,9 +360,11 @@ Item {
 
     function playlistLabel(name) {
         if (name === "all")
-            return "likes"
+            return "Likes"
         if (name === "current")
-            return "now playing"
+            return "Now Playing"
+        if (name === "mixes")
+            return "Mixes"
         return String(name || "")
     }
 
@@ -382,7 +385,6 @@ Item {
 
     function rebuildSidebar() {
         var current = (queue || []).length
-        var likes = 0
         var others = 0
         var items = playlists || []
         for (var i = 0; i < items.length; i++) {
@@ -390,22 +392,19 @@ Item {
             var count = Number(items[i].count) || 0
             if (name === "current")
                 current = count || current
-            else if (name === "all")
-                likes = count
             else if (name)
                 others++
         }
         var rows = [
-            { kind: "files", type: "", label: "filesystem", path: "", count: 0, id: "filesystem", depth: 0 }
+            { kind: "files", type: "", label: "Files", path: "", count: 0, id: "filesystem", depth: 0 }
         ]
         if (treeOpen.root)
             appendTree(rows, "", 1)
-        rows.push({ kind: "playlist", type: "", label: "now playing", path: "", count: current, id: "current", depth: 0 })
-        rows.push({ kind: "playlist", type: "", label: "likes", path: "", count: likes, id: "all", depth: 0 })
-        rows.push({ kind: "lists", type: "", label: "playlists", path: "", count: others, id: "playlists", depth: 0 })
-        rows.push({ kind: "page", type: "", label: "artists", path: "", count: indexCount("artist"), id: "artists", depth: 0 })
-        rows.push({ kind: "page", type: "", label: "labels", path: "", count: indexCount("label"), id: "labels", depth: 0 })
-        rows.push({ kind: "page", type: "", label: "genres", path: "", count: indexCount("genre"), id: "genres", depth: 0 })
+        rows.push({ kind: "playlist", type: "", label: "Now Playing", path: "", count: current, id: "current", depth: 0 })
+        rows.push({ kind: "lists", type: "", label: "Playlists", path: "", count: others, id: "playlists", depth: 0 })
+        rows.push({ kind: "page", type: "", label: "Artists", path: "", count: indexCount("artist"), id: "artists", depth: 0 })
+        rows.push({ kind: "page", type: "", label: "Labels", path: "", count: indexCount("label"), id: "labels", depth: 0 })
+        rows.push({ kind: "page", type: "", label: "Genres", path: "", count: indexCount("genre"), id: "genres", depth: 0 })
         sidebar = rows
         var tab = tabIndexForView()
         if (tab >= 0)
@@ -432,7 +431,7 @@ Item {
         var rows = sidebar || []
         var out = []
         for (var i = 0; i < rows.length; i++) {
-            if (rows[i] && rows[i].kind !== "tree" && rows[i].kind !== "rule")
+            if (rows[i] && rows[i].kind !== "tree" && rows[i].kind !== "rule" && rows[i].id !== "filesystem")
                 out.push({ index: i, row: rows[i] })
         }
         return out
@@ -1424,10 +1423,10 @@ Item {
         var out = []
         for (var i = 0; i < items.length; i++) {
             var name = String(items[i].name || "")
-            if (!name || name === "current" || name === "all")
+            if (!name || name === "current")
                 continue
             var cover = playlistCovers[name] || {}
-            out.push({
+            var row = {
                 type: "playlist",
                 id: name,
                 title: playlistLabel(name),
@@ -1435,7 +1434,11 @@ Item {
                 count: Number(items[i].count) || 0,
                 art: String(cover.art || ""),
                 thumb: String(cover.thumb || "")
-            })
+            }
+            if (name === "all")
+                out.unshift(row)
+            else
+                out.push(row)
         }
         return out
     }
@@ -1829,30 +1832,88 @@ Item {
         var gen = ++playlistCoverGen
         for (var i = 0; i < items.length; i++) {
             var name = String(items[i].name || "")
-            if (!name || name === "current" || name === "all")
+            if (!name || name === "current")
                 continue
             fetchPlaylistCover(name, gen)
         }
     }
 
+    function coverKeys(cover) {
+        var keys = []
+        var art = String(cover && cover.art || "")
+        var thumb = String(cover && cover.thumb || "")
+        if (art)
+            keys.push(art)
+        if (thumb && thumb !== art)
+            keys.push(thumb)
+        return keys
+    }
+
+    function usedCoverKeys(exceptName) {
+        var used = {}
+        var covers = playlistCovers || {}
+        var names = Object.keys(covers)
+        for (var i = 0; i < names.length; i++) {
+            if (names[i] === exceptName)
+                continue
+            var keys = coverKeys(covers[names[i]])
+            for (var k = 0; k < keys.length; k++)
+                used[keys[k]] = true
+        }
+        return used
+    }
+
+    function chooseCover(rows, exceptName) {
+        var used = exceptName ? usedCoverKeys(exceptName) : {}
+        var fallback = { art: "", thumb: "" }
+        var list = rows || []
+        for (var i = 0; i < list.length; i++) {
+            var row = list[i] || {}
+            if (!row.art && !row.thumb)
+                continue
+            var cover = { art: String(row.art || ""), thumb: String(row.thumb || "") }
+            if (!fallback.art && !fallback.thumb)
+                fallback = cover
+            var keys = coverKeys(cover)
+            var taken = false
+            for (var k = 0; k < keys.length; k++) {
+                if (used[keys[k]])
+                    taken = true
+            }
+            if (!taken)
+                return cover
+        }
+        return fallback
+    }
+
+    function storePlaylistCover(name, cover) {
+        var next = Object.assign({}, playlistCovers)
+        next[name] = cover
+        playlistCovers = next
+        if (name !== "all")
+            refreshLikesCover()
+    }
+
+    function refreshLikesCover() {
+        if (!(likesCoverChoices || []).length)
+            return
+        var pick = chooseCover(likesCoverChoices, "all")
+        var cur = (playlistCovers || {})["all"] || {}
+        if (coverKeys(cur).join("\n") === coverKeys(pick).join("\n"))
+            return
+        var next = Object.assign({}, playlistCovers)
+        next["all"] = pick
+        playlistCovers = next
+    }
+
     function fetchPlaylistCover(name, gen) {
-        ipc("library.playlist.tracks", { name: name, offset: 0, limit: 24 }, function(data) {
+        ipc("library.playlist.tracks", { name: name, offset: 0, limit: name === "all" ? 200 : 24 }, function(data) {
             if (gen !== root.playlistCoverGen)
                 return
             var rows = (data && data.items) || []
-            var art = ""
-            var thumb = ""
-            for (var i = 0; i < rows.length; i++) {
-                var row = rows[i] || {}
-                if (row.art || row.thumb) {
-                    art = String(row.art || "")
-                    thumb = String(row.thumb || "")
-                    break
-                }
-            }
-            var next = Object.assign({}, root.playlistCovers)
-            next[name] = { art: art, thumb: thumb }
-            root.playlistCovers = next
+            if (name === "all")
+                root.likesCoverChoices = rows
+            root.storePlaylistCover(name, root.chooseCover(rows, name === "all" ? "all" : ""))
         })
     }
 
@@ -3052,6 +3113,17 @@ Item {
     function toggleShuffle() { ipc("playback.shuffle", { on: !shuffle }, null) }
     function toggleRepeat() { ipc("playback.repeat", { on: !repeatOn }, null) }
 
+    function cycleShuffleRepeat() {
+        var mode = (shuffle ? 1 : 0) + (repeatOn ? 2 : 0)
+        var next = (mode + 1) % 4
+        var wantShuffle = next === 1 || next === 3
+        var wantRepeat = next === 2 || next === 3
+        if (wantShuffle !== shuffle)
+            ipc("playback.shuffle", { on: wantShuffle }, null)
+        if (wantRepeat !== repeatOn)
+            ipc("playback.repeat", { on: wantRepeat }, null)
+    }
+
     function seekTo(sec) {
         var dur = Number(player.duration) || 0
         var t = Number(sec) || 0
@@ -3080,11 +3152,6 @@ Item {
 
     function volumeDelta(delta) {
         ipc("playback.volume.delta", { delta: delta }, null)
-    }
-
-    function toggleViz() {
-        vizOn = !vizOn
-        syncViz()
     }
 
     function eqHot() {
@@ -3369,6 +3436,16 @@ Item {
             host.forceKeyFocus()
     }
 
+    function toggleFilesMenu() {
+        var rows = sidebar || []
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i] && rows[i].id === "filesystem") {
+                clickBrowse(i)
+                return
+            }
+        }
+    }
+
     function clickBrowse(index) {
         if (mode === "eq") {
             eqSaveArmed = false
@@ -3637,7 +3714,6 @@ Item {
                 openArt(trackPath)
             return true
         }
-        if (text === "v" || text === "V") { toggleViz(); return true }
         if (text === "g") { gotoSelected("artist"); return true }
         if (text === "G") { gotoSelected("label"); return true }
         if ((key === Qt.Key_Backspace || key === Qt.Key_Left) && libraryView === "lists" && shownPlaylist && !page) {

@@ -19,6 +19,47 @@ Item {
         spacing: 10
 
         Item {
+            id: menuBtn
+            width: 34
+            height: parent.height
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: 34
+                height: 34
+                radius: 8
+                color: view.treeRootOpen
+                    ? Theme.withOpacity(Theme.border, 0.22)
+                    : (menuArea.containsMouse ? Theme.foregroundFaint : "transparent")
+            }
+
+            Column {
+                anchors.centerIn: parent
+                spacing: 4
+
+                Repeater {
+                    model: 3
+                    Rectangle {
+                        width: 14
+                        height: 2
+                        radius: 1
+                        color: view.treeRootOpen
+                            ? Theme.border
+                            : Theme.withOpacity(Theme.foreground, menuArea.containsMouse ? 1 : 0.78)
+                    }
+                }
+            }
+
+            MouseArea {
+                id: menuArea
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: view.toggleFilesMenu()
+            }
+        }
+
+        Item {
             id: transport
             width: transportRow.implicitWidth
             height: parent.height
@@ -29,8 +70,8 @@ Item {
                 spacing: 0
 
                 Item {
-                    width: 26
-                    height: 28
+                    width: 30
+                    height: 34
 
                     Canvas {
                         anchors.fill: parent
@@ -39,12 +80,12 @@ Item {
                         onPaint: {
                             var ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
-                            var s = Math.min(width, height)
+                            var s = height
                             var cy = height / 2
-                            var th = s * 0.42
-                            var tw = s * 0.34
-                            var barW = Math.max(1.5, s * 0.1)
-                            var gap = s * 0.08
+                            var th = s * 0.44
+                            var tw = s * 0.30
+                            var barW = Math.max(1.6, s * 0.08)
+                            var gap = s * 0.06
                             var right = (width - (barW + gap + tw)) / 2
                             ctx.fillStyle = Theme.withOpacity(Theme.foreground, prevArea.containsMouse ? 1 : 0.78)
                             ctx.fillRect(right, cy - th / 2, barW, th)
@@ -67,15 +108,21 @@ Item {
                     }
                 }
 
-                PlayCircle {
-                    size: 28
-                    pause: view.playing
-                    onActivated: view.togglePlay()
+                Item {
+                    width: 34
+                    height: 34
+
+                    PlayCircle {
+                        anchors.centerIn: parent
+                        size: 28
+                        pause: view.playing
+                        onActivated: view.togglePlay()
+                    }
                 }
 
                 Item {
-                    width: 26
-                    height: 28
+                    width: 30
+                    height: 34
 
                     Canvas {
                         anchors.fill: parent
@@ -84,12 +131,12 @@ Item {
                         onPaint: {
                             var ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
-                            var s = Math.min(width, height)
+                            var s = height
                             var cy = height / 2
-                            var th = s * 0.42
-                            var tw = s * 0.34
-                            var barW = Math.max(1.5, s * 0.1)
-                            var gap = s * 0.08
+                            var th = s * 0.44
+                            var tw = s * 0.30
+                            var barW = Math.max(1.6, s * 0.08)
+                            var gap = s * 0.06
                             var left = (width - (tw + gap + barW)) / 2
                             ctx.fillStyle = Theme.withOpacity(Theme.foreground, nextArea.containsMouse ? 1 : 0.78)
                             ctx.beginPath()
@@ -113,8 +160,101 @@ Item {
                 }
 
                 Item {
-                    width: 26
-                    height: 28
+                    width: 34
+                    height: 34
+
+                    Canvas {
+                        anchors.fill: parent
+                        property bool shuffleOn: view.shuffle
+                        property bool repeating: view.repeatOn
+                        onShuffleOnChanged: requestPaint()
+                        onRepeatingChanged: requestPaint()
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            var active = Theme.good
+                            var idle = Theme.withOpacity(Theme.foreground, modeArea.containsMouse ? 0.95 : 0.55)
+                            function paintShuffle(cx, cy, scale, color) {
+                                ctx.strokeStyle = color
+                                ctx.fillStyle = color
+                                ctx.lineWidth = Math.max(1.4, 1.7 * scale)
+                                ctx.lineCap = "round"
+                                ctx.lineJoin = "round"
+                                var w = 12 * scale
+                                var h = 8 * scale
+                                function head(x, y, ang) {
+                                    var ah = 3.3 * scale
+                                    ctx.beginPath()
+                                    ctx.moveTo(x, y)
+                                    ctx.lineTo(x - ah * Math.cos(ang - 0.5), y - ah * Math.sin(ang - 0.5))
+                                    ctx.lineTo(x - ah * Math.cos(ang + 0.5), y - ah * Math.sin(ang + 0.5))
+                                    ctx.closePath()
+                                    ctx.fill()
+                                }
+                                var x0 = cx - w / 2
+                                var x1 = cx - w * 0.08
+                                var x2 = cx + w / 2
+                                ctx.beginPath()
+                                ctx.moveTo(x0, cy + h * 0.22)
+                                ctx.lineTo(x1, cy + h * 0.22)
+                                ctx.lineTo(x2, cy - h * 0.55)
+                                ctx.stroke()
+                                head(x2, cy - h * 0.55, Math.atan2(-h * 0.77, x2 - x1))
+                                ctx.beginPath()
+                                ctx.moveTo(x0, cy - h * 0.22)
+                                ctx.lineTo(x1, cy - h * 0.22)
+                                ctx.lineTo(x2, cy + h * 0.55)
+                                ctx.stroke()
+                                head(x2, cy + h * 0.55, Math.atan2(h * 0.77, x2 - x1))
+                            }
+                            function paintRepeat(cx, cy, scale, color) {
+                                ctx.strokeStyle = color
+                                ctx.fillStyle = color
+                                ctx.lineWidth = Math.max(1.4, 1.7 * scale)
+                                ctx.lineCap = "round"
+                                var r = 5.4 * scale
+                                var a0 = 0.85
+                                var a1 = Math.PI * 1.72
+                                ctx.beginPath()
+                                ctx.arc(cx, cy, r, a0, a1)
+                                ctx.stroke()
+                                var x = cx + r * Math.cos(a1)
+                                var y = cy + r * Math.sin(a1)
+                                var dir = a1 + Math.PI / 2
+                                var ah = 3.6 * scale
+                                ctx.beginPath()
+                                ctx.moveTo(x + ah * 0.15 * Math.cos(dir), y + ah * 0.15 * Math.sin(dir))
+                                ctx.lineTo(x - ah * Math.cos(dir - 0.7), y - ah * Math.sin(dir - 0.7))
+                                ctx.lineTo(x - ah * Math.cos(dir + 0.9), y - ah * Math.sin(dir + 0.9))
+                                ctx.closePath()
+                                ctx.fill()
+                            }
+                            if (shuffleOn && repeating) {
+                                paintShuffle(width / 2 - 7, height / 2, 0.72, active)
+                                paintRepeat(width / 2 + 7, height / 2, 0.72, active)
+                            } else if (repeating) {
+                                paintRepeat(width / 2, height / 2, 1, active)
+                            } else {
+                                paintShuffle(width / 2, height / 2, 1, shuffleOn ? active : idle)
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        id: modeArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: view.cycleShuffleRepeat()
+                        onContainsMouseChanged: parent.children[0].requestPaint()
+                    }
+                }
+
+                Item {
+                    width: 34
+                    height: 34
 
                     Canvas {
                         anchors.fill: parent
@@ -125,15 +265,21 @@ Item {
                         onPaint: {
                             var ctx = getContext("2d")
                             ctx.clearRect(0, 0, width, height)
-                            var s = Math.min(width, height) * 0.58
-                            var x = (width - s) / 2
-                            var y = (height - s) / 2 + s * 0.04
+                            var scale = 16 / 20
+                            var cx = width / 2
+                            var cy = height / 2 + 1.3
+                            var ox = cx - 10 * scale
+                            var oy = cy - 9.175 * scale
+                            function X(x) { return ox + (x - 2) * scale }
+                            function Y(y) { return oy + (y - 3) * scale }
                             ctx.beginPath()
-                            ctx.moveTo(x + s / 2, y + s * 0.9)
-                            ctx.bezierCurveTo(x - s * 0.02, y + s * 0.55, x + s * 0.08, y + s * 0.12, x + s * 0.28, y + s * 0.12)
-                            ctx.bezierCurveTo(x + s * 0.44, y + s * 0.12, x + s * 0.5, y + s * 0.28, x + s / 2, y + s * 0.4)
-                            ctx.bezierCurveTo(x + s * 0.5, y + s * 0.28, x + s * 0.56, y + s * 0.12, x + s * 0.72, y + s * 0.12)
-                            ctx.bezierCurveTo(x + s * 0.92, y + s * 0.12, x + s * 1.02, y + s * 0.55, x + s / 2, y + s * 0.9)
+                            ctx.moveTo(X(12), Y(21.35))
+                            ctx.bezierCurveTo(X(5.4), Y(15.36), X(2), Y(12.28), X(2), Y(8.5))
+                            ctx.bezierCurveTo(X(2), Y(5.42), X(4.42), Y(3), X(7.5), Y(3))
+                            ctx.bezierCurveTo(X(9.24), Y(3), X(10.91), Y(3.81), X(12), Y(5.09))
+                            ctx.bezierCurveTo(X(13.09), Y(3.81), X(14.76), Y(3), X(16.5), Y(3))
+                            ctx.bezierCurveTo(X(19.58), Y(3), X(22), Y(5.42), X(22), Y(8.5))
+                            ctx.bezierCurveTo(X(22), Y(12.28), X(18.6), Y(15.36), X(12), Y(21.35))
                             ctx.closePath()
                             ctx.fillStyle = liked
                                 ? Theme.liked
@@ -151,12 +297,58 @@ Item {
                         onContainsMouseChanged: parent.children[0].requestPaint()
                     }
                 }
+
+                Item {
+                    width: 34
+                    height: 34
+
+                    Canvas {
+                        anchors.fill: parent
+                        property bool hot: view.eqHot()
+                        onHotChanged: requestPaint()
+                        onWidthChanged: requestPaint()
+                        onHeightChanged: requestPaint()
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            var color = hot
+                                ? Theme.good
+                                : Theme.withOpacity(Theme.foreground, eqArea.containsMouse ? 0.95 : 0.55)
+                            ctx.strokeStyle = color
+                            ctx.fillStyle = color
+                            ctx.lineWidth = 1.6
+                            ctx.lineCap = "round"
+                            var xs = [width / 2 - 5, width / 2, width / 2 + 5]
+                            var knobs = [0.72, 0.28, 0.52]
+                            var top = height / 2 - 6
+                            var span = 12
+                            for (var i = 0; i < xs.length; i++) {
+                                ctx.beginPath()
+                                ctx.moveTo(xs[i], top)
+                                ctx.lineTo(xs[i], top + span)
+                                ctx.stroke()
+                                ctx.beginPath()
+                                ctx.arc(xs[i], top + span * knobs[i], 2.1, 0, Math.PI * 2)
+                                ctx.fill()
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        id: eqArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: view.toggleEq()
+                        onContainsMouseChanged: parent.children[0].requestPaint()
+                    }
+                }
             }
         }
 
         Item {
             id: tabs
-            width: parent.width - searchSlot.width - transport.width - viewSwitch.width - bar.spacing * 3
+            width: parent.width - searchSlot.width - transport.width - menuBtn.width - bar.spacing * 3
             height: parent.height
             clip: true
 
@@ -196,18 +388,6 @@ Item {
                             id: tabBody
                             anchors.centerIn: parent
                             spacing: 6
-
-                            Text {
-                                visible: row.id === "filesystem"
-                                width: visible ? 12 : 0
-                                height: 34
-                                verticalAlignment: Text.AlignVCenter
-                                textFormat: Text.PlainText
-                                text: view.treeRootOpen ? "▾" : "▸"
-                                color: Theme.muted
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontSizeS
-                            }
 
                             Text {
                                 height: 34
@@ -253,91 +433,6 @@ Item {
                                 view.playBrowseAt(tab.sourceIndex)
                             }
                         }
-                    }
-                }
-            }
-        }
-
-        Item {
-            id: viewSwitch
-            width: viewSwitchRow.implicitWidth
-            height: parent.height
-
-            Row {
-                id: viewSwitchRow
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 2
-
-                Item {
-                    width: 28
-                    height: 28
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 6
-                        color: view.asGrid
-                            ? Theme.withOpacity(Theme.border, 0.22)
-                            : (gridArea.containsMouse ? Theme.foregroundFaint : "transparent")
-                    }
-
-                    Grid {
-                        anchors.centerIn: parent
-                        columns: 2
-                        spacing: 2
-
-                        Repeater {
-                            model: 4
-                            Rectangle {
-                                width: 5
-                                height: 5
-                                radius: 1
-                                color: view.asGrid ? Theme.border : Theme.foreground
-                            }
-                        }
-                    }
-
-                    MouseArea {
-                        id: gridArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: view.setLayout(true)
-                    }
-                }
-
-                Item {
-                    width: 28
-                    height: 28
-
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 6
-                        color: !view.asGrid
-                            ? Theme.withOpacity(Theme.border, 0.22)
-                            : (listArea.containsMouse ? Theme.foregroundFaint : "transparent")
-                    }
-
-                    Column {
-                        anchors.centerIn: parent
-                        spacing: 3
-
-                        Repeater {
-                            model: 3
-                            Rectangle {
-                                width: 12
-                                height: 2
-                                radius: 1
-                                color: !view.asGrid ? Theme.border : Theme.foreground
-                            }
-                        }
-                    }
-
-                    MouseArea {
-                        id: listArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: view.setLayout(false)
                     }
                 }
             }
@@ -445,7 +540,10 @@ Item {
         ListView {
             id: treeList
             anchors.fill: parent
-            anchors.margins: 8
+            anchors.leftMargin: 4
+            anchors.rightMargin: 8
+            anchors.topMargin: 6
+            anchors.bottomMargin: 6
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             spacing: 2
@@ -471,25 +569,48 @@ Item {
                 Row {
                     anchors.left: parent.left
                     anchors.right: actions.left
-                    anchors.leftMargin: 8 + (Number(row.depth) || 0) * 14
-                    anchors.rightMargin: 8
+                    anchors.leftMargin: (Number(row.depth) || 0) * 14
+                    anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 6
+                    spacing: 4
 
-                    Text {
+                    Item {
                         width: 12
                         height: 34
-                        verticalAlignment: Text.AlignVCenter
-                        textFormat: Text.PlainText
-                        text: row.open ? "▾" : "▸"
-                        color: Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeS
+
+                        Canvas {
+                            anchors.centerIn: parent
+                            width: 10
+                            height: 10
+                            property bool open: branch.row.open
+                            onOpenChanged: requestPaint()
+                            onWidthChanged: requestPaint()
+                            onHeightChanged: requestPaint()
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+                                ctx.strokeStyle = Theme.muted
+                                ctx.lineWidth = 1.6
+                                ctx.lineCap = "round"
+                                ctx.lineJoin = "round"
+                                ctx.beginPath()
+                                if (open) {
+                                    ctx.moveTo(1.4, 3.2)
+                                    ctx.lineTo(5, 6.8)
+                                    ctx.lineTo(8.6, 3.2)
+                                } else {
+                                    ctx.moveTo(3.2, 1.4)
+                                    ctx.lineTo(6.8, 5)
+                                    ctx.lineTo(3.2, 8.6)
+                                }
+                                ctx.stroke()
+                            }
+                        }
                     }
 
                     Text {
                         textFormat: Text.PlainText
-                        width: parent.width - 18
+                        width: parent.width - 16
                         height: 34
                         verticalAlignment: Text.AlignVCenter
                         elide: Text.ElideRight

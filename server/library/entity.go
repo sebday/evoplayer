@@ -395,9 +395,11 @@ WHERE trim(COALESCE(` + col + `,'')) != '' ORDER BY path`)
 	tally := newRefTally()
 	stored := map[string]string{}
 	var aliases map[string]string
+	var folders map[string]string
 	spellings := map[string]string{}
 	if kind == "genre" {
 		aliases = genreConfigFor(env).aliases
+		folders = libraryGenreFolders(env)
 	}
 	for rows.Next() {
 		var path, art, name string
@@ -405,16 +407,14 @@ WHERE trim(COALESCE(` + col + `,'')) != '' ORDER BY path`)
 			return nil, err
 		}
 		if kind == "genre" {
-			key := canonicalGenreKey(name, aliases)
+			key, shown := genreGroup(name, aliases, folders)
 			if key == "" {
 				continue
 			}
-			shown, ok := spellings[key]
-			if !ok {
-				shown = strings.TrimSpace(name)
+			if _, ok := spellings[key]; !ok {
 				spellings[key] = shown
 			}
-			name = shown
+			name = spellings[key]
 		}
 		tally.add(name, path)
 		if art != "" {

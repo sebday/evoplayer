@@ -58,7 +58,10 @@ Card {
     readonly property bool likesGrid: likesOpen && view.asGrid
     readonly property bool trackGrid: view.asGrid && view.mode === "queue" && !view.indexPage()
         && (view.listSource() === "shown" || view.listSource() === "page" || view.listSource() === "search")
-    readonly property bool plainHead: view.listSource() === "files" || view.listSource() === "lists" || likesOpen
+    readonly property bool plainHead: view.listSource() === "files" || view.listSource() === "lists"
+    readonly property bool trackHeading: view.listSource() === "page"
+    readonly property bool releaseColumn: trackHeading && view.page && String(view.page.kind) !== "album"
+        && view.pageData && (view.pageData.releases || []).length > 0
     readonly property bool titledHead: view.listSource() === "files"
     property int menuTop: 0
 
@@ -421,12 +424,144 @@ Card {
             }
         }
 
-        ListView {
-            id: list
+        Item {
+            id: tracksLabel
             anchors.top: head.bottom
             anchors.left: parent.left
+            anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
+            anchors.rightMargin: pane.releaseColumn ? 16 : 0
+            height: pane.trackHeading ? 28 : 0
+            visible: pane.trackHeading
+
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: 2
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 6
+                textFormat: Text.PlainText
+                text: "tracks"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeS
+                font.bold: true
+                font.capitalization: Font.AllUppercase
+                font.letterSpacing: 1
+            }
+        }
+
+        Item {
+            id: releaseCol
+            visible: pane.releaseColumn
+            width: visible ? Math.min(320, Math.max(240, parent.width * 0.32)) : 0
+            anchors.top: head.bottom
             anchors.right: parent.right
-            anchors.rightMargin: pane.sideMargin
+            anchors.bottom: parent.bottom
+
+            Text {
+                id: releaseLabel
+                anchors.top: parent.top
+                anchors.left: parent.left
+                width: parent.width
+                height: 28
+                verticalAlignment: Text.AlignBottom
+                bottomPadding: 6
+                textFormat: Text.PlainText
+                text: "releases"
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeS
+                font.bold: true
+                font.capitalization: Font.AllUppercase
+                font.letterSpacing: 1
+            }
+
+            ListView {
+                id: releaseList
+                anchors.top: releaseLabel.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: pane.releaseColumn && view.pageData ? (view.pageData.releases || []) : []
+                ScrollBar.vertical: ThinScrollBar {}
+
+                delegate: Item {
+                    required property var modelData
+
+                    width: releaseList.width
+                    height: 60
+
+                    readonly property string meta: [String(modelData.year || ""), view.page && view.page.kind === "artist" ? String(modelData.label || "") : String(modelData.artist || "")]
+                        .filter(function(s) { return s !== "" }).join(" · ")
+
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.rightMargin: 8
+                        radius: 6
+                        color: releaseArea.containsMouse ? Theme.foregroundWash : "transparent"
+                    }
+
+                    Cover {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 44
+                        height: 44
+                        corner: 4
+                        source: view.rowCoverUrl(modelData)
+                        name: String(modelData.name || "")
+                        decodeSize: Math.ceil(width * Screen.devicePixelRatio)
+                    }
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 58
+                        anchors.right: parent.right
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+
+                        Text {
+                            width: parent.width
+                            textFormat: Text.PlainText
+                            text: String(modelData.name || "")
+                            elide: Text.ElideRight
+                            color: releaseArea.containsMouse ? Theme.foreground : Theme.withOpacity(Theme.foreground, 0.9)
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeS
+                            font.bold: true
+                        }
+
+                        Text {
+                            width: parent.width
+                            visible: text !== ""
+                            textFormat: Text.PlainText
+                            text: parent.parent.meta
+                            elide: Text.ElideRight
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeXs
+                        }
+                    }
+
+                    MouseArea {
+                        id: releaseArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: view.openPage("album", modelData.name, modelData.dir)
+                    }
+                }
+            }
+        }
+
+        ListView {
+            id: list
+            anchors.top: pane.trackHeading ? tracksLabel.bottom : head.bottom
+            anchors.left: parent.left
+            anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
+            anchors.rightMargin: pane.releaseColumn ? 16 : pane.sideMargin
             anchors.bottom: parent.bottom
             visible: view.mode === "queue" && !view.indexPage() && view.listSource() !== "lists" && !pane.trackGrid
             clip: true
@@ -566,9 +701,7 @@ Card {
                 readonly property bool folder: String(modelData.type || "") === "dir"
                 readonly property bool listPick: String(modelData.type || "") === "playlist"
                 readonly property bool playing: !folder && !listPick && String(modelData.path || "") !== "" && String(modelData.path) === view.trackPath
-                readonly property bool inPlaylist: view.mode === "queue" && (view.pane === "playlist" || (view.searchActive() && view.pane === "search"))
-                readonly property bool selected: inPlaylist && (view.trackPicked(String(modelData.path || "")) || (!(view.playlistPicks && view.playlistPicks.length) && index === view.playlistIdx))
-                readonly property bool filled: selected || playing
+                readonly property bool filled: playing
                 readonly property bool hovered: rowHover.hovered
                 readonly property color ink: filled ? Theme.background : Theme.foreground
                 readonly property color dim: filled ? Theme.withOpacity(Theme.background, 0.72) : Theme.muted
@@ -705,9 +838,8 @@ Card {
                         anchors.topMargin: 1
                         anchors.bottomMargin: 1
                         radius: 6
-                        color: row.selected ? Theme.good
-                            : (row.playing ? Theme.mixColors(Theme.background, Theme.good, 0.65)
-                            : (row.hovered ? Theme.foregroundWash : "transparent"))
+                        color: row.playing ? Theme.good
+                            : (row.hovered ? Theme.foregroundWash : "transparent")
                     }
 
                     Rectangle {
@@ -853,15 +985,6 @@ Card {
                             text: "add"
                             inverted: row.filled
                             onActivated: view.addFolder(String(modelData.path || ""))
-                        }
-
-                        Chip {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: row.roomy && String(modelData.label || "") !== ""
-                            text: String(modelData.label || "")
-                            maxWidth: 150
-                            inverted: row.filled
-                            onActivated: view.openLabel(text)
                         }
 
                         Chip {
