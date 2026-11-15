@@ -196,21 +196,43 @@ func StarToggle(env Env, name string) (StarResult, error) {
 }
 
 func FavoriteToggle(env Env, path string) (FavoriteResult, error) {
-	if path == "" {
-		return FavoriteResult{}, fmt.Errorf("path required")
-	}
-	if st, err := os.Stat(path); err != nil || st.IsDir() {
-		return FavoriteResult{}, fmt.Errorf("not a file: %s", path)
-	}
-	likes, err := readLikes(env.LikesFile)
+	likes, _, err := favoriteLikes(env, path)
 	if err != nil {
 		return FavoriteResult{}, err
 	}
-	liked := false
-	if _, ok := likes[path]; ok {
-		delete(likes, path)
-	} else {
-		liked = true
+	_, liked := likes[path]
+	return writeFavorite(env, path, likes, !liked)
+}
+
+// SetFavorite sets the like on a library file without flipping it.
+func SetFavorite(env Env, path string, liked bool) (FavoriteResult, error) {
+	likes, _, err := favoriteLikes(env, path)
+	if err != nil {
+		return FavoriteResult{}, err
+	}
+	if _, has := likes[path]; has == liked {
+		return FavoriteResult{Path: path, Liked: liked}, nil
+	}
+	return writeFavorite(env, path, likes, liked)
+}
+
+func favoriteLikes(env Env, path string) (map[string]likeEntry, os.FileInfo, error) {
+	if path == "" {
+		return nil, nil, fmt.Errorf("path required")
+	}
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() {
+		return nil, nil, fmt.Errorf("not a file: %s", path)
+	}
+	likes, err := readLikes(env.LikesFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	return likes, st, nil
+}
+
+func writeFavorite(env Env, path string, likes map[string]likeEntry, liked bool) (FavoriteResult, error) {
+	if liked {
 		title := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		artist := ""
 		if row, err := library.Meta(env.Env, path, ""); err == nil {
@@ -224,6 +246,8 @@ func FavoriteToggle(env Env, path string) (FavoriteResult, error) {
 			Artist:  artist,
 			LikedAt: time.Now().Format(time.RFC3339),
 		}
+	} else {
+		delete(likes, path)
 	}
 	if err := writeLikes(env.LikesFile, likes); err != nil {
 		return FavoriteResult{}, err

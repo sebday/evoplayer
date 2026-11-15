@@ -28,7 +28,7 @@ Item {
                 width: 34
                 height: 34
                 radius: 8
-                color: view.treeRootOpen
+                color: view.libraryView === "files"
                     ? Theme.withOpacity(Theme.border, 0.22)
                     : (menuArea.containsMouse ? Theme.foregroundFaint : "transparent")
             }
@@ -43,7 +43,7 @@ Item {
                         width: 14
                         height: 2
                         radius: 1
-                        color: view.treeRootOpen
+                        color: view.libraryView === "files"
                             ? Theme.border
                             : Theme.withOpacity(Theme.foreground, menuArea.containsMouse ? 1 : 0.78)
                     }
@@ -565,188 +565,6 @@ Item {
         }
     }
 
-    Rectangle {
-        id: treePanel
-        parent: pane.parent
-        z: 4
-        visible: view.treeRows().length > 0
-        x: pane.x
-        y: pane.y + pane.height + 8
-        width: Math.min(320, Math.max(220, pane.width * 0.34))
-        height: Math.min(420, Math.max(34, view.treeRows().length * 36 + 16))
-        radius: 8
-        color: Theme.mixColors(Theme.background, Qt.color("#000000"), 0.55)
-        clip: true
-
-        ListView {
-            id: treeList
-            anchors.fill: parent
-            anchors.leftMargin: 4
-            anchors.rightMargin: 8
-            anchors.topMargin: 6
-            anchors.bottomMargin: 6
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            spacing: 2
-            model: view.treeRows()
-
-            delegate: Item {
-                id: branch
-                required property int index
-                required property var modelData
-
-                readonly property var row: modelData.row || {}
-                readonly property int sourceIndex: modelData.index
-
-                width: treeList.width
-                height: 34
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: height / 2
-                    color: branchArea.containsMouse ? Theme.foregroundFaint : "transparent"
-                }
-
-                Row {
-                    anchors.left: parent.left
-                    anchors.right: actions.left
-                    anchors.leftMargin: (Number(row.depth) || 0) * 14
-                    anchors.rightMargin: 6
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 4
-
-                    Item {
-                        width: 12
-                        height: 34
-
-                        Canvas {
-                            anchors.centerIn: parent
-                            width: 10
-                            height: 10
-                            property bool open: branch.row.open
-                            onOpenChanged: requestPaint()
-                            onWidthChanged: requestPaint()
-                            onHeightChanged: requestPaint()
-                            onPaint: {
-                                var ctx = getContext("2d")
-                                ctx.clearRect(0, 0, width, height)
-                                ctx.strokeStyle = Theme.muted
-                                ctx.lineWidth = 1.6
-                                ctx.lineCap = "round"
-                                ctx.lineJoin = "round"
-                                ctx.beginPath()
-                                if (open) {
-                                    ctx.moveTo(1.4, 3.2)
-                                    ctx.lineTo(5, 6.8)
-                                    ctx.lineTo(8.6, 3.2)
-                                } else {
-                                    ctx.moveTo(3.2, 1.4)
-                                    ctx.lineTo(6.8, 5)
-                                    ctx.lineTo(3.2, 8.6)
-                                }
-                                ctx.stroke()
-                            }
-                        }
-                    }
-
-                    Text {
-                        textFormat: Text.PlainText
-                        width: parent.width - 16
-                        height: 34
-                        verticalAlignment: Text.AlignVCenter
-                        elide: Text.ElideRight
-                        text: String(row.label || "")
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeM
-                    }
-                }
-
-                Row {
-                    id: actions
-                    z: 2
-                    anchors.right: parent.right
-                    anchors.rightMargin: 10
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
-
-                    Item {
-                        id: playMark
-                        width: 22
-                        height: 34
-
-                        Text {
-                            anchors.centerIn: parent
-                            textFormat: Text.PlainText
-                            text: "▶"
-                            color: playArea.containsMouse ? Theme.foreground : Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeXs
-                        }
-
-                        MouseArea {
-                            id: playArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: view.playFolder(String(row.path || ""))
-                        }
-                    }
-
-                    Item {
-                        id: addMark
-                        width: 22
-                        height: 34
-
-                        Text {
-                            anchors.centerIn: parent
-                            textFormat: Text.PlainText
-                            text: "+"
-                            color: addArea.containsMouse ? Theme.foreground : Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontSizeM
-                        }
-
-                        MouseArea {
-                            id: addArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: view.addFolder(String(row.path || ""))
-                        }
-                    }
-
-                    Text {
-                        id: countText
-                        width: 40
-                        horizontalAlignment: Text.AlignRight
-                        textFormat: Text.PlainText
-                        height: 34
-                        verticalAlignment: Text.AlignVCenter
-                        text: row.count > 0 ? String(row.count) : ""
-                        color: Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeS
-                    }
-                }
-
-                MouseArea {
-                    id: branchArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    preventStealing: true
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
-                    onClicked: function(mouse) {
-                        if (mouse.button === Qt.RightButton) {
-                            view.playFolder(String(row.path || ""))
-                            return
-                        }
-                        view.clickBrowse(branch.sourceIndex)
-                    }
-                }
-            }
-        }
-    }
 
     Connections {
         target: view

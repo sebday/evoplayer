@@ -575,8 +575,7 @@ Item {
         if (!row)
             return
         if (row.id === "filesystem") {
-            if (!fromKey)
-                toggleTree("")
+            openFilesystem()
             return
         }
         if (row.kind === "tree") {
@@ -1698,7 +1697,7 @@ Item {
         if (!row)
             return
         if (row.id === "filesystem")
-            toggleTree("")
+            openFilesystem()
         else if (row.kind === "tree")
             toggleTree(row.path)
     }
@@ -1973,6 +1972,8 @@ Item {
             return "index"
         if (searchActive())
             return "search"
+        if (libraryView === "files")
+            return "files"
         if (libraryView === "lists" && !shownPlaylist)
             return "lists"
         if (shownPlaylist)
@@ -2862,11 +2863,96 @@ Item {
     function toggleLike(path) {
         if (!path)
             return
+        var id = discoverPreviewId(path)
+        if (id) {
+            var row = soundCloudRow(path)
+            likeSoundCloud(id, path, row && row.artist, row && row.title, !!(row && row.liked))
+            return
+        }
         ipc("library.favorite.toggle", { path: path }, function(data) {
             root.err = ""
             root.patchLiked(path, !!(data && data.liked))
             root.refreshPlaylistCounts()
         })
+    }
+
+    function soundCloudRow(path) {
+        var row = previewRowForPath(path)
+        if (row)
+            return row
+        var lists = [queue, shownTracks, searchHits, pageTracks, downloadHits]
+        for (var n = 0; n < lists.length; n++) {
+            var rows = lists[n] || []
+            for (var i = 0; i < rows.length; i++) {
+                if (rows[i] && String(rows[i].path || "") === path)
+                    return rows[i]
+            }
+        }
+        return null
+    }
+
+    function likeSoundCloud(id, previewPath, artist, title, likedNow) {
+        id = String(id || "")
+        if (!id || id === "0")
+            return
+        ipc("library.soundcloud.like", {
+            id: Number(id),
+            like: !likedNow,
+            artist: String(artist || ""),
+            title: String(title || "")
+        }, function(data) {
+            if (!data)
+                return
+            if (String(data.status || "") === "running") {
+                root.err = ""
+                return
+            }
+            root.applySoundCloudLike(previewPath, data)
+        })
+    }
+
+    function applySoundCloudLike(previewPath, data) {
+        var likedNow = !!(data && data.liked)
+        var path = String(data && data.path || "")
+        var id = String(data && data.id || "")
+        if (path)
+            patchLiked(path, likedNow)
+        if (previewPath && previewPath !== path)
+            patchLiked(previewPath, likedNow)
+        if (id)
+            patchLikedPreview(id, likedNow)
+        refreshPlaylistCounts()
+    }
+
+    function patchLikedPreview(id, likedNow) {
+        id = String(id || "")
+        if (!id)
+            return
+        function mark(rows) {
+            var list = rows || []
+            var next = []
+            var changed = false
+            for (var i = 0; i < list.length; i++) {
+                var row = list[i]
+                if (row && (String(row.id || "") === id || discoverPreviewId(row.path) === id)) {
+                    next.push(Object.assign({}, row, { liked: likedNow }))
+                    changed = true
+                } else
+                    next.push(row)
+            }
+            return changed ? next : rows
+        }
+        queue = mark(queue)
+        if (shownPlaylist)
+            shownTracks = mark(shownTracks)
+        if (searchHits && searchHits.length)
+            searchHits = mark(searchHits)
+        if (pageTracks && pageTracks.length)
+            pageTracks = mark(pageTracks)
+        if (relatedTracks && relatedTracks.length)
+            relatedTracks = mark(relatedTracks)
+        if (adoptedRelated && adoptedRelated.length)
+            adoptedRelated = mark(adoptedRelated)
     }
 
     function like() {
@@ -3152,11 +3238,18 @@ Item {
 
     function likePlaying() {
         if (mode === "download" && downloadHit >= 0) {
-            downloadSoundCloudHit()
+            var hit = selectedDownloadHit()
+            if (hit && hit.id) {
+                likeSoundCloud(hit.id, "", hit.artist, hit.title, !!hit.liked)
+                return
+            }
+        }
+        var id = discoverPreviewId(trackPath)
+        if (id) {
+            var row = soundCloudRow(trackPath)
+            likeSoundCloud(id, trackPath, row && row.artist, row && row.title, liked)
             return
         }
-        if (importPlayingPreview())
-            return
         toggleLike(trackPath)
     }
 
@@ -3981,13 +4074,12 @@ Item {
     }
 
     function toggleFilesMenu() {
-        var rows = sidebar || []
-        for (var i = 0; i < rows.length; i++) {
-            if (rows[i] && rows[i].id === "filesystem") {
-                clickBrowse(i)
-                return
-            }
+        if (libraryView === "files") {
+            showNowPlaying()
+            return
         }
+        closeTree()
+        openFilesystem()
     }
 
     function clickBrowse(index) {
@@ -4161,7 +4253,8 @@ Item {
                 return true
             }
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { playSoundCloudHit(); return true }
-            if (text === "d" || text === "D" || text === "l" || text === "L") { downloadSoundCloudHit(); return true }
+            if (text === "d" || text === "D") { downloadSoundCloudHit(); return true }
+            if (text === "l" || text === "L") { likePlaying(); return true }
             if (key === Qt.Key_Backtab || (key === Qt.Key_Tab && shift)) { cycleFocus(-1); return true }
             if (key === Qt.Key_Tab) { cycleFocus(1); return true }
             return true
@@ -4169,8 +4262,7 @@ Item {
         if (mode === "download") {
             if (key === Qt.Key_Escape) { onEsc(); return true }
             if (text === "s" || text === "S") { syncLikes(); return true }
-            if ((text === "l" || text === "L") && importPlayingPreview())
-                return true
+            if (text === "l" || text === "L") { likePlaying(); return true }
         }
         if (mode === "queue" && asGrid && pane === "playlist"
                 && (listSource() === "shown" || listSource() === "page" || listSource() === "search")) {
@@ -4403,6 +4495,8 @@ Item {
             if (name === "download" || name === "download-url") {
                 root.libraryJob = data
                 root.noteDownloadJob(data)
+                if (String(data.status || "") === "done" && data.result && data.result.path)
+                    root.applySoundCloudLike("", data.result)
                 if (name === "download" && String(data.status || "") === "done")
                     root.refreshPlaylistCounts()
                 return
@@ -4648,13 +4742,6 @@ Item {
         id: panes
         anchors.fill: parent
         anchors.margins: root.paneGap
-
-            MouseArea {
-                anchors.fill: parent
-                z: 3
-                visible: root.treeRootOpen
-                onClicked: root.closeTree()
-            }
 
             PlaylistPane {
                 id: playlist

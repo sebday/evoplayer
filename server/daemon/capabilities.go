@@ -66,6 +66,7 @@ func capabilities() map[string]any {
 			{"name": "library.cache", "params": map[string]string{"genre": "string", "force": "bool"}},
 			{"name": "library.soundcloud.search", "params": map[string]string{"query": "string", "limit": "int?"}},
 			{"name": "library.soundcloud.download", "params": map[string]string{"import": "bool"}},
+			{"name": "library.soundcloud.like", "params": map[string]string{"id": "int", "artist": "string", "title": "string", "like": "bool"}},
 			{"name": "library.download", "params": map[string]string{"url": "string", "import": "bool?"}},
 			{"name": "library.art.maintain", "params": nil},
 			{"name": "scrobble.nowplaying", "params": nil},

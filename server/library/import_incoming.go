@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -339,6 +340,36 @@ func capitaliseFirst(name string) string {
 // ImportBasename is the filename import uses for an artist and title.
 func ImportBasename(artist, title string) string {
 	return trackFilename(artist, title, "", "mp3")
+}
+
+// FindImported returns the library file for an artist and title, if one is already filed.
+func FindImported(db *sql.DB, artist, title string) (string, error) {
+	if db == nil {
+		return "", nil
+	}
+	base := ImportBasename(artist, title)
+	if base != "" {
+		suffix := "/" + base
+		var path string
+		err := db.QueryRow(`SELECT path FROM tracks WHERE substr(path, -length(?)) = ? LIMIT 1`, suffix, suffix).Scan(&path)
+		if err == nil && path != "" {
+			return path, nil
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return "", err
+		}
+	}
+	artist = strings.TrimSpace(artist)
+	title = strings.TrimSpace(title)
+	if artist == "" && title == "" {
+		return "", nil
+	}
+	var path string
+	err := db.QueryRow(`SELECT path FROM tracks WHERE lower(artist) = lower(?) AND lower(title) = lower(?) LIMIT 1`, artist, title).Scan(&path)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return path, err
 }
 
 func trackFilename(artist, title, path, ext string) string {

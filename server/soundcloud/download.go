@@ -188,11 +188,6 @@ func DownloadTrackURLCtx(ctx context.Context, env paths.Env, pageURL string, rep
 		return "", err
 	}
 	label := trackLabel(*track)
-	if archive.HasSC(track.ID) {
-		msg := jobs.LogSkip(label + " (archived)")
-		rep.Line(msg)
-		return "", nil
-	}
 	dest := trackDestPath(incoming, *track)
 	if libraryHasBasename(loadLibraryBasenames(opts.LibraryDB), track.User.Username, track.Title) {
 		archiveSC(archive, track.ID, rep)
