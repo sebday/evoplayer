@@ -170,6 +170,14 @@ Item {
             spacing: 8
 
             Chip {
+                visible: view.downloadBusy
+                text: "stop"
+                inverted: true
+                color: hovered ? Theme.mixColors(Theme.liked, Theme.foreground, 0.2) : Theme.liked
+                onActivated: view.stopDownload()
+            }
+
+            Chip {
                 text: "sync soundcloud likes"
                 color: hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1)
                 onActivated: view.syncLikes()

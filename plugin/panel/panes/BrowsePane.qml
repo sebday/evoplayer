@@ -1,26 +1,24 @@
 import QtQuick
 import "../compat"
-import "../widgets"
 
-Card {
+// The old sidebar, laid out as one scrolling row of tabs.
+Item {
     id: pane
 
     required property var view
 
-    active: view.pane === "browse" || view.pane === "search"
-
-    Column {
+    Row {
         anchors.fill: parent
-        spacing: 4
+        spacing: 10
 
         Rectangle {
             id: searchBox
-            width: parent.width
-            height: 26
-            radius: Theme.fieldsetCornerRadius
-            color: Theme.mantle
+            width: 168
+            height: parent.height
+            radius: height / 2
+            color: Theme.foregroundFaint
             border.width: 1
-            border.color: searchField.activeFocus ? Theme.good : Theme.inactiveBorder
+            border.color: searchField.activeFocus ? Theme.good : "transparent"
 
             Text {
                 anchors.fill: searchField
@@ -36,8 +34,8 @@ Card {
             TextInput {
                 id: searchField
                 anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: clearMark.visible ? clearMark.width + 2 : 8
+                anchors.leftMargin: 12
+                anchors.rightMargin: clearMark.visible ? clearMark.width + 2 : 12
                 verticalAlignment: TextInput.AlignVCenter
                 color: Theme.foreground
                 font.family: Theme.fontFamily
@@ -91,38 +89,35 @@ Card {
             }
         }
 
-        Text {
-            textFormat: Text.PlainText
-            visible: view.pane !== "search" && (view.browsePath !== "" || view.browseFiles) && !view.searchQuery
-            width: parent.width
-            elide: Text.ElideLeft
-            text: view.browsePath || "filesystem"
-            color: Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeS
-        }
-
         ListView {
             id: list
-            width: parent.width
-            height: parent.height - searchBox.height - 4 - (view.pane !== "search" && (view.browsePath !== "" || view.browseFiles) && !view.searchQuery ? 18 : 0)
+            width: parent.width - searchBox.width - parent.spacing
+            height: parent.height
+            orientation: ListView.Horizontal
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
+            highlightFollowsCurrentItem: false
+            spacing: 4
             model: view.sidebar
-            onHeightChanged: view.browsePage = Math.max(1, Math.floor(height / 22))
+            onWidthChanged: view.browsePage = Math.max(1, Math.floor(width / 110))
+
+            WheelHandler {
+                onWheel: function(event) {
+                    var d = event.angleDelta.y !== 0 ? event.angleDelta.y : event.angleDelta.x
+                    var maxX = Math.max(0, list.contentWidth - list.width)
+                    list.contentX = Math.max(0, Math.min(maxX, list.contentX - d))
+                }
+            }
 
             Text {
-                textFormat: Text.PlainText
-                anchors.left: parent.left
-                anchors.top: parent.top
+                anchors.verticalCenter: parent.verticalCenter
                 visible: list.count === 0
+                textFormat: Text.PlainText
                 text: view.scanRunning ? "Please wait for library to finish scanning" : "loading…"
                 color: Theme.muted
                 font.family: Theme.fontFamily
                 font.pixelSize: Theme.fontSizeM
-                width: parent.width
-                wrapMode: Text.WordWrap
             }
 
             Connections {
@@ -147,65 +142,64 @@ Card {
             }
 
             delegate: Item {
+                id: tab
                 required property int index
                 required property var modelData
 
-                width: list.width
-                height: modelData.kind === "rule" ? 10 : 22
+                readonly property bool rule: modelData.kind === "rule"
+                readonly property bool selected: (view.pane === "browse" || view.pane === "search") && index === view.browseIdx && !rule
+                readonly property bool currentPage: modelData.kind === "page" && view.page && view.page.kind === modelData.id
+                readonly property bool shownList: modelData.kind === "playlist" && view.libraryView === "" && !view.page
+                    && view.mode !== "download" && view.mode !== "discover" && !view.searchActive()
+                    && modelData.id === (view.shownPlaylist !== "" ? view.shownPlaylist : "current")
+                readonly property bool shownFiles: modelData.id === "filesystem" && view.libraryView === "files" && !view.searchActive()
+                readonly property bool shownLists: modelData.id === "playlists" && view.libraryView === "lists" && !view.searchActive()
+                readonly property bool shownTool: modelData.kind === "tool" && view.mode === modelData.id
+                readonly property bool on: selected || currentPage || shownList || shownFiles || shownLists || shownTool
 
-                readonly property bool selected: (view.pane === "browse" || view.pane === "search") && index === view.browseIdx && modelData.kind !== "rule"
+                width: rule ? 14 : line.implicitWidth + 20
+                height: list.height
 
                 Rectangle {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: 1
-                    visible: modelData.kind === "rule"
-                    color: Theme.border
+                    anchors.centerIn: parent
+                    visible: tab.rule
+                    width: 1
+                    height: 14
+                    color: Theme.foregroundDivider
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: !tab.rule
+                    radius: height / 2
+                    color: tab.on
+                        ? Theme.withOpacity(Theme.border, 0.22)
+                        : (tabArea.containsMouse ? Theme.foregroundFaint : "transparent")
                 }
 
                 Row {
                     id: line
-                    anchors.fill: parent
-                    visible: modelData.kind !== "rule"
-                    spacing: 4
-
-                    Text {
-                        id: mark
-                        textFormat: Text.PlainText
-                        width: 12
-                        height: 22
-                        verticalAlignment: Text.AlignVCenter
-                        text: selected ? ">" : " "
-                        color: selected ? Theme.border : Theme.muted
-                        font.family: Theme.fontFamily
-                        font.bold: true
-                        font.pixelSize: Theme.fontSizeM
-                    }
+                    anchors.centerIn: parent
+                    visible: !tab.rule
+                    spacing: 6
 
                     Text {
                         textFormat: Text.PlainText
-                        width: Math.max(20, line.width - mark.width - line.spacing * 2 - countText.width)
-                        height: 22
+                        height: tab.height
                         verticalAlignment: Text.AlignVCenter
                         text: String(modelData.label || "")
-                        elide: Text.ElideRight
-                        color: selected || (modelData.kind === "page" && view.page && view.page.kind === modelData.id)
-                            ? Theme.border
-                            : (modelData.type === "dir" || modelData.kind === "tool" ? Theme.muted : Theme.foreground)
+                        color: tab.on ? Theme.border
+                            : (modelData.type === "dir" || modelData.kind === "tool" || modelData.kind === "page" ? Theme.muted : Theme.foreground)
                         font.family: Theme.fontFamily
-                        font.bold: selected
+                        font.bold: tab.on
                         font.pixelSize: Theme.fontSizeM
                     }
 
                     Text {
-                        id: countText
-                        textFormat: Text.PlainText
                         visible: modelData.count > 0
-                        width: modelData.count > 0 ? implicitWidth : 0
-                        height: 22
+                        textFormat: Text.PlainText
+                        height: tab.height
                         verticalAlignment: Text.AlignVCenter
-                        horizontalAlignment: Text.AlignRight
                         text: modelData.count > 0 ? String(modelData.count) : ""
                         color: Theme.muted
                         font.family: Theme.fontFamily
@@ -214,8 +208,10 @@ Card {
                 }
 
                 MouseArea {
+                    id: tabArea
                     anchors.fill: parent
-                    enabled: modelData.kind !== "rule"
+                    enabled: !tab.rule
+                    hoverEnabled: true
                     preventStealing: true
                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                     onClicked: function(mouse) {

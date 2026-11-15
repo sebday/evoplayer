@@ -9,6 +9,8 @@ Card {
 
     required property var view
 
+    pad: 0
+
     // Ghostty's configured size is 9pt, which is 12px here — the size this
     // list already used. The terminal that is actually open is 12pt.
     readonly property int termPt: 12
@@ -105,9 +107,72 @@ Card {
                     view.playlistScroll = contentY
             }
 
-            header: PageHeader {
-                view: pane.view
+            header: Item {
+                id: listHead
                 width: list.width
+                readonly property bool plain: view.listSource() === "files" || view.listSource() === "lists"
+                height: plain ? plainHead.implicitHeight : banner.implicitHeight
+
+                PageHeader {
+                    id: banner
+                    view: pane.view
+                    width: listHead.width
+                    visible: !listHead.plain
+                }
+
+                Column {
+                    id: plainHead
+                    width: parent.width
+                    visible: listHead.plain
+                    spacing: 4
+                    bottomPadding: 10
+
+                    Row {
+                        width: parent.width
+                        height: 40
+                        spacing: 12
+
+                        Text {
+                            visible: view.listSource() === "files" && view.browsePath !== ""
+                            anchors.verticalCenter: parent.verticalCenter
+                            textFormat: Text.PlainText
+                            text: "‹"
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSize2xl
+
+                            MouseArea {
+                                anchors.fill: parent
+                                anchors.margins: -8
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: view.leaveFolder()
+                            }
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.min(implicitWidth, parent.width - 90)
+                            textFormat: Text.PlainText
+                            text: view.listSource() === "files" ? (view.browsePath || "Filesystem") : "Playlists"
+                            elide: Text.ElideMiddle
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.bold: true
+                            font.pixelSize: Theme.fontSize2xl
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            textFormat: Text.PlainText
+                            text: view.listSource() === "files"
+                                ? String((view.browseEntries || []).length)
+                                : String(view.playlistIndexRows().length)
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeS
+                        }
+                    }
+                }
             }
 
             footer: Item {
@@ -118,7 +183,9 @@ Card {
                     anchors.centerIn: parent
                     textFormat: Text.PlainText
                     visible: list.count === 0
-                    text: view.pageBusy ? "loading…" : (view.listSource() === "search" ? "no matches" : "no tracks")
+                    text: view.pageBusy ? "loading…"
+                        : (view.listSource() === "search" ? "no matches"
+                        : (view.listSource() === "files" ? "empty folder" : "no tracks"))
                     color: Theme.muted
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontSizeM
@@ -195,7 +262,9 @@ Card {
                 height: pane.rowH
                 z: list.dragFrom === index ? 2 : 0
 
-                readonly property bool playing: String(modelData.path || "") !== "" && String(modelData.path) === view.trackPath
+                readonly property bool folder: String(modelData.type || "") === "dir"
+                readonly property bool listPick: String(modelData.type || "") === "playlist"
+                readonly property bool playing: !folder && !listPick && String(modelData.path || "") !== "" && String(modelData.path) === view.trackPath
                 readonly property bool inPlaylist: view.mode === "queue" && (view.pane === "playlist" || (view.searchActive() && view.pane === "search"))
                 readonly property bool selected: inPlaylist && (view.trackPicked(String(modelData.path || "")) || (!(view.playlistPicks && view.playlistPicks.length) && index === view.playlistIdx))
                 readonly property bool filled: selected || playing
@@ -287,6 +356,14 @@ Card {
                             suppressClick = false
                             return
                         }
+                        if (row.folder) {
+                            view.openBrowsePath(String(modelData.path || ""))
+                            return
+                        }
+                        if (row.listPick) {
+                            view.openListedPlaylist(String(modelData.id || ""))
+                            return
+                        }
                         if (clearOnClick) {
                             view.unselectPlaylist(index)
                             return
@@ -371,7 +448,7 @@ Card {
                             anchors.fill: parent
                             radius: 4
                             color: Qt.rgba(0, 0, 0, 0.45)
-                            visible: row.hovered || (row.playing && view.playing)
+                            visible: !row.folder && !row.listPick && (row.hovered || (row.playing && view.playing))
 
                             Text {
                                 anchors.centerIn: parent
@@ -483,7 +560,8 @@ Card {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             textFormat: Text.PlainText
-                            width: Math.ceil(term.advanceWidth("♥"))
+                            visible: !row.folder && !row.listPick
+                            width: row.folder || row.listPick ? 0 : Math.ceil(term.advanceWidth("♥"))
                             horizontalAlignment: Text.AlignHCenter
                             text: modelData.liked ? "♥" : (row.hovered ? "♡" : "")
                             color: row.filled ? Theme.background : (modelData.liked ? Theme.liked : Theme.muted)
@@ -507,7 +585,9 @@ Card {
                                 width: Math.ceil(metaFont.advanceWidth("000:00"))
                                 horizontalAlignment: Text.AlignRight
                                 textFormat: Text.PlainText
-                                text: view.trackClock(modelData)
+                                text: row.folder || row.listPick
+                                    ? (Number(modelData.count) > 0 ? String(modelData.count) : "")
+                                    : view.trackClock(modelData)
                                 color: row.filled ? Theme.background : Theme.withOpacity(Theme.foreground, 0.75)
                                 font.family: Theme.fontFamily
                                 font.pointSize: pane.metaPt
@@ -517,6 +597,7 @@ Card {
                                 width: Math.ceil(metaFont.advanceWidth("000:00"))
                                 horizontalAlignment: Text.AlignRight
                                 textFormat: Text.PlainText
+                                visible: !row.folder && !row.listPick
                                 text: String(modelData.year || "")
                                 color: row.dim
                                 font.family: Theme.fontFamily

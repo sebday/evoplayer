@@ -1,5 +1,4 @@
 import QtQuick
-import qs.commons as Shell
 import "../compat"
 
 // Rounded pane surface. The border takes the accent while the pane has focus.
@@ -11,12 +10,9 @@ Rectangle {
     property bool active: false
     property int pad: 12
 
-    radius: 8
-    color: Shell.Theme.mantle
-    border.width: 1
-    border.color: active ? Theme.withOpacity(Theme.border, 0.65) : Theme.foregroundDivider
-
-    Behavior on border.color { ColorAnimation { duration: Theme.motionFast } }
+    radius: 0
+    color: "transparent"
+    border.width: 0
 
     data: [
         Item {

@@ -28,33 +28,94 @@ Column {
         font.letterSpacing: 1
     }
 
+    component SkipButton: Item {
+        property bool forward: false
+        signal activated()
+
+        width: 32
+        height: 56
+
+        Canvas {
+            anchors.fill: parent
+            onWidthChanged: requestPaint()
+            onHeightChanged: requestPaint()
+            onPaint: {
+                var ctx = getContext("2d")
+                ctx.clearRect(0, 0, width, height)
+                var s = Math.min(width, height)
+                var cy = height / 2
+                var th = s * 0.34
+                var tw = s * 0.28
+                var barW = Math.max(2, s * 0.07)
+                var gap = s * 0.06
+                ctx.fillStyle = Theme.withOpacity(Theme.foreground, 0.78)
+                if (parent.forward) {
+                    var left = (width - (tw + gap + barW)) / 2
+                    ctx.beginPath()
+                    ctx.moveTo(left, cy - th / 2)
+                    ctx.lineTo(left, cy + th / 2)
+                    ctx.lineTo(left + tw, cy)
+                    ctx.closePath()
+                    ctx.fill()
+                    ctx.fillRect(left + tw + gap, cy - th / 2, barW, th)
+                } else {
+                    var right = (width - (barW + gap + tw)) / 2
+                    ctx.fillRect(right, cy - th / 2, barW, th)
+                    ctx.beginPath()
+                    ctx.moveTo(right + barW + gap + tw, cy - th / 2)
+                    ctx.lineTo(right + barW + gap + tw, cy + th / 2)
+                    ctx.lineTo(right + barW + gap, cy)
+                    ctx.closePath()
+                    ctx.fill()
+                }
+            }
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            cursorShape: Qt.PointingHandCursor
+            onClicked: parent.activated()
+        }
+    }
+
     Item {
         id: banner
         width: hero.width
-        height: 196
+        height: 252
 
         BlurBackdrop {
             anchors.fill: parent
             source: hero.info.blur || ""
         }
 
-        PlayCircle {
-            id: playCircle
-            anchors.left: parent.left
-            anchors.leftMargin: 22
-            anchors.top: parent.top
-            anchors.topMargin: 24
-            pause: hero.showPause
-            onActivated: hero.view.headerPlay()
+        Row {
+            id: transport
+            x: 16
+            y: 22
+            height: 56
+            spacing: 2
+
+            SkipButton { onActivated: hero.view.transport("prev") }
+
+            PlayCircle {
+                id: playCircle
+                pause: hero.showPause
+                onActivated: hero.view.headerPlay()
+            }
+
+            SkipButton {
+                forward: true
+                onActivated: hero.view.transport("next")
+            }
         }
 
         Column {
             id: textCol
-            anchors.left: playCircle.right
-            anchors.leftMargin: 18
+            anchors.left: transport.right
+            anchors.leftMargin: 16
             anchors.right: artSlot.left
-            anchors.rightMargin: 18
-            anchors.top: playCircle.top
+            anchors.rightMargin: 16
+            anchors.top: transport.top
             anchors.topMargin: -4
             spacing: 6
 
@@ -82,12 +143,17 @@ Column {
                 }
 
                 LinkText {
-                    visible: hero.view.page !== null
+                    visible: hero.view.page !== null || (hero.view.libraryView === "lists" && hero.view.shownPlaylist !== "")
                     height: 18
                     verticalAlignment: Text.AlignVCenter
                     text: "‹ back"
                     font.pixelSize: Theme.fontSizeS
-                    onActivated: hero.view.pageBack()
+                    onActivated: {
+                        if (hero.view.page)
+                            hero.view.pageBack()
+                        else
+                            hero.view.backToPlaylists()
+                    }
                 }
             }
 
@@ -167,9 +233,9 @@ Column {
                 font.pixelSize: Theme.fontSizeS
             }
 
-            Row {
+            Flow {
+                width: parent.width
                 spacing: 8
-                topPadding: 4
 
                 Chip {
                     text: hero.queueHeader ? (hero.view.shuffle ? "shuffle on" : "shuffle off") : "shuffle play"
@@ -185,6 +251,106 @@ Column {
                     color: hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1)
                     onActivated: hero.view.headerPlay()
                 }
+
+                Chip {
+                    text: "like"
+                    inverted: hero.view.liked
+                    visible: hero.view.trackPath !== ""
+                    color: inverted ? Theme.liked : (hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1))
+                    onActivated: hero.view.likePlaying()
+                }
+
+                Chip {
+                    text: "repeat"
+                    inverted: hero.view.repeatOn
+                    color: inverted ? Theme.good : (hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1))
+                    onActivated: hero.view.toggleRepeat()
+                }
+
+                Chip {
+                    text: "viz"
+                    inverted: hero.view.vizOn
+                    color: inverted ? Theme.good : (hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1))
+                    onActivated: hero.view.toggleViz()
+                }
+
+                Chip {
+                    text: "eq"
+                    inverted: hero.view.eqHot()
+                    color: inverted ? Theme.good : (hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1))
+                    onActivated: hero.view.toggleEq()
+                }
+
+                Text {
+                    visible: hero.view.channels === 1 || hero.view.channels >= 2
+                    height: 22
+                    verticalAlignment: Text.AlignVCenter
+                    textFormat: Text.PlainText
+                    text: hero.view.channels === 1 ? "mono" : "stereo"
+                    color: Theme.good
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                    font.bold: true
+                }
+            }
+        }
+
+        Row {
+            id: seekRow
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 18
+            anchors.rightMargin: 18
+            anchors.bottomMargin: 12
+            height: 36
+            spacing: 14
+
+            WaveformViz {
+                id: wave
+                width: seekRow.width - volumeBar.width - seekRow.spacing
+                height: seekRow.height
+            peaks: hero.view.peaks
+            levels: hero.view.service ? hero.view.service.vizLevels : []
+            progress: hero.view.progressFrac()
+            live: hero.view.vizOn && hero.view.playing
+            positionText: hero.view.clock(hero.view.shownPosition) || "0:00"
+            durationText: hero.view.clock(hero.view.player.duration) || "0:00"
+            onSeekRequested: function(fraction) {
+                var dur = Number(hero.view.player.duration) || 0
+                hero.view.seekTo(dur * fraction)
+            }
+            }
+
+            Item {
+                id: volumeBar
+                width: 88
+                height: seekRow.height
+
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: parent.width
+                    height: 3
+                    radius: 1
+                    color: Theme.withOpacity(Theme.foreground, 0.28)
+                }
+
+                Rectangle {
+                    width: parent.width * hero.view.volumeFrac()
+                    height: 3
+                    radius: 1
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.good
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    anchors.topMargin: -8
+                    anchors.bottomMargin: -8
+                    onClicked: function(mouse) {
+                        hero.view.setVolume(Math.round(100 * mouse.x / width))
+                    }
+                }
             }
         }
 
@@ -192,9 +358,11 @@ Column {
             id: artSlot
             anchors.right: parent.right
             anchors.rightMargin: 22
-            anchors.verticalCenter: parent.verticalCenter
-            height: parent.height - 40
-            width: banner.width > 520 ? height : 0
+            anchors.top: parent.top
+            anchors.topMargin: 18
+            anchors.bottom: seekRow.top
+            anchors.bottomMargin: 10
+            width: banner.width > 640 ? height : 0
             visible: width > 0
 
             Cover {
