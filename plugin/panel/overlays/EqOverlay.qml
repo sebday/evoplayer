@@ -29,6 +29,42 @@ Item {
         return t * travel
     }
 
+    function libraryJobLine() {
+        var job = view.libraryJob
+        if (!job || !job.status || job.status === "idle")
+            return "Nothing running."
+        var names = {
+            "cache": "Rebuild",
+            "import": "Import",
+            "art-maintain": "Artwork",
+            "download": "Sync likes",
+            "download-url": "Download"
+        }
+        var line = (names[String(job.name || "")] || String(job.name || "job")) + " · " + String(job.status || "")
+        var progress = job.progress
+        if (progress && Number(progress.total) > 0)
+            line += " · " + (Number(progress.done) || 0) + "/" + Number(progress.total)
+        if (progress && progress.phase)
+            line += " · " + progress.phase
+        if (progress && progress.folder)
+            line += " · " + progress.folder
+        if (job.status === "error" && job.error)
+            return String(job.error)
+        return line
+    }
+
+    function libraryJobLog() {
+        var log = String(view.libraryJob && view.libraryJob.log || "")
+        if (!log)
+            return ""
+        var lines = log.split("\n")
+        for (var i = lines.length - 1; i >= 0; i--) {
+            if (String(lines[i]).trim() !== "")
+                return String(lines[i])
+        }
+        return ""
+    }
+
     function dbText(v) {
         var n = Math.round(Number(v) || 0)
         if (n > 0)
@@ -74,12 +110,83 @@ Item {
         }
     }
 
-    Item {
-        id: head
+    Column {
+        id: rail
         anchors.top: parent.top
+        anchors.bottom: parent.bottom
         anchors.left: parent.left
+        width: 124
+        spacing: 4
+
+        Repeater {
+            model: [
+                { key: "eq", label: "Equalizer" },
+                { key: "library", label: "Library" }
+            ]
+
+            Rectangle {
+                required property var modelData
+                width: rail.width
+                height: 32
+                radius: 8
+                color: view.eqPanel === modelData.key ? Theme.foregroundFaint : "transparent"
+
+                Rectangle {
+                    width: 2
+                    height: 14
+                    radius: 1
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    color: Theme.good
+                    visible: view.eqPanel === modelData.key
+                }
+
+                Text {
+                    anchors.left: parent.left
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: modelData.label
+                    color: view.eqPanel === modelData.key ? Theme.foreground : Theme.muted
+                    font.family: Theme.fontFamily
+                    font.bold: view.eqPanel === modelData.key
+                    font.pixelSize: Theme.fontSizeS
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: view.eqPanel = modelData.key
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id: rule
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: rail.right
+        anchors.leftMargin: 12
+        width: 1
+        color: Theme.foregroundGhost
+    }
+
+    Item {
+        id: stage
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: rule.right
+        anchors.leftMargin: 16
         anchors.right: parent.right
-        height: 22
+
+        Item {
+            id: head
+            visible: view.eqPanel === "eq"
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: visible ? 22 : 0
 
         Row {
             anchors.left: parent.left
@@ -125,14 +232,15 @@ Item {
         }
     }
 
-    Row {
-        id: sliders
-        anchors.top: head.bottom
-        anchors.topMargin: 6
-        anchors.bottom: parent.bottom
-        anchors.left: parent.left
-        anchors.right: parent.right
-        spacing: 2
+        Row {
+            id: sliders
+            visible: view.eqPanel === "eq"
+            anchors.top: head.bottom
+            anchors.topMargin: 6
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            spacing: 2
 
         Repeater {
             model: 11
@@ -263,6 +371,134 @@ Item {
                                 var dir = event.angleDelta.y < 0 ? -1 : 1
                                 view.setEqGain(slot.index, slot.gain + dir * step)
                             }
+                        }
+                    }
+                }
+            }
+        }
+        }
+
+        Column {
+            id: library
+            visible: view.eqPanel === "library"
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            spacing: 10
+
+            Row {
+                width: parent.width
+                height: 18
+                spacing: 10
+
+                Text {
+                    width: parent.width - (stopJob.visible ? stopJob.width + parent.spacing : 0)
+                    anchors.verticalCenter: parent.verticalCenter
+                    textFormat: Text.PlainText
+                    text: pane.libraryJobLine()
+                    color: view.libraryJob && view.libraryJob.status === "error" ? Theme.liked : Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                    elide: Text.ElideRight
+                }
+
+                EqButton {
+                    id: stopJob
+                    visible: view.libraryJob && view.libraryJob.status === "running"
+                    label: "stop"
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: view.cancelLibraryJob()
+                }
+            }
+
+            Text {
+                width: parent.width
+                visible: text !== ""
+                textFormat: Text.PlainText
+                text: pane.libraryJobLog()
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeS
+                elide: Text.ElideRight
+            }
+
+            Repeater {
+                model: [
+                    {
+                        title: "Rebuild library",
+                        detail: "Read tags and artwork back into the index.",
+                        method: "library.cache",
+                        params: { force: true }
+                    },
+                    {
+                        title: "Import incoming",
+                        detail: "File downloads from incoming into the library.",
+                        method: "library.import",
+                        params: {}
+                    },
+                    {
+                        title: "Repair artwork",
+                        detail: "Fill missing covers and thumbs.",
+                        method: "library.art.maintain",
+                        params: {}
+                    },
+                    {
+                        title: "Sync likes",
+                        detail: "Download new SoundCloud likes into incoming.",
+                        method: "library.soundcloud.download",
+                        params: { import: false }
+                    }
+                ]
+
+                Rectangle {
+                    required property var modelData
+                    width: library.width
+                    height: 58
+                    radius: 10
+                    color: Theme.foregroundFaint
+
+                    Column {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 14
+                        anchors.right: run.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 3
+
+                        Text {
+                            width: parent.width
+                            textFormat: Text.PlainText
+                            text: modelData.title
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.bold: true
+                            font.pixelSize: Theme.fontSizeS
+                            elide: Text.ElideRight
+                        }
+
+                        Text {
+                            width: parent.width
+                            textFormat: Text.PlainText
+                            text: modelData.detail
+                            color: Theme.muted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeS
+                            elide: Text.ElideRight
+                        }
+                    }
+
+                    EqButton {
+                        id: run
+                        anchors.right: parent.right
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        label: view.libraryJob && view.libraryJob.status === "running" ? "busy" : "run"
+                        dim: view.libraryJob && view.libraryJob.status === "running"
+                        onClicked: {
+                            if (view.libraryJob && view.libraryJob.status === "running")
+                                return
+                            view.startLibraryJob(modelData.method, modelData.params)
                         }
                     }
                 }

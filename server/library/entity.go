@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -152,10 +153,19 @@ FROM tracks WHERE `
 			args = append(args, filepath.Clean(dir))
 		}
 	case "genre":
-		aliases := genreConfigFor(env).aliases
-		want := canonicalGenreKey(name, aliases)
-		query = base + `genre != ''`
-		keep = func(t Track) bool { return canonicalGenreKey(t.Genre, aliases) == want }
+		want := strings.TrimSpace(name)
+		if want == "" {
+			return page, fmt.Errorf("genre required")
+		}
+		query = base + `trim(genre) = ?`
+		args = []any{want}
+	case "year":
+		want := yearGroup(name)
+		if want == "" {
+			return page, fmt.Errorf("year required")
+		}
+		query = base + `year != ''`
+		keep = func(t Track) bool { return yearGroup(t.Year) == want }
 	default:
 		return page, fmt.Errorf("unknown kind: %s", kind)
 	}
@@ -181,6 +191,8 @@ FROM tracks WHERE `
 			}
 			return ""
 		}, name)
+	case "year":
+		page.Name = yearGroup(name)
 	}
 	if kind == "artist" {
 		if credits := ArtistCredits(name); len(credits) > 1 {
@@ -266,6 +278,19 @@ func (r *refTally) add(name, path string) {
 	r.count[key]++
 }
 
+func (r *refTally) addExact(name, path string) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	if _, ok := r.count[name]; !ok {
+		r.order = append(r.order, name)
+		r.names[name] = name
+		r.path[name] = path
+	}
+	r.count[name]++
+}
+
 func (r *refTally) refs(skip string, limit int) []EntityRef {
 	out := make([]EntityRef, 0, len(r.order))
 	for _, key := range r.order {
@@ -295,7 +320,7 @@ func summarizeEntity(env Env, page *EntityPage, tracks []Track) {
 		}
 		artists.add(t.Artist, t.Path)
 		labels.add(t.Label, t.Path)
-		genres.add(t.Genre, t.Path)
+		genres.addExact(t.Genre, t.Path)
 		if y := strings.TrimSpace(t.Year); len(y) == 4 {
 			if minYear == "" || y < minYear {
 				minYear = y
@@ -369,7 +394,14 @@ func summarizeEntity(env Env, page *EntityPage, tracks []Track) {
 	page.Genres = genres.refs("", 8)
 }
 
-// Index lists every artist, label, or genre with a track count and a cover.
+var yearDigits = regexp.MustCompile(`\d{4}`)
+
+// yearGroup keeps the first four-digit year in a tag such as "2005-06-01".
+func yearGroup(raw string) string {
+	return yearDigits.FindString(raw)
+}
+
+// Index lists every artist, label, genre, or year with a track count and a cover.
 func Index(env Env, kind string) ([]EntityRef, error) {
 	var col string
 	switch kind {
@@ -379,6 +411,8 @@ func Index(env Env, kind string) ([]EntityRef, error) {
 		col = "label"
 	case "genre":
 		col = "genre"
+	case "year":
+		col = "year"
 	default:
 		return nil, fmt.Errorf("unknown kind: %s", kind)
 	}
@@ -394,29 +428,23 @@ WHERE trim(COALESCE(` + col + `,'')) != '' ORDER BY path`)
 	defer rows.Close()
 	tally := newRefTally()
 	stored := map[string]string{}
-	var aliases map[string]string
-	var folders map[string]string
-	spellings := map[string]string{}
-	if kind == "genre" {
-		aliases = genreConfigFor(env).aliases
-		folders = libraryGenreFolders(env)
-	}
+	exact := kind == "genre"
 	for rows.Next() {
 		var path, art, name string
 		if err := rows.Scan(&path, &art, &name); err != nil {
 			return nil, err
 		}
-		if kind == "genre" {
-			key, shown := genreGroup(name, aliases, folders)
-			if key == "" {
+		if kind == "year" {
+			name = yearGroup(name)
+			if name == "" {
 				continue
 			}
-			if _, ok := spellings[key]; !ok {
-				spellings[key] = shown
-			}
-			name = spellings[key]
 		}
-		tally.add(name, path)
+		if exact {
+			tally.addExact(name, path)
+		} else {
+			tally.add(name, path)
+		}
 		if art != "" {
 			stored[path] = art
 		}
@@ -425,13 +453,33 @@ WHERE trim(COALESCE(` + col + `,'')) != '' ORDER BY path`)
 		return nil, err
 	}
 	out := tally.refs("", 0)
+	var missing []string
 	for i := range out {
-		path := tally.path[strings.ToLower(out[i].Name)]
-		out[i].Art, out[i].Thumb = ListAssets(env, path, stored[path])
+		key := out[i].Name
+		if !exact {
+			key = strings.ToLower(key)
+		}
+		path := tally.path[key]
+		art, thumb := ListAssets(env, path, stored[path])
+		if art != "" {
+			if cover := resolveCoverThumb(env, art); cover != "" {
+				thumb = cover
+			} else {
+				missing = append(missing, art)
+			}
+		}
+		out[i].Art, out[i].Thumb = art, thumb
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return indexSortKey(out[i].Name) < indexSortKey(out[j].Name)
-	})
+	queueCoverThumbs(env, missing)
+	if kind == "year" {
+		sort.SliceStable(out, func(i, j int) bool {
+			return out[i].Name > out[j].Name
+		})
+	} else {
+		sort.SliceStable(out, func(i, j int) bool {
+			return indexSortKey(out[i].Name) < indexSortKey(out[j].Name)
+		})
+	}
 	return out, nil
 }
 

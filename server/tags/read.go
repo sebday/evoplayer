@@ -22,16 +22,17 @@ var slugUnders = regexp.MustCompile(`_+`)
 var yearInTag = regexp.MustCompile(`(\d{4})`)
 
 type TagInfo struct {
-	Title         string `json:"title"`
-	Artist        string `json:"artist"`
-	Genre         string `json:"genre"`
-	Album         string `json:"album"`
-	AlbumArtist   string `json:"album_artist"`
-	Year          string `json:"year"`
-	Label         string `json:"label"`
-	CatalogNumber string `json:"catalog_number"`
-	Comment       string `json:"comment"`
-	SoundcloudID  string `json:"soundcloud_id"`
+	Title         string   `json:"title"`
+	Artist        string   `json:"artist"`
+	Genre         string   `json:"genre"`
+	Album         string   `json:"album"`
+	AlbumArtist   string   `json:"album_artist"`
+	Year          string   `json:"year"`
+	Label         string   `json:"label"`
+	CatalogNumber string   `json:"catalog_number"`
+	Comment       string   `json:"comment"`
+	SoundcloudID  string   `json:"soundcloud_id"`
+	Tags          []string `json:"tags,omitempty"`
 }
 
 type ProbeResult struct {
@@ -101,6 +102,8 @@ func readID3(path string) (TagInfo, float64) {
 			info.CatalogNumber = strings.TrimSpace(user.Value)
 		case "soundcloud_id":
 			info.SoundcloudID = strings.TrimSpace(user.Value)
+		case "tags":
+			info.Tags = ParseTagList(user.Value)
 		}
 	}
 	dur := 0.0
@@ -151,6 +154,7 @@ func readFFProbe(path string) (TagInfo, float64) {
 	info.CatalogNumber = pick("catalognumber", "catalog", "catalogue", "catno")
 	info.Comment = pick("comment", "description")
 	info.SoundcloudID = pick("soundcloud_id")
+	info.Tags = ParseTagList(pick("tags"))
 	info.Year = yearTag(pick("date", "year", "originaldate", "original_year", "tyer"))
 	dur := 0.0
 	if payload.Format.Duration != "" {
@@ -189,7 +193,7 @@ func fillFilenameFallback(info *TagInfo, path string) {
 		if title != "" {
 			info.Title = title
 		}
-		if artist != "" {
+		if info.Artist == "" && artist != "" {
 			info.Artist = artist
 		}
 		if info.Title == "" {

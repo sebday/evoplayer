@@ -106,6 +106,20 @@ func ListIndex(env Env) ([]IndexItem, error) {
 			Starred: isStarred(stars, genre),
 		})
 	}
+	if dbErr == nil && db != nil {
+		tagged, err := library.LikedTagPlaylists(db, env.Env)
+		if err != nil {
+			return nil, err
+		}
+		for _, tag := range tagged {
+			out = append(out, IndexItem{
+				Name:    tag.Name,
+				Count:   tag.Count,
+				Kind:    "tag",
+				Starred: isStarred(stars, tag.Name),
+			})
+		}
+	}
 	out = append(out, listExtraPlaylists(env, stars, out)...)
 	return out, nil
 }
@@ -374,6 +388,11 @@ SELECT path FROM tracks WHERE liked=1 AND path >= ? AND path < ? ORDER BY path L
 				Offset: offset,
 				Items:  tracksFromPaths(env.Env, paths, name),
 			}, true, nil
+		}
+		if paths, err := library.LikedPathsForTag(db, name); err != nil {
+			return TracksPage{}, true, err
+		} else if len(paths) > 0 {
+			return paginatePaths(env, paths, name, offset, limit), true, nil
 		}
 	}
 	return TracksPage{}, false, nil

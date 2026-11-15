@@ -15,47 +15,6 @@ const (
 	GenreElectronic  = "electronic"
 )
 
-// DefaultGenreAliases maps normalized tag aliases to canonical genre keys.
-func DefaultGenreAliases() map[string]string {
-	return map[string]string{
-		"jungle":       GenreDrumAndBass,
-		"dnb":          GenreDrumAndBass,
-		"drumandbass":  GenreDrumAndBass,
-		"drumbass":     GenreDrumAndBass,
-		"jumpup":       GenreDrumAndBass,
-		"neurofunk":    GenreDrumAndBass,
-		"liquid":       GenreDrumAndBass,
-		"halftime":     GenreDrumAndBass,
-		"dubstep":      GenreDubstep,
-		"140":          GenreDubstep,
-		"bassmusic":    GenreDubstep,
-		"riddim":       GenreDubstep,
-		"brostep":      GenreDubstep,
-		"hiphop":       GenreHipHop,
-		"hiphopandrap": GenreHipHop,
-		"hiphoprap":    GenreHipHop,
-		"raphiphop":    GenreHipHop,
-		"rap":          GenreHipHop,
-		"trap":         GenreHipHop,
-		"phonk":        GenreHipHop,
-		"drill":        GenreHipHop,
-		"grime":        GenreGrime,
-		"ukgrime":      GenreGrime,
-		"house":        GenreHouse,
-		"deephouse":    GenreHouse,
-		"techhouse":    GenreHouse,
-		"garage":       GenreHouse,
-		"electronic":   GenreElectronic,
-		"danceandedm":  GenreElectronic,
-		"dance":        GenreElectronic,
-		"edm":          GenreElectronic,
-		"techno":       GenreElectronic,
-		"trance":       GenreElectronic,
-		"ambient":      GenreElectronic,
-		"breakbeat":    GenreElectronic,
-	}
-}
-
 // DefaultGenreFolders maps canonical keys to preferred on-disk folder names.
 func DefaultGenreFolders() map[string]string {
 	return map[string]string{
@@ -66,34 +25,6 @@ func DefaultGenreFolders() map[string]string {
 		GenreHouse:       "house",
 		GenreElectronic:  "electronic",
 	}
-}
-
-// GenreAliases loads [genre_aliases] from music.toml merged over defaults.
-func GenreAliases(path string) (map[string]string, error) {
-	out := DefaultGenreAliases()
-	if path == "" {
-		return out, nil
-	}
-	data, err := Load(path)
-	if err != nil {
-		return nil, err
-	}
-	sec := data["genre_aliases"]
-	if sec == nil {
-		return out, nil
-	}
-	for alias, val := range sec {
-		canon := strings.TrimSpace(fmt.Sprint(val))
-		if canon == "" {
-			continue
-		}
-		key := NormalizeGenreKey(alias)
-		if key == "" {
-			continue
-		}
-		out[key] = NormalizeGenreKey(canon)
-	}
-	return out, nil
 }
 
 // GenreFolders loads [genres] from music.toml merged over defaults.
@@ -169,32 +100,20 @@ func PlaylistFolder(path, playlistTitle string) string {
 	return folders[NormalizeGenreKey(title)]
 }
 
-// SeedGenreConfig writes default [genres] and [genre_aliases] when missing.
+// SeedGenreConfig writes default [genres] when that section is missing.
 func SeedGenreConfig(path string) error {
 	doc, err := loadDoc(path)
 	if err != nil {
 		return err
 	}
-	changed := false
-	if _, ok := doc["genres"].(map[string]any); !ok {
-		genres := map[string]any{}
-		for canon, folder := range DefaultGenreFolders() {
-			genres[canon] = folder
-		}
-		doc["genres"] = genres
-		changed = true
-	}
-	if _, ok := doc["genre_aliases"].(map[string]any); !ok {
-		aliases := map[string]any{}
-		for alias, canon := range DefaultGenreAliases() {
-			aliases[alias] = canon
-		}
-		doc["genre_aliases"] = aliases
-		changed = true
-	}
-	if !changed {
+	if _, ok := doc["genres"].(map[string]any); ok {
 		return nil
 	}
+	genres := map[string]any{}
+	for canon, folder := range DefaultGenreFolders() {
+		genres[canon] = folder
+	}
+	doc["genres"] = genres
 	return write(path, doc)
 }
 

@@ -49,9 +49,13 @@ Column {
             spacing: 6
 
             Row {
-                spacing: 8
+                id: captionRow
+                width: parent.width
+                spacing: 10
 
                 Rectangle {
+                    id: captionBadge
+                    anchors.verticalCenter: parent.verticalCenter
                     height: 18
                     width: captionText.implicitWidth + 14
                     radius: 3
@@ -69,6 +73,20 @@ Column {
                         font.capitalization: Font.AllUppercase
                         font.letterSpacing: 1
                     }
+                }
+
+                Text {
+                    visible: hero.queueHeader && text !== ""
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: Math.max(0, captionRow.width - captionBadge.width - captionRow.spacing)
+                    height: implicitHeight
+                    verticalAlignment: Text.AlignVCenter
+                    textFormat: Text.PlainText
+                    text: hero.info.stats
+                    color: Theme.withOpacity(hero.onBanner, 0.7)
+                    elide: Text.ElideRight
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
                 }
 
                 LinkText {
@@ -114,6 +132,7 @@ Column {
                     font.bold: true
                     width: Math.min(implicitWidth, parent.width * 0.5)
                     onActivated: hero.view.openArtist(text)
+                    onContextActivated: hero.view.openFieldTags("artist", text)
                 }
 
                 Text {
@@ -139,6 +158,7 @@ Column {
                     font.pixelSize: Theme.fontSizeM
                     width: Math.min(implicitWidth, parent.width * 0.3)
                     onActivated: hero.view.openLabel(text)
+                    onContextActivated: hero.view.openFieldTags("label", text)
                 }
 
                 Text {
@@ -154,7 +174,7 @@ Column {
             Text {
                 width: parent.width
                 textFormat: Text.PlainText
-                visible: text !== ""
+                visible: !hero.queueHeader && text !== ""
                 text: hero.info.stats
                 color: Theme.withOpacity(hero.onBanner, 0.7)
                 elide: Text.ElideRight
@@ -183,6 +203,7 @@ Column {
                         prefix: "#"
                         suffix: String(modelData.count || "")
                         onActivated: hero.view.openPage("genre", text, "")
+                        onContextActivated: hero.view.openFieldTags("genre", text)
                     }
                 }
             }
@@ -311,6 +332,7 @@ Column {
                     required property var modelData
                     text: String(modelData)
                     onActivated: hero.view.openArtist(text)
+                    onContextActivated: hero.view.openFieldTags("artist", text)
                 }
             }
         }

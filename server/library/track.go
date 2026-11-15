@@ -11,21 +11,22 @@ import (
 )
 
 type Track struct {
-	Path          string  `json:"path"`
-	Genre         string  `json:"genre,omitempty"`
-	Title         string  `json:"title"`
-	Artist        string  `json:"artist,omitempty"`
-	Album         string  `json:"album,omitempty"`
-	Year          string  `json:"year,omitempty"`
-	Label         string  `json:"label,omitempty"`
-	Duration      float64 `json:"duration"`
-	Art           string  `json:"art,omitempty"`
-	Thumb         string  `json:"thumb,omitempty"`
-	Waveform      string  `json:"waveform,omitempty"`
-	Liked         bool    `json:"liked,omitempty"`
-	Type          string  `json:"type,omitempty"`
-	Playlist      string  `json:"playlist,omitempty"`
-	DurationLabel string  `json:"duration_label,omitempty"`
+	Path          string   `json:"path"`
+	Genre         string   `json:"genre,omitempty"`
+	Title         string   `json:"title"`
+	Artist        string   `json:"artist,omitempty"`
+	Album         string   `json:"album,omitempty"`
+	Year          string   `json:"year,omitempty"`
+	Label         string   `json:"label,omitempty"`
+	Duration      float64  `json:"duration"`
+	Art           string   `json:"art,omitempty"`
+	Thumb         string   `json:"thumb,omitempty"`
+	Waveform      string   `json:"waveform,omitempty"`
+	Liked         bool     `json:"liked,omitempty"`
+	Tags          []string `json:"tags,omitempty"`
+	Type          string   `json:"type,omitempty"`
+	Playlist      string   `json:"playlist,omitempty"`
+	DurationLabel string   `json:"duration_label,omitempty"`
 }
 
 func trackFromProbe(path, genre string, probed tags.ProbeResult) Track {
@@ -38,6 +39,7 @@ func trackFromProbe(path, genre string, probed tags.ProbeResult) Track {
 		Year:     probed.Tag.Year,
 		Label:    probed.Tag.Label,
 		Duration: probed.Duration,
+		Tags:     probed.Tag.Tags,
 	}
 }
 
@@ -81,6 +83,7 @@ func trackFromFileTags(env Env, path string) Track {
 		row.Year = tag.Year
 		row.Label = tag.Label
 		row.Genre = strings.TrimSpace(tag.Genre)
+		row.Tags = tag.Tags
 	}
 	if row.Title == "" {
 		row.Title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))

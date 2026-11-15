@@ -290,6 +290,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			Year   string `json:"year"`
 			Genre  string `json:"genre"`
 			Label  string `json:"label"`
+			Tags   string `json:"tags"`
 		}
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
@@ -302,6 +303,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			Year:   p.Year,
 			Genre:  p.Genre,
 			Label:  p.Label,
+			Tags:   p.Tags,
 		})
 		if err := wrapJobErr(err); err != nil {
 			return nil, err
@@ -328,6 +330,48 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		}
 		playing := d.Actor.Snapshot().Path
 		for _, path := range many.Paths {
+			status.InvalidateMeta(path)
+			if path == playing {
+				d.broadcastStateFull()
+			}
+		}
+		return map[string]any{"updated": n}, nil
+	case "library.track.tags.paths":
+		var q struct {
+			Field string `json:"field"`
+			Value string `json:"value"`
+		}
+		if err := ipc.DecodeParams(req.Params, &q); err != nil {
+			return nil, err
+		}
+		db, err := library.EnsureDB(library.EnvFrom(d.env()))
+		if err != nil {
+			return nil, err
+		}
+		paths, err := library.PathsForField(db, q.Field, q.Value)
+		if err != nil {
+			return nil, err
+		}
+		if paths == nil {
+			paths = []string{}
+		}
+		return map[string]any{"paths": paths}, nil
+	case "library.track.tags.set_field":
+		var one struct {
+			Field string   `json:"field"`
+			Value string   `json:"value"`
+			Paths []string `json:"paths"`
+		}
+		if err := ipc.DecodeParams(req.Params, &one); err != nil {
+			return nil, err
+		}
+		libEnv := library.EnvFrom(d.env())
+		n, err := library.UpdateField(libEnv, one.Field, one.Value, one.Paths)
+		if err := wrapJobErr(err); err != nil {
+			return nil, err
+		}
+		playing := d.Actor.Snapshot().Path
+		for _, path := range one.Paths {
 			status.InvalidateMeta(path)
 			if path == playing {
 				d.broadcastStateFull()

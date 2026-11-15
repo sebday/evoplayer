@@ -24,6 +24,7 @@ Item {
 
         Text {
             anchors.centerIn: parent
+            visible: cover.source === ""
             textFormat: Text.PlainText
             text: String(cover.name || "").replace(/^[^A-Za-z0-9]+/, "").charAt(0).toUpperCase()
             color: Theme.muted

@@ -159,7 +159,7 @@ func textFrame(tag *id3v2.Tag, id string) string {
 	return fmt.Sprint(frame)
 }
 
-// Write updates ID3/MP4 tags on path. Keys: title, artist, album, year, genre, publisher, catalognumber.
+// Write updates ID3/MP4 tags on path. Keys: title, artist, album, year, genre, publisher, catalognumber, tags.
 func Write(path string, targets map[string]string) error {
 	if !isAudio(path) {
 		return fmt.Errorf("not an audio file: %s", path)
@@ -208,24 +208,34 @@ func writeMP3Tags(path string, targets map[string]string) bool {
 		tag.AddTextFrame("TPUB", tag.DefaultEncoding(), v)
 	}
 	if v, ok := targets["catalognumber"]; ok {
-		keep := tag.GetFrames("TXXX")
-		tag.DeleteFrames("TXXX")
-		for _, frame := range keep {
-			if user, ok := frame.(id3v2.UserDefinedTextFrame); ok {
-				desc := strings.ToLower(user.Description)
-				if desc == "catalognumber" {
-					continue
-				}
-				tag.AddUserDefinedTextFrame(user)
-			}
-		}
-		tag.AddUserDefinedTextFrame(id3v2.UserDefinedTextFrame{
-			Encoding:    tag.DefaultEncoding(),
-			Description: "CATALOGNUMBER",
-			Value:       v,
-		})
+		setUserText(tag, "CATALOGNUMBER", v)
+	}
+	if v, ok := targets["tags"]; ok {
+		setUserText(tag, "TAGS", FormatTagList(ParseTagList(v)))
 	}
 	return tag.Save() == nil
+}
+
+func setUserText(tag *id3v2.Tag, description, value string) {
+	descKey := strings.ToLower(description)
+	keep := tag.GetFrames("TXXX")
+	tag.DeleteFrames("TXXX")
+	for _, frame := range keep {
+		user, ok := frame.(id3v2.UserDefinedTextFrame)
+		if !ok || strings.ToLower(user.Description) == descKey {
+			continue
+		}
+		tag.AddUserDefinedTextFrame(user)
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	tag.AddUserDefinedTextFrame(id3v2.UserDefinedTextFrame{
+		Encoding:    tag.DefaultEncoding(),
+		Description: description,
+		Value:       value,
+	})
 }
 
 func writeM4ATags(path string, targets map[string]string) bool {
@@ -255,6 +265,9 @@ func writeM4ATags(path string, targets map[string]string) bool {
 	}
 	if v, ok := targets["catalognumber"]; ok {
 		add("CATALOGNUMBER", v)
+	}
+	if v, ok := targets["tags"]; ok {
+		add("TAGS", FormatTagList(ParseTagList(v)))
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".evo-tag-*"+filepath.Ext(path))
 	if err != nil {

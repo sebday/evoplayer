@@ -72,6 +72,10 @@ Item {
     property var shownTracks: []
     property int shownGen: 0
     property var discoverTracks: []
+    property var relatedTracks: []
+    property string relatedFor: ""
+    property string relatedNote: ""
+    property int relatedGen: 0
     property int discoverIdx: 0
     property string discoverNote: ""
     property string discoverSeedTitle: ""
@@ -106,12 +110,15 @@ Item {
     property bool pageBusy: false
     property var indexCache: ({})
     property var indexRows: []
+    property string indexShown: ""
     property string indexFilter: ""
     property int indexIdx: 0
     property int indexColumns: 1
 
     property bool vizOn: true
     property bool vizSubscribed: false
+    property string eqPanel: "eq"
+    property var libraryJob: null
     property bool eqEnabled: true
     property real eqPreamp: 0
     property var eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -158,6 +165,11 @@ Item {
     property string tagYear: ""
     property string tagGenre: ""
     property string tagLabel: ""
+    property string tagTags: ""
+    property string tagField: ""
+    property string tagFieldValue: ""
+    property var tagPaths: []
+    property string tagScope: ""
 
     property string musicRoot: ""
 
@@ -179,6 +191,7 @@ Item {
         loadWave()
         loadChannels()
         revealPlaying()
+        scheduleRelated()
     }
     onWaveFileChanged: loadWave()
     onPlayingChanged: syncViz()
@@ -205,6 +218,7 @@ Item {
         syncViz()
         loadWave()
         loadEq()
+        scheduleRelated()
     }
 
     function deactivate() {
@@ -405,6 +419,7 @@ Item {
         rows.push({ kind: "page", type: "", label: "Artists", path: "", count: indexCount("artist"), id: "artists", depth: 0 })
         rows.push({ kind: "page", type: "", label: "Labels", path: "", count: indexCount("label"), id: "labels", depth: 0 })
         rows.push({ kind: "page", type: "", label: "Genres", path: "", count: indexCount("genre"), id: "genres", depth: 0 })
+        rows.push({ kind: "page", type: "", label: "Years", path: "", count: indexCount("year"), id: "years", depth: 0 })
         sidebar = rows
         var tab = tabIndexForView()
         if (tab >= 0)
@@ -415,7 +430,7 @@ Item {
         var id = "current"
         if (libraryView === "lists")
             id = "playlists"
-        else if (page && (page.kind === "artists" || page.kind === "labels" || page.kind === "genres"))
+        else if (page && (page.kind === "artists" || page.kind === "labels" || page.kind === "genres" || page.kind === "years"))
             id = page.kind
         else if (shownPlaylist)
             id = shownPlaylist
@@ -1058,6 +1073,116 @@ Item {
         loadDiscover(row.id)
     }
 
+    function scheduleRelated() {
+        var path = trackPath
+        if (!active || !path || path.indexOf("/discover/") >= 0)
+            return
+        if (path !== relatedFor) {
+            relatedTracks = []
+            relatedFor = ""
+            relatedNote = "finding similar…"
+        }
+        relatedTimer.restart()
+    }
+
+    function loadRelated() {
+        var path = trackPath
+        if (!active || !path || path.indexOf("/discover/") >= 0)
+            return
+        if (path === relatedFor && relatedNote !== "finding similar…")
+            return
+        if (!service || !service.ipcCall)
+            return
+        var gen = ++relatedGen
+        service.ipcCall("discover.similar", { path: path }, function(ok, msg) {
+            if (gen !== root.relatedGen || root.trackPath !== path)
+                return
+            if (!ok) {
+                root.relatedNote = ""
+                root.relatedTracks = []
+                return
+            }
+            var data = msg && msg.data ? msg.data : {}
+            var src = data.tracks || []
+            var next = []
+            var cap = Math.min(8, src.length)
+            for (var i = 0; i < cap; i++)
+                next.push(src[i])
+            root.relatedFor = path
+            root.relatedTracks = next
+            root.relatedNote = next.length ? "ready" : ""
+        })
+    }
+
+    function relatedRow(index) {
+        var rows = relatedTracks || []
+        if (index < 0 || index >= rows.length)
+            return null
+        return rows[index]
+    }
+
+    function previewRelated(index) {
+        var row = relatedRow(index)
+        if (!row || !row.id)
+            return
+        if (isPreviewing(row.id)) {
+            togglePlay()
+            return
+        }
+        ipc("discover.preview", { id: Number(row.id) }, null)
+    }
+
+    function keepRelated(index) {
+        var row = relatedRow(index)
+        if (!row || !row.id || row.kept)
+            return
+        var id = row.id
+        ipc("discover.keep", { id: Number(id) }, function(data) {
+            data = data || {}
+            if (data.path || String(data.status || "") === "done")
+                root.markRelatedKept(id)
+        })
+    }
+
+    function dismissRelated(index) {
+        var row = relatedRow(index)
+        if (!row || !row.id)
+            return
+        var id = row.id
+        ipc("discover.dismiss", { id: Number(id) }, function() {
+            root.removeRelated(id)
+        })
+    }
+
+    function moreRelated(index) {
+        var row = relatedRow(index)
+        if (row && row.id)
+            loadDiscover(row.id)
+    }
+
+    function markRelatedKept(id) {
+        relatedTracks = patchRelated(relatedTracks, id, true)
+    }
+
+    function removeRelated(id) {
+        relatedTracks = patchRelated(relatedTracks, id, false)
+    }
+
+    function patchRelated(rows, id, keep) {
+        var next = []
+        var list = rows || []
+        for (var i = 0; i < list.length; i++) {
+            var row = list[i]
+            if (Number(row && row.id) !== Number(id)) {
+                next.push(row)
+                continue
+            }
+            if (keep)
+                next.push(Object.assign({}, row, { kept: true }))
+        }
+        return next
+    }
+
     function markDiscoverKept(id) {
         var next = []
         var rows = discoverTracks || []
@@ -1068,6 +1193,7 @@ Item {
             next.push(row)
         }
         discoverTracks = next
+        markRelatedKept(id)
     }
 
     function removeDiscover(id) {
@@ -1080,6 +1206,7 @@ Item {
         discoverTracks = next
         if (discoverIdx >= next.length)
             discoverIdx = Math.max(0, next.length - 1)
+        removeRelated(id)
         showDiscoverSeed()
     }
 
@@ -1540,7 +1667,7 @@ Item {
     }
 
     function indexPage() {
-        return !!page && (page.kind === "artists" || page.kind === "labels" || page.kind === "genres")
+        return !!page && (page.kind === "artists" || page.kind === "labels" || page.kind === "genres" || page.kind === "years")
     }
 
     function entityPage() {
@@ -1587,6 +1714,7 @@ Item {
     function openArtist(name) { openPage("artist", name, "") }
     function openLabel(name) { openPage("label", name, "") }
     function openGenre(name) { openPage("genre", name, "") }
+    function openYear(name) { openPage("year", name, "") }
 
     function openAlbum(name, path) {
         var p = String(path || "")
@@ -1620,7 +1748,7 @@ Item {
         playlistPicks = []
         textCapture = false
         pageBusy = false
-        if (spec.kind === "artists" || spec.kind === "labels" || spec.kind === "genres") {
+        if (spec.kind === "artists" || spec.kind === "labels" || spec.kind === "genres" || spec.kind === "years") {
             pageData = null
             pageTracks = []
             page = spec
@@ -1721,6 +1849,7 @@ Item {
 
     function afterLibraryEdit() {
         indexCache = ({})
+        indexShown = ""
         prefetchIndexes()
         if (entityPage())
             reloadPage()
@@ -1734,7 +1863,7 @@ Item {
     }
 
     function prefetchIndexes() {
-        var kinds = ["artist", "label", "genre"]
+        var kinds = ["artist", "label", "genre", "year"]
         for (var i = 0; i < kinds.length; i++)
             prefetchIndex(kinds[i])
     }
@@ -1757,6 +1886,8 @@ Item {
             return "label"
         if (page && page.kind === "genres")
             return "genre"
+        if (page && page.kind === "years")
+            return "year"
         return "artist"
     }
 
@@ -1774,6 +1905,9 @@ Item {
 
     function loadIndex(kind) {
         if (indexCache[kind]) {
+            var key = kind + "\n" + String(indexFilter || "")
+            if (indexShown === key && (indexRows || []).length)
+                return
             applyIndexFilter()
             return
         }
@@ -1809,6 +1943,11 @@ Item {
         }
         if (indexIdx >= indexRows.length)
             indexIdx = Math.max(0, indexRows.length - 1)
+        indexShown = indexKind() + "\n" + String(indexFilter || "")
+    }
+
+    function rowThumbUrl(row) {
+        return Util.fileUrl(String(row && (row.thumb || row.art) || ""))
     }
 
     function setIndexFilter(text) {
@@ -2735,6 +2874,9 @@ Item {
         artRestart = false
         artQueryFocus = false
         tagMany = false
+        tagField = ""
+        tagPaths = []
+        tagScope = ""
         moveBusy = false
         tagBusy = false
         playlistIdx = savedPlaylistIdx
@@ -2848,9 +2990,24 @@ Item {
         if (!paths.length)
             return
         var track = selectedListTrack()
+        beginTagEdit(paths, String((track && track.path) || paths[0]))
+    }
+
+    function editTrack(path) {
+        path = String(path || "")
+        if (!path || mode !== "queue")
+            return
+        beginTagEdit([path], path)
+    }
+
+    function beginTagEdit(paths, path) {
+        tagField = ""
+        tagFieldValue = ""
+        tagScope = ""
         tagMany = paths.length > 1
-        tagPath = String((track && track.path) || paths[0])
-        tagBusy = true
+        tagPaths = paths
+        tagPath = path
+        tagBusy = !tagMany
         tagFocus = 0
         tagTitle = ""
         tagArtist = ""
@@ -2858,7 +3015,10 @@ Item {
         tagYear = ""
         tagGenre = ""
         tagLabel = ""
+        tagTags = ""
         pushOverlay("tags")
+        if (tagMany)
+            return
         ipc("library.track.tags.get", { path: tagPath }, function(data) {
             data = data || {}
             root.tagBusy = false
@@ -2868,11 +3028,43 @@ Item {
             root.tagYear = String(data.year || "")
             root.tagGenre = String(data.genre || "")
             root.tagLabel = String(data.label || "")
+            root.tagTags = String(data.tags || "")
+        }, function() {
+            root.tagBusy = false
         })
     }
 
+    function openFieldTags(field, value) {
+        field = String(field || "")
+        value = String(value || "").replace(/^\s+|\s+$/g, "")
+        if (!field || !value || mode !== "queue")
+            return
+        ipc("library.track.tags.paths", { field: field, value: value }, function(data) {
+            var paths = (data && data.paths) || []
+            if (!paths.length) {
+                root.err = "no tracks"
+                return
+            }
+            root.tagField = field
+            root.tagFieldValue = value
+            root.tagMany = false
+            root.tagPaths = paths
+            root.tagScope = paths.length + " tracks · " + value
+            root.tagPath = String(paths[0] || "")
+            root.tagBusy = false
+            root.tagFocus = 0
+            root.pushOverlay("tags")
+        })
+    }
+
+    function tagLimit() {
+        if (tagField)
+            return 1
+        return tagMany ? 3 : 7
+    }
+
     function moveTag(delta) {
-        var limit = tagMany ? 3 : 6
+        var limit = tagLimit()
         var next = tagFocus + delta
         if (next >= limit) {
             saveTags()
@@ -2886,8 +3078,27 @@ Item {
     function saveTags() {
         if (tagBusy)
             return
+        if (tagField) {
+            var fieldPaths = tagPaths || []
+            if (!fieldPaths.length)
+                return
+            tagBusy = true
+            ipc("library.track.tags.set_field", {
+                field: tagField,
+                value: tagFieldValue,
+                paths: fieldPaths
+            }, function() {
+                root.tagBusy = false
+                root.err = ""
+                root.closeMode()
+                root.afterLibraryEdit()
+            }, function() {
+                root.tagBusy = false
+            })
+            return
+        }
         if (tagMany) {
-            var paths = pickedPaths()
+            var paths = tagPaths || []
             if (!paths.length)
                 return
             tagBusy = true
@@ -2902,6 +3113,8 @@ Item {
                 root.patchSharedTags(paths)
                 root.closeMode()
                 root.afterLibraryEdit()
+            }, function() {
+                root.tagBusy = false
             })
             return
         }
@@ -2915,12 +3128,15 @@ Item {
             album: tagAlbum,
             year: tagYear,
             genre: tagGenre,
-            label: tagLabel
+            label: tagLabel,
+            tags: tagTags
         }, function() {
             root.tagBusy = false
             root.err = ""
             root.closeMode()
             root.afterLibraryEdit()
+        }, function() {
+            root.tagBusy = false
         })
     }
 
@@ -3194,8 +3410,29 @@ Item {
             return
         }
         eqSaveArmed = false
+        eqPanel = "eq"
         pushOverlay("eq")
         loadEq()
+        refreshLibraryJob()
+    }
+
+    function refreshLibraryJob() {
+        ipc("job.status", {}, function(data) {
+            root.libraryJob = data || { status: "idle" }
+        })
+    }
+
+    function startLibraryJob(method, params) {
+        ipc(method, params || {}, function(data) {
+            root.libraryJob = data || { status: "running" }
+            root.err = ""
+        })
+    }
+
+    function cancelLibraryJob() {
+        ipc("job.cancel", {}, function() {
+            root.refreshLibraryJob()
+        })
     }
 
     function eqPresetActive(slot) {
@@ -3525,6 +3762,8 @@ Item {
         if (mode === "eq") {
             if (key === Qt.Key_Escape && eqSaveArmed) { eqSaveArmed = false; return true }
             if (key === Qt.Key_Escape) { onEsc(); return true }
+            if (eqPanel !== "eq")
+                return true
             if (text === "1" || text === "2" || text === "3") { pickEqPreset(Number(text)); return true }
             if (text === "s" || text === "S") { eqSaveArmed = !eqSaveArmed; return true }
             if (key === Qt.Key_Left) { eqIdx = Math.max(0, eqIdx - 1); return true }
@@ -3790,6 +4029,12 @@ Item {
     }
 
     Timer {
+        id: relatedTimer
+        interval: 400
+        onTriggered: root.loadRelated()
+    }
+
+    Timer {
         id: seekTimer
         interval: 200
         onTriggered: root.ipc("playback.seek", { seconds: root.seekPreview }, null)
@@ -3813,17 +4058,25 @@ Item {
             if (!data)
                 return
             var name = String(data.name || "")
-            if (name === "scan") {
+            if (name === "scan" || name === "cache" || name === "import" || name === "art-maintain") {
                 var running = String(data.status || "") === "running"
-                root.scanRunning = running
+                if (name === "scan")
+                    root.scanRunning = running
+                else
+                    root.libraryJob = data
                 if (!running) {
                     root.indexCache = ({})
+                    root.indexShown = ""
+                    root.prefetchIndexes()
                     root.loadBrowse(root.browsePath)
                     root.refreshTrees()
+                    if (root.entityPage())
+                        root.reloadPage()
                 }
                 return
             }
             if (name === "download" || name === "download-url") {
+                root.libraryJob = data
                 root.noteDownloadJob(data)
                 if (name === "download" && String(data.status || "") === "done")
                     root.refreshPlaylistCounts()
@@ -3869,8 +4122,10 @@ Item {
             if (status === "done") {
                 root.err = ""
                 var id = data.result && data.result.id
-                if (name === "discover-keep" && id)
+                if (name === "discover-keep" && id) {
                     root.markDiscoverKept(id)
+                    root.markRelatedKept(id)
+                }
                 root.showDiscoverSeed()
             }
         }

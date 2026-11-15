@@ -5,6 +5,7 @@ Rectangle {
     id: chip
 
     signal activated()
+    signal contextActivated()
 
     property string text: ""
     property string prefix: ""
@@ -39,7 +40,13 @@ Rectangle {
         id: area
         anchors.fill: parent
         hoverEnabled: true
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
         cursorShape: Qt.PointingHandCursor
-        onClicked: chip.activated()
+        onClicked: function(mouse) {
+            if (mouse.button === Qt.RightButton)
+                chip.contextActivated()
+            else
+                chip.activated()
+        }
     }
 }

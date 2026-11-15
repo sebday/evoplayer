@@ -317,10 +317,34 @@ func trackMeta(track *Track, opts DownloadOptions) map[string]string {
 	if year != "" {
 		meta["year"] = year
 	}
-	if genre := trackEmbedGenre(track, opts); genre != "" {
+	genre := trackEmbedGenre(track, opts)
+	if genre != "" {
 		meta["genre"] = genre
 	}
+	if extra := extraSoundCloudTags(track, genre); extra != "" {
+		meta["tags"] = extra
+	}
 	return meta
+}
+
+func extraSoundCloudTags(track *Track, folderGenre string) string {
+	if track == nil {
+		return ""
+	}
+	var raw []string
+	if g := strings.TrimSpace(track.Genre); g != "" {
+		raw = append(raw, g)
+	}
+	raw = append(raw, parseTagList(track.TagList)...)
+	skip := tags.TagKey(folderGenre)
+	var keep []string
+	for _, item := range raw {
+		if tags.TagKey(item) == "" || tags.TagKey(item) == skip {
+			continue
+		}
+		keep = append(keep, item)
+	}
+	return tags.FormatTagList(keep)
 }
 
 func NormalizeIncoming(ctx context.Context, musicRoot string) error {

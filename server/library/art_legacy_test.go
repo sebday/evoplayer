@@ -26,28 +26,25 @@ func TestLegacyArtFind(t *testing.T) {
 }
 
 func TestGenreGroupKeepsFolderGenres(t *testing.T) {
-	aliases := map[string]string{
-		"garage":    "house",
-		"house":     "house",
-		"trap":      "hiphop",
-		"techhouse": "house",
-	}
 	folders := map[string]string{
 		"house":  "House",
 		"garage": "Garage",
 		"trap":   "Trap",
 		"hiphop": "Hiphop",
 	}
-	if key, shown := genreGroup("House", aliases, folders); key != "dir:house" || shown != "House" {
+	if key, shown := genreGroup("House", folders); key != "dir:house" || shown != "House" {
 		t.Fatalf("house: %s %s", key, shown)
 	}
-	if key, shown := genreGroup("Garage", aliases, folders); key != "dir:garage" || shown != "Garage" {
+	if key, shown := genreGroup("Garage", folders); key != "dir:garage" || shown != "Garage" {
 		t.Fatalf("garage: %s %s", key, shown)
 	}
-	if key, shown := genreGroup("Trap", aliases, folders); key != "dir:trap" || shown != "Trap" {
+	if key, shown := genreGroup("Trap", folders); key != "dir:trap" || shown != "Trap" {
 		t.Fatalf("trap: %s %s", key, shown)
 	}
-	if key, _ := genreGroup("techhouse", aliases, folders); key != "house" {
-		t.Fatalf("techhouse should still fold into house, got %s", key)
+	if key, shown := genreGroup("techhouse", folders); key != "techhouse" || shown != "techhouse" {
+		t.Fatalf("techhouse should stay its own tag, got %s %s", key, shown)
+	}
+	if key, shown := genreGroup("Dance & EDM", folders); key != "danceandedm" || shown != "Dance & EDM" {
+		t.Fatalf("dance & edm should stay raw, got %s %s", key, shown)
 	}
 }

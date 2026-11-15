@@ -56,7 +56,8 @@ Card {
     property int sideMargin: 0
     readonly property bool likesOpen: view.shownPlaylist === "all" && view.listSource() === "shown"
     readonly property bool likesGrid: likesOpen && view.asGrid
-    readonly property bool trackGrid: view.asGrid && view.mode === "queue" && !view.indexPage()
+    readonly property bool showLibrary: view.mode === "queue" || view.mode === "tags"
+    readonly property bool trackGrid: view.asGrid && pane.showLibrary && !view.indexPage()
         && (view.listSource() === "shown" || view.listSource() === "page" || view.listSource() === "search")
     readonly property bool plainHead: view.listSource() === "files" || view.listSource() === "lists"
     readonly property bool trackHeading: view.listSource() === "page"
@@ -136,7 +137,7 @@ Card {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.rightMargin: pane.plainHead ? pane.sideMargin : 0
-            visible: view.mode === "queue" && !view.indexPage()
+            visible: pane.showLibrary && !view.indexPage()
             height: visible ? (pane.plainHead ? (pane.titledHead ? plainHead.implicitHeight : 0) : banner.implicitHeight) : 0
             onHeightChanged: pane.menuTop = pane.plainHead ? 0 : height
             onVisibleChanged: pane.menuTop = visible && !pane.plainHead ? height : 0
@@ -563,7 +564,7 @@ Card {
             anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
             anchors.rightMargin: pane.releaseColumn ? 16 : pane.sideMargin
             anchors.bottom: parent.bottom
-            visible: view.mode === "queue" && !view.indexPage() && view.listSource() !== "lists" && !pane.trackGrid
+            visible: pane.showLibrary && !view.indexPage() && view.listSource() !== "lists" && !pane.trackGrid
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
@@ -594,20 +595,118 @@ Card {
                     view.playlistScroll = contentY
             }
 
-            footer: Item {
+            footer: Column {
                 width: list.width
-                height: list.count === 0 ? 48 : 12
+                height: implicitHeight
+                spacing: 0
 
-                Text {
-                    anchors.centerIn: parent
-                    textFormat: Text.PlainText
-                    visible: list.count === 0
-                    text: view.pageBusy ? "loading…"
-                        : (view.listSource() === "search" ? "no matches"
-                        : (view.listSource() === "files" ? "empty folder" : "no tracks"))
-                    color: Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeM
+                Item {
+                    width: parent.width
+                    height: list.count === 0 ? 48 : 12
+
+                    Text {
+                        anchors.centerIn: parent
+                        textFormat: Text.PlainText
+                        visible: list.count === 0
+                        text: view.pageBusy ? "loading…"
+                            : (view.listSource() === "search" ? "no matches"
+                            : (view.listSource() === "files" ? "empty folder" : "no tracks"))
+                        color: Theme.muted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeM
+                    }
+                }
+
+                    Column {
+                        id: relatedBlock
+                        width: parent.width
+                        visible: view.listSource() === "queue" && ((view.relatedTracks && view.relatedTracks.length) || view.relatedNote === "finding similar…")
+                        spacing: 0
+
+                    Text {
+                        width: parent.width
+                        topPadding: 16
+                        bottomPadding: 6
+                        leftPadding: 8
+                        textFormat: Text.PlainText
+                        text: "Related"
+                        color: Theme.withOpacity(Theme.foreground, 0.38)
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeS
+                        font.bold: true
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: 1
+                    }
+
+                    Text {
+                        width: parent.width
+                        leftPadding: 8
+                        bottomPadding: 8
+                        visible: !(view.relatedTracks && view.relatedTracks.length)
+                        textFormat: Text.PlainText
+                        text: "finding similar…"
+                        color: Theme.withOpacity(Theme.foreground, 0.32)
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeS
+                    }
+
+                    Repeater {
+                        model: view.relatedTracks || []
+
+                        Item {
+                            id: relatedWrap
+                            required property int index
+                            required property var modelData
+                            width: relatedBlock.width
+                            height: pane.rowH
+                            opacity: relatedHover.hovered || view.isPreviewing(modelData.id) ? 0.82 : 0.36
+
+                            HoverHandler {
+                                id: relatedHover
+                            }
+
+                            SoundRow {
+                                id: relatedRow
+                                width: parent.width
+                                artSide: pane.artSide
+                                titlePt: pane.termPt
+                                art: view.soundcloudArtURL(modelData.artwork)
+                                upper: String(modelData.artist || "")
+                                title: String(modelData.title || "")
+                                genre: String(modelData.genre || "")
+                                plays: Number(modelData.plays) || 0
+                                likes: Number(modelData.likes) || 0
+                                year: modelData.year ? String(modelData.year) : ""
+                                clock: view.trackClock(modelData)
+                                badge: modelData.kept ? "kept" : ""
+                                current: view.isPreviewing(modelData.id)
+                                audible: view.playing
+                                onClicked: view.previewRelated(index)
+                                onActivated: view.previewRelated(index)
+                                onPlayRequested: view.previewRelated(index)
+
+                                Chip {
+                                    visible: !relatedWrap.modelData.kept
+                                    text: "keep"
+                                    prefix: "+"
+                                    inverted: relatedRow.filled
+                                    onActivated: view.keepRelated(relatedWrap.index)
+                                }
+
+                                Chip {
+                                    text: "similar"
+                                    inverted: relatedRow.filled
+                                    onActivated: view.moreRelated(relatedWrap.index)
+                                }
+
+                                Chip {
+                                    text: "✕"
+                                    inverted: relatedRow.filled
+                                    onActivated: view.dismissRelated(relatedWrap.index)
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -706,6 +805,10 @@ Card {
                 readonly property color ink: filled ? Theme.background : Theme.foreground
                 readonly property color dim: filled ? Theme.withOpacity(Theme.background, 0.72) : Theme.muted
                 readonly property bool roomy: list.width > 640
+                readonly property string year: {
+                    var match = String(modelData.year || "").match(/\d{4}/)
+                    return match ? match[0] : ""
+                }
                 readonly property string artist: String(modelData.artist || "").replace(/^\s+|\s+$/g, "")
                 readonly property string album: String(modelData.album || "").replace(/^\s+|\s+$/g, "")
                 readonly property string title: {
@@ -722,6 +825,7 @@ Card {
 
                 MouseArea {
                     anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                     preventStealing: list.canReorder
                     onWheel: function(wheel) {
                         var dy = wheel.pixelDelta.y
@@ -738,6 +842,10 @@ Card {
                     property bool suppressClick: false
                     property real grabY: 0
                     onPressed: function(mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            dragged = false
+                            return
+                        }
                         dragged = false
                         var shift = (mouse.modifiers & Qt.ShiftModifier) !== 0
                         var ctrl = (mouse.modifiers & Qt.ControlModifier) !== 0
@@ -786,6 +894,11 @@ Card {
                         list.dragOffset = 0
                     }
                     onClicked: function(mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            if (!row.folder && !row.listPick)
+                                view.editTrack(String(modelData.path || ""))
+                            return
+                        }
                         if (dragged || suppressClick) {
                             suppressClick = false
                             return
@@ -930,6 +1043,7 @@ Card {
                                 hoverColor: row.filled ? Theme.background : Theme.foreground
                                 font.pixelSize: Theme.fontSizeS
                                 onActivated: view.openArtist(row.artist)
+                                onContextActivated: view.openFieldTags("artist", row.artist)
                             }
 
                             Text {
@@ -995,6 +1109,29 @@ Card {
                             maxWidth: 140
                             inverted: row.filled
                             onActivated: view.openGenre(text)
+                            onContextActivated: view.openFieldTags("genre", text)
+                        }
+
+                        Chip {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: !row.folder && !row.listPick && row.year !== ""
+                            text: row.year
+                            inverted: row.filled
+                            onActivated: view.openYear(text)
+                            onContextActivated: view.openFieldTags("year", text)
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: Math.ceil(metaFont.advanceWidth("000:00"))
+                            horizontalAlignment: Text.AlignRight
+                            textFormat: Text.PlainText
+                            text: row.folder || row.listPick
+                                ? (Number(modelData.count) > 0 ? String(modelData.count) : "")
+                                : view.trackClock(modelData)
+                            color: row.filled ? Theme.background : Theme.withOpacity(Theme.foreground, 0.75)
+                            font.family: Theme.fontFamily
+                            font.pointSize: pane.metaPt
                         }
 
                         Text {
@@ -1014,34 +1151,6 @@ Card {
                                 enabled: row.hovered || !!modelData.liked
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: view.toggleLike(String(modelData.path || ""))
-                            }
-                        }
-
-                        Column {
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 2
-
-                            Text {
-                                width: Math.ceil(metaFont.advanceWidth("000:00"))
-                                horizontalAlignment: Text.AlignRight
-                                textFormat: Text.PlainText
-                                text: row.folder || row.listPick
-                                    ? (Number(modelData.count) > 0 ? String(modelData.count) : "")
-                                    : view.trackClock(modelData)
-                                color: row.filled ? Theme.background : Theme.withOpacity(Theme.foreground, 0.75)
-                                font.family: Theme.fontFamily
-                                font.pointSize: pane.metaPt
-                            }
-
-                            Text {
-                                width: Math.ceil(metaFont.advanceWidth("000:00"))
-                                horizontalAlignment: Text.AlignRight
-                                textFormat: Text.PlainText
-                                visible: !row.folder && !row.listPick
-                                text: String(modelData.year || "")
-                                color: row.dim
-                                font.family: Theme.fontFamily
-                                font.pointSize: pane.metaPt
                             }
                         }
                     }
@@ -1172,7 +1281,7 @@ Card {
             anchors.fill: parent
             anchors.topMargin: errLine.height
             anchors.rightMargin: pane.sideMargin
-            visible: view.mode === "queue" && view.indexPage()
+            visible: pane.showLibrary && view.indexPage()
             view: pane.view
         }
 
@@ -1185,6 +1294,7 @@ Card {
         }
 
         TagEditor {
+            z: 8
             anchors.fill: parent
             anchors.topMargin: errLine.height
             anchors.rightMargin: pane.sideMargin

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sebday/evoplayer/server/tags"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -29,6 +31,13 @@ CREATE TABLE IF NOT EXISTS tracks (
 CREATE INDEX IF NOT EXISTS idx_tracks_parent ON tracks(parent_dir);
 CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre);
 CREATE INDEX IF NOT EXISTS idx_tracks_liked ON tracks(liked);
+CREATE TABLE IF NOT EXISTS track_tags (
+  path TEXT NOT NULL,
+  tag TEXT NOT NULL,
+  tag_key TEXT NOT NULL,
+  PRIMARY KEY (path, tag_key)
+);
+CREATE INDEX IF NOT EXISTS idx_track_tags_key ON track_tags(tag_key);
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT
@@ -231,7 +240,31 @@ ON CONFLICT(path) DO UPDATE SET
 		item.Title, item.Artist, item.Album, item.Year, item.Label,
 		item.Duration, item.Art, item.Waveform, liked, mtime, size,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	return replaceTrackTags(tx, item.Path, item.Tags)
+}
+
+func replaceTrackTags(tx *sql.Tx, path string, list []string) error {
+	if _, err := tx.Exec(`DELETE FROM track_tags WHERE path=?`, path); err != nil {
+		return err
+	}
+	seen := map[string]struct{}{}
+	for _, tag := range tags.ParseTagList(tags.FormatTagList(list)) {
+		key := tags.TagKey(tag)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		if _, err := tx.Exec(`INSERT INTO track_tags(path, tag, tag_key) VALUES(?,?,?)`, path, tag, key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // replaceTrack swaps the row for from with item in one transaction.
@@ -241,6 +274,10 @@ func replaceTrack(db *sql.DB, env Env, from string, item Track, mtime, size int6
 		return err
 	}
 	if from != "" && from != item.Path {
+		if _, err := tx.Exec(`DELETE FROM track_tags WHERE path=?`, from); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
 		if _, err := tx.Exec(`DELETE FROM tracks WHERE path=?`, from); err != nil {
 			_ = tx.Rollback()
 			return err
@@ -262,6 +299,9 @@ func pruneMissing(tx *sql.Tx, prefix string, seen map[string]struct{}) (int, err
 	for path := range stats {
 		if _, ok := seen[path]; ok {
 			continue
+		}
+		if _, err := tx.Exec(`DELETE FROM track_tags WHERE path=?`, path); err != nil {
+			return n, err
 		}
 		if _, err := tx.Exec(`DELETE FROM tracks WHERE path=?`, path); err != nil {
 			return n, err

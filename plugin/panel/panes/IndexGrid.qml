@@ -32,6 +32,7 @@ Item {
         onColumnsChanged: root.view.indexColumns = columns
         Component.onCompleted: root.view.indexColumns = columns
         highlightFollowsCurrentItem: false
+        cacheBuffer: cellHeight
 
         ScrollBar.vertical: ScrollBar {
             policy: ScrollBar.AsNeeded
@@ -104,8 +105,8 @@ Item {
                 round: root.artists
                 corner: 6
                 name: String(modelData.name || "")
-                source: root.view.rowCoverUrl(modelData)
-                decodeSize: Math.ceil((width > 0 ? width : 160) * Screen.devicePixelRatio)
+                source: root.view.rowThumbUrl(modelData)
+                decodeSize: Math.ceil(Math.max(96, grid.cellWidth - 36) * Screen.devicePixelRatio)
                 scale: hot ? 1.04 : 1
 
                 Behavior on scale {
@@ -144,8 +145,13 @@ Item {
                 id: cellArea
                 anchors.fill: parent
                 hoverEnabled: true
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
                 cursorShape: Qt.PointingHandCursor
-                onClicked: {
+                onClicked: function(mouse) {
+                    if (mouse.button === Qt.RightButton) {
+                        root.view.openFieldTags(root.view.indexKind(), String(modelData.name || ""))
+                        return
+                    }
                     root.view.indexIdx = index
                     root.view.focusPane("playlist")
                     root.view.openIndexAt(index)

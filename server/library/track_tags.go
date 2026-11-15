@@ -17,6 +17,7 @@ type TrackTagsPatch struct {
 	Year   string `json:"year"`
 	Genre  string `json:"genre"`
 	Label  string `json:"label"`
+	Tags   string `json:"tags"`
 }
 
 type TrackTags struct {
@@ -26,6 +27,7 @@ type TrackTags struct {
 	Year   string `json:"year"`
 	Genre  string `json:"genre"`
 	Label  string `json:"label"`
+	Tags   string `json:"tags"`
 }
 
 func ReadTrackTags(path string) (TrackTags, error) {
@@ -51,6 +53,7 @@ func ReadTrackTags(path string) (TrackTags, error) {
 		Year:   strings.TrimSpace(tag.Year),
 		Genre:  strings.TrimSpace(tag.Genre),
 		Label:  strings.TrimSpace(tag.Label),
+		Tags:   tags.FormatTagList(tag.Tags),
 	}, nil
 }
 
@@ -62,6 +65,7 @@ func UpdateTrackTags(env Env, path string, patch TrackTagsPatch) (Track, error) 
 		"year":      strings.TrimSpace(patch.Year),
 		"genre":     strings.TrimSpace(patch.Genre),
 		"publisher": strings.TrimSpace(patch.Label),
+		"tags":      strings.TrimSpace(patch.Tags),
 	})
 }
 
@@ -123,6 +127,7 @@ func writeTagFields(env Env, path string, targets map[string]string) (Track, err
 		Year:     probed.Tag.Year,
 		Label:    probed.Tag.Label,
 		Duration: probed.Duration,
+		Tags:     probed.Tag.Tags,
 	}
 	if st, err := os.Stat(path); err == nil {
 		if db, err := EnsureDB(env); err == nil && db != nil {
