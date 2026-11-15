@@ -26,8 +26,10 @@ Fieldset {
         font.pointSize: pane.metaPt
     }
 
-    readonly property int artSide: 32
-    readonly property int rowH: artSide + 8
+    readonly property int artSide: 46
+    readonly property int rowH: artSide + 14
+    readonly property int discoverArt: 32
+    readonly property int discoverRowH: discoverArt + 8
 
     component ThinScrollBar: ScrollBar {
         id: bar
@@ -92,11 +94,19 @@ Fieldset {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            visible: view.mode === "queue"
+            visible: view.mode === "queue" && !view.indexPage()
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
+            highlightFollowsCurrentItem: false
             ScrollBar.vertical: ThinScrollBar {}
+
+            function scrollBy(dy) {
+                var minY = list.originY
+                var maxY = Math.max(minY, list.originY + list.contentHeight - list.height)
+                list.contentY = Math.max(minY, Math.min(maxY, list.contentY - dy))
+            }
+
             WheelHandler {
                 blocking: true
                 onWheel: function(event) {
@@ -105,24 +115,38 @@ Fieldset {
                         dy *= 2
                     else
                         dy = event.angleDelta.y / 4
-                    var maxY = Math.max(0, list.contentHeight - list.height)
-                    var y = list.contentY - dy
-                    if (y < 0)
-                        y = 0
-                    if (y > maxY)
-                        y = maxY
-                    list.contentY = y
+                    list.scrollBy(dy)
                 }
             }
-            model: String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") !== "" ? view.searchHits : (view.shownPlaylist ? view.shownTracks : view.queue)
+            model: view.playlistRows()
             onHeightChanged: view.playlistPage = Math.max(1, Math.floor(height / pane.rowH))
             onContentYChanged: {
                 if (view.reorderScroll < 0)
                     view.playlistScroll = contentY
             }
 
+            header: PageHeader {
+                view: pane.view
+                width: list.width
+            }
+
+            footer: Item {
+                width: list.width
+                height: list.count === 0 ? 48 : 12
+
+                Text {
+                    anchors.centerIn: parent
+                    textFormat: Text.PlainText
+                    visible: list.count === 0
+                    text: view.pageBusy ? "loading…" : (view.listSource() === "search" ? "no matches" : "no tracks")
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeM
+                }
+            }
+
             // A drag reorders the live queue. Wheel scrolling stays.
-            readonly property bool canReorder: !view.shuffle && !view.shownPlaylist && view.mode === "queue" && String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") === ""
+            readonly property bool canReorder: !view.shuffle && view.mode === "queue" && view.listSource() === "queue"
             property int dragFrom: -1
             property int dragTo: -1
             property real dragOffset: 0
@@ -132,6 +156,18 @@ Fieldset {
                 function onQueueChanged() { list.restoreScroll() }
                 function onShownTracksChanged() { list.restoreScroll() }
                 function onSearchHitsChanged() { list.restoreScroll() }
+                function onPageTracksChanged() {
+                    if (view.reorderScroll >= 0)
+                        list.restoreScroll()
+                    else
+                        Qt.callLater(list.positionViewAtBeginning)
+                }
+                function onPageChanged() {
+                    if (view.reorderScroll >= 0)
+                        list.restoreScroll()
+                    else
+                        Qt.callLater(list.positionViewAtBeginning)
+                }
             }
 
             function restoreScroll() {
@@ -145,27 +181,22 @@ Fieldset {
                 })
             }
 
-            Text {
-                textFormat: Text.PlainText
-                visible: list.count === 0
-                text: String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") !== "" ? "no matches" : "no tracks"
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pointSize: pane.termPt
-            }
-
             Connections {
                 target: view
                 function onPlaylistIdxChanged() {
                     if (view.mode !== "queue" || view.playlistIdx < 0)
                         return
                     list.currentIndex = view.playlistIdx
-                    if (view.playlistIdx < list.count)
+                    if (view.reorderScroll >= 0)
+                        return
+                    if (view.playlistIdx === 0)
+                        list.positionViewAtBeginning()
+                    else if (view.playlistIdx < list.count)
                         list.positionViewAtIndex(view.playlistIdx, ListView.Contain)
                 }
                 function onPlayingRevealChanged() {
                     Qt.callLater(function() {
-                        if (view.mode !== "queue" || view.shownPlaylist || view.playlistIdx < 0)
+                        if (view.mode !== "queue" || view.listSource() !== "queue" || view.playlistIdx < 0)
                             return
                         if (view.playlistIdx >= list.count)
                             return
@@ -176,6 +207,7 @@ Fieldset {
             }
 
             delegate: Item {
+                id: row
                 required property int index
                 required property var modelData
 
@@ -184,133 +216,25 @@ Fieldset {
                 z: list.dragFrom === index ? 2 : 0
 
                 readonly property bool playing: String(modelData.path || "") !== "" && String(modelData.path) === view.trackPath
-                readonly property bool inPlaylist: view.mode === "queue" && (view.pane === "playlist" || (String(view.searchQuery || "").replace(/^\s+|\s+$/g, "") !== "" && view.pane === "search"))
+                readonly property bool inPlaylist: view.mode === "queue" && (view.pane === "playlist" || (view.searchActive() && view.pane === "search"))
                 readonly property bool selected: inPlaylist && (view.trackPicked(String(modelData.path || "")) || (!(view.playlistPicks && view.playlistPicks.length) && index === view.playlistIdx))
                 readonly property bool filled: selected || playing
-
-                Item {
-                    id: body
-                    width: parent.width
-                    height: parent.height
-                    y: {
-                        var from = list.dragFrom
-                        var to = list.dragTo
-                        if (from < 0 || pane.rowH < 1)
-                            return 0
-                        if (index === from)
-                            return list.dragOffset
-                        if (from < to && index > from && index <= to)
-                            return -height
-                        if (to < from && index >= to && index < from)
-                            return height
-                        return 0
-                    }
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: 2
-                    color: selected ? Theme.good : (playing ? Theme.mixColors(Theme.background, Theme.good, 0.65) : "transparent")
+                readonly property bool hovered: rowHover.hovered
+                readonly property color ink: filled ? Theme.background : Theme.foreground
+                readonly property color dim: filled ? Theme.withOpacity(Theme.background, 0.72) : Theme.muted
+                readonly property bool roomy: list.width > 640
+                readonly property string artist: String(modelData.artist || "").replace(/^\s+|\s+$/g, "")
+                readonly property string album: String(modelData.album || "").replace(/^\s+|\s+$/g, "")
+                readonly property string title: {
+                    var t = String(modelData.title || "").replace(/^\s+|\s+$/g, "")
+                    if (t)
+                        return t
+                    var p = String(modelData.path || "")
+                    return p.slice(p.lastIndexOf("/") + 1)
                 }
 
-                Row {
-                    anchors.fill: parent
-                    anchors.leftMargin: 2
-                    anchors.rightMargin: 8
-                    spacing: 8
-
-                    Rectangle {
-                        id: cover
-                        width: pane.artSide
-                        height: width
-                        radius: 2
-                        anchors.verticalCenter: parent.verticalCenter
-                        color: filled ? Theme.background : Theme.mantle
-                        clip: true
-
-                        Image {
-                            anchors.fill: parent
-                            fillMode: Image.PreserveAspectCrop
-                            asynchronous: true
-                            cache: true
-                            sourceSize.width: 72
-                            sourceSize.height: 72
-                            source: {
-                                if (playing) {
-                                    var live = view.artSource()
-                                    if (live)
-                                        return live
-                                }
-                                var path = String(modelData.thumb || modelData.art || "")
-                                if (!path)
-                                    return ""
-                                var url = Util.fileUrl(path)
-                                if (view.artEpoch)
-                                    url += "#" + view.artEpoch
-                                return url
-                            }
-                        }
-                    }
-
-                    Row {
-                        id: titleRow
-                        spacing: 4
-                        width: parent.width - meta.implicitWidth - cover.width - 16
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Text {
-                            textFormat: Text.PlainText
-                            width: titleRow.width
-                            height: pane.rowH
-                            verticalAlignment: Text.AlignVCenter
-                            text: view.trackLabel(modelData)
-                            elide: Text.ElideRight
-                            color: filled ? Theme.background : Theme.foreground
-                            font.family: Theme.fontFamily
-                            font.pointSize: pane.termPt
-                        }
-                    }
-
-                    Row {
-                        id: meta
-                        spacing: 6
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Text {
-                            textFormat: Text.PlainText
-                            width: Math.ceil(term.advanceWidth("♥"))
-                            height: pane.rowH
-                            verticalAlignment: Text.AlignVCenter
-                            horizontalAlignment: Text.AlignHCenter
-                            text: modelData.liked ? "♥" : ""
-                            color: filled ? Theme.background : Theme.good
-                            font.family: Theme.fontFamily
-                            font.pointSize: pane.termPt
-                        }
-
-                        Text {
-                            textFormat: Text.PlainText
-                            width: Math.ceil(metaFont.advanceWidth("000:00"))
-                            height: pane.rowH
-                            verticalAlignment: Text.AlignVCenter
-                            horizontalAlignment: Text.AlignRight
-                            text: view.trackClock(modelData)
-                            color: filled ? Theme.background : Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pointSize: pane.metaPt
-                        }
-
-                        Text {
-                            textFormat: Text.PlainText
-                            width: Math.ceil(metaFont.advanceWidth("0000"))
-                            height: pane.rowH
-                            verticalAlignment: Text.AlignVCenter
-                            text: String(modelData.year || "")
-                            color: filled ? Theme.background : Theme.muted
-                            font.family: Theme.fontFamily
-                            font.pointSize: pane.metaPt
-                        }
-                    }
-                }
+                HoverHandler {
+                    id: rowHover
                 }
 
                 MouseArea {
@@ -322,8 +246,7 @@ Fieldset {
                             dy = wheel.angleDelta.y / 8
                         if (!dy)
                             return
-                        var maxY = Math.max(0, list.contentHeight - list.height)
-                        list.contentY = Math.max(0, Math.min(maxY, list.contentY - dy))
+                        list.scrollBy(dy)
                         wheel.accepted = true
                     }
                     property bool dragged: false
@@ -399,6 +322,229 @@ Fieldset {
                         view.playSelected()
                     }
                 }
+
+                Item {
+                    id: body
+                    z: 1
+                    width: parent.width
+                    height: parent.height
+                    y: {
+                        var from = list.dragFrom
+                        var to = list.dragTo
+                        if (from < 0 || pane.rowH < 1)
+                            return 0
+                        if (index === from)
+                            return list.dragOffset
+                        if (from < to && index > from && index <= to)
+                            return -height
+                        if (to < from && index >= to && index < from)
+                            return height
+                        return 0
+                    }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.topMargin: 1
+                        anchors.bottomMargin: 1
+                        radius: 6
+                        color: row.selected ? Theme.good
+                            : (row.playing ? Theme.mixColors(Theme.background, Theme.good, 0.65)
+                            : (row.hovered ? Theme.foregroundWash : "transparent"))
+                    }
+
+                    Rectangle {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.leftMargin: pane.artSide + 18
+                        anchors.bottom: parent.bottom
+                        height: 1
+                        color: Theme.foregroundGhost
+                        visible: !row.filled && !row.hovered
+                    }
+
+                    Cover {
+                        id: cover
+                        x: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: pane.artSide
+                        height: width
+                        corner: 4
+                        name: row.artist || row.title
+                        placeholder: row.filled ? Theme.withOpacity(Theme.background, 0.25) : Theme.mantle
+                        decodeSize: 96
+                        source: {
+                            if (row.playing) {
+                                var live = view.artSource()
+                                if (live)
+                                    return live
+                            }
+                            var path = String(modelData.thumb || modelData.art || "")
+                            if (!path)
+                                return ""
+                            var url = Util.fileUrl(path)
+                            if (view.artEpoch)
+                                url += "#" + view.artEpoch
+                            return url
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 4
+                            color: Qt.rgba(0, 0, 0, 0.45)
+                            visible: row.hovered || (row.playing && view.playing)
+
+                            Text {
+                                anchors.centerIn: parent
+                                textFormat: Text.PlainText
+                                text: row.playing && view.playing ? "❚❚" : "▶"
+                                color: "white"
+                                font.pixelSize: Math.round(cover.height * 0.36)
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (row.playing) {
+                                        view.togglePlay()
+                                        return
+                                    }
+                                    view.clickPlaylist(index, false, false)
+                                    view.playSelected()
+                                }
+                            }
+                        }
+                    }
+
+                    Column {
+                        id: words
+                        anchors.left: cover.right
+                        anchors.leftMargin: 12
+                        anchors.right: meta.left
+                        anchors.rightMargin: 12
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 3
+
+                        Row {
+                            width: parent.width
+                            height: artistLink.implicitHeight
+                            spacing: 6
+                            clip: true
+
+                            LinkText {
+                                id: artistLink
+                                visible: row.artist !== ""
+                                width: Math.min(implicitWidth, parent.width * (row.album ? 0.6 : 1))
+                                text: row.artist
+                                baseColor: row.dim
+                                hoverColor: row.filled ? Theme.background : Theme.foreground
+                                font.pixelSize: Theme.fontSizeS
+                                onActivated: view.openArtist(row.artist)
+                            }
+
+                            Text {
+                                visible: row.artist !== "" && row.album !== ""
+                                textFormat: Text.PlainText
+                                text: "·"
+                                color: row.dim
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeS
+                            }
+
+                            LinkText {
+                                visible: row.album !== ""
+                                width: Math.min(implicitWidth, parent.width - (artistLink.visible ? artistLink.width + 20 : 0))
+                                text: row.album
+                                baseColor: row.filled ? Theme.withOpacity(Theme.background, 0.6) : Theme.withOpacity(Theme.muted, 0.8)
+                                hoverColor: row.filled ? Theme.background : Theme.foreground
+                                font.pixelSize: Theme.fontSizeS
+                                onActivated: view.openAlbum(row.album, modelData.path)
+                            }
+                        }
+
+                        Text {
+                            width: parent.width
+                            textFormat: Text.PlainText
+                            text: row.title
+                            elide: Text.ElideRight
+                            color: row.ink
+                            font.family: Theme.fontFamily
+                            font.pointSize: pane.termPt
+                            font.bold: row.playing
+                        }
+                    }
+
+                    Row {
+                        id: meta
+                        anchors.right: parent.right
+                        anchors.rightMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+
+                        Chip {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: row.roomy && String(modelData.label || "") !== ""
+                            text: String(modelData.label || "")
+                            maxWidth: 150
+                            inverted: row.filled
+                            onActivated: view.openLabel(text)
+                        }
+
+                        Chip {
+                            anchors.verticalCenter: parent.verticalCenter
+                            visible: row.roomy && list.width > 820 && String(modelData.genre || "") !== ""
+                            text: String(modelData.genre || "")
+                            prefix: "#"
+                            maxWidth: 140
+                            inverted: row.filled
+                            onActivated: view.openGenre(text)
+                        }
+
+                        Text {
+                            anchors.verticalCenter: parent.verticalCenter
+                            textFormat: Text.PlainText
+                            width: Math.ceil(term.advanceWidth("♥"))
+                            horizontalAlignment: Text.AlignHCenter
+                            text: modelData.liked ? "♥" : (row.hovered ? "♡" : "")
+                            color: row.filled ? Theme.background : (modelData.liked ? Theme.liked : Theme.muted)
+                            font.family: Theme.fontFamily
+                            font.pointSize: pane.termPt
+
+                            MouseArea {
+                                anchors.fill: parent
+                                anchors.margins: -4
+                                enabled: row.hovered || !!modelData.liked
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: view.toggleLike(String(modelData.path || ""))
+                            }
+                        }
+
+                        Column {
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 2
+
+                            Text {
+                                width: Math.ceil(metaFont.advanceWidth("000:00"))
+                                horizontalAlignment: Text.AlignRight
+                                textFormat: Text.PlainText
+                                text: view.trackClock(modelData)
+                                color: row.filled ? Theme.background : Theme.withOpacity(Theme.foreground, 0.75)
+                                font.family: Theme.fontFamily
+                                font.pointSize: pane.metaPt
+                            }
+
+                            Text {
+                                width: Math.ceil(metaFont.advanceWidth("000:00"))
+                                horizontalAlignment: Text.AlignRight
+                                textFormat: Text.PlainText
+                                text: String(modelData.year || "")
+                                color: row.dim
+                                font.family: Theme.fontFamily
+                                font.pointSize: pane.metaPt
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -440,7 +586,7 @@ Fieldset {
                 required property var modelData
 
                 width: discoverList.width
-                height: pane.rowH
+                height: pane.discoverRowH
 
                 readonly property bool selected: view.pane === "playlist" && view.mode === "discover" && index === view.discoverIdx
                 readonly property string mark: view.discoverMark(modelData)
@@ -459,7 +605,7 @@ Fieldset {
 
                     Rectangle {
                         id: discoverCover
-                        width: pane.artSide
+                        width: pane.discoverArt
                         height: width
                         radius: 2
                         anchors.verticalCenter: parent.verticalCenter
@@ -517,6 +663,13 @@ Fieldset {
                     onDoubleClicked: view.previewDiscover()
                 }
             }
+        }
+
+        IndexGrid {
+            anchors.fill: parent
+            anchors.topMargin: errLine.height
+            visible: view.mode === "queue" && view.indexPage()
+            view: pane.view
         }
 
         HelpOverlay {

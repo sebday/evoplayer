@@ -180,6 +180,27 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		return find.Tracks(libEnv, p.Mode, p.Query)
+	case "library.entity":
+		var p struct {
+			Kind string `json:"kind"`
+			Name string `json:"name"`
+			Dir  string `json:"dir"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(p.Name) == "" {
+			return nil, ipc.ErrInvalidParams("name required")
+		}
+		return library.Entity(libEnv, p.Kind, p.Name, p.Dir)
+	case "library.index":
+		var p struct {
+			Kind string `json:"kind"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		return library.Index(libEnv, p.Kind)
 	case "library.soundcloud.search":
 		var search struct {
 			Query string `json:"query"`

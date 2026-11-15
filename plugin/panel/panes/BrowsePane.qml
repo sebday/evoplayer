@@ -191,12 +191,14 @@ Fieldset {
 
                     Text {
                         textFormat: Text.PlainText
-                        width: Math.max(20, line.width - mark.width - line.spacing * 2 - (countText.visible ? countText.width : 0))
+                        width: Math.max(20, line.width - mark.width - line.spacing * 2 - countText.width)
                         height: 22
                         verticalAlignment: Text.AlignVCenter
                         text: String(modelData.label || "")
                         elide: Text.ElideRight
-                        color: selected ? Theme.border : (modelData.type === "dir" || modelData.kind === "tool" ? Theme.muted : Theme.foreground)
+                        color: selected || (modelData.kind === "page" && view.page && view.page.kind === modelData.id)
+                            ? Theme.border
+                            : (modelData.type === "dir" || modelData.kind === "tool" ? Theme.muted : Theme.foreground)
                         font.family: Theme.fontFamily
                         font.bold: selected
                         font.pixelSize: Theme.fontSizeM
@@ -206,7 +208,7 @@ Fieldset {
                         id: countText
                         textFormat: Text.PlainText
                         visible: modelData.count > 0
-                        width: visible ? implicitWidth : 0
+                        width: modelData.count > 0 ? implicitWidth : 0
                         height: 22
                         verticalAlignment: Text.AlignVCenter
                         horizontalAlignment: Text.AlignRight

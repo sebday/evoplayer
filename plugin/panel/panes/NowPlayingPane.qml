@@ -159,33 +159,85 @@ Fieldset {
             }
         }
 
+        Cover {
+            id: nowArt
+            visible: pane.width > 760
+            anchors.verticalCenter: parent.verticalCenter
+            height: parent.height
+            width: visible ? height : 0
+            corner: 4
+            cached: false
+            decodeSize: 160
+            name: String(view.player.artist || view.player.title || "")
+            source: view.artSource()
+
+            MouseArea {
+                anchors.fill: parent
+                enabled: view.trackPath !== ""
+                cursorShape: Qt.PointingHandCursor
+                onClicked: view.showNowPlaying()
+            }
+        }
+
         Column {
             id: metaCol
-            width: Math.min(Math.max(260, titleText.implicitWidth, releaseText.implicitWidth),
+            width: Math.min(Math.max(260, titleText.implicitWidth, releaseRow.implicitWidth),
                             parent.width * 0.35)
             spacing: 4
 
-            Text {
+            LinkText {
                 id: titleText
-                textFormat: Text.PlainText
                 width: parent.width
-                elide: Text.ElideRight
-                text: view.nowTitle()
-                color: Theme.foreground
-                font.family: Theme.fontFamily
+                text: view.trackPath ? String(view.player.title || view.trackPath.slice(view.trackPath.lastIndexOf("/") + 1)) : "nothing playing"
+                baseColor: Theme.foreground
+                hoverColor: Theme.border
                 font.bold: true
                 font.pixelSize: Theme.fontSizeL
+                onActivated: view.showNowPlaying()
             }
 
-            Text {
-                id: releaseText
-                textFormat: Text.PlainText
+            Row {
+                id: releaseRow
                 width: parent.width
-                elide: Text.ElideRight
-                text: view.nowRelease()
-                color: Theme.foreground
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSizeS
+                spacing: 6
+                clip: true
+
+                LinkText {
+                    id: nowArtist
+                    visible: text !== ""
+                    width: Math.min(implicitWidth, releaseRow.width * 0.55)
+                    text: String(view.player.artist || "").replace(/^\s+|\s+$/g, "")
+                    baseColor: Theme.withOpacity(Theme.foreground, 0.85)
+                    hoverColor: Theme.border
+                    font.pixelSize: Theme.fontSizeS
+                    font.bold: true
+                    onActivated: view.openArtist(text)
+                }
+
+                LinkText {
+                    visible: text !== ""
+                    width: Math.min(implicitWidth, releaseRow.width * 0.4)
+                    text: String(view.player.album || "").replace(/^\s+|\s+$/g, "")
+                    font.pixelSize: Theme.fontSizeS
+                    onActivated: view.openAlbum(text, view.trackPath)
+                }
+
+                LinkText {
+                    visible: text !== "" && text.toLowerCase() !== String(view.player.album || "").replace(/^\s+|\s+$/g, "").toLowerCase()
+                    width: Math.min(implicitWidth, releaseRow.width * 0.3)
+                    text: String(view.player.label || "").replace(/^\s+|\s+$/g, "")
+                    font.pixelSize: Theme.fontSizeS
+                    onActivated: view.openLabel(text)
+                }
+
+                Text {
+                    visible: text !== ""
+                    textFormat: Text.PlainText
+                    text: String(view.player.year || "").replace(/^\s+|\s+$/g, "")
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                }
             }
 
             Row {
@@ -308,7 +360,7 @@ Fieldset {
 
         WaveformViz {
             id: viz
-            width: Math.max(120, parent.width - transport.width - metaCol.width - 24)
+            width: Math.max(120, parent.width - transport.width - nowArt.width - metaCol.width - (nowArt.visible ? 36 : 24))
             height: parent.height
             peaks: view.peaks
             levels: view.service ? view.service.vizLevels : []

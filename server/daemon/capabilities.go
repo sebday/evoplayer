@@ -45,6 +45,8 @@ func capabilities() map[string]any {
 			{"name": "library.genres", "params": nil},
 			{"name": "library.tracks", "params": map[string]string{"genre": "string"}},
 			{"name": "library.search", "params": map[string]string{"mode": "string", "query": "string"}},
+			{"name": "library.entity", "params": map[string]string{"kind": "string", "name": "string", "dir": "string"}},
+			{"name": "library.index", "params": map[string]string{"kind": "string"}},
 			{"name": "library.incoming.list", "params": nil},
 			{"name": "library.incoming.set_genre", "params": map[string]string{"path": "string", "genre": "string", "folder": "string"}},
 			{"name": "library.playlist.list", "params": nil},

@@ -30,7 +30,7 @@ Item {
     property bool active: false
     property bool loaded: false
     property int libraryTries: 0
-    property string pane: "browse"
+    property string pane: "playlist"
     property string mode: "queue"
     property bool textCapture: false
     property string err: ""
@@ -75,11 +75,25 @@ Item {
     property bool scSearchBusy: false
     property int playlistPage: 16
     property int savedPlaylistIdx: 0
-    property string savedFocus: "browse"
+    property string savedFocus: "playlist"
 
     property string searchQuery: ""
     property var searchHits: []
     property int searchGen: 0
+
+    // An open artist, label, album, or genre page, or the artists / labels directory.
+    property var page: null
+    property var pageData: null
+    property var pageTracks: []
+    property var pageStack: []
+    property int pageGen: 0
+    property bool pageBusy: false
+    property var indexCache: ({})
+    property var indexRows: []
+    property string indexFilter: ""
+    property int indexIdx: 0
+    property int indexColumns: 1
+    property int indexFilterFocus: 0
 
     property bool vizOn: true
     property bool vizSubscribed: false
@@ -226,29 +240,6 @@ Item {
         return artist + " — " + title
     }
 
-    function nowTitle() {
-        if (!trackPath)
-            return "NOTHING PLAYING"
-        var title = String(player.title || trackPath)
-        var artist = String(player.artist || "").replace(/^\s+|\s+$/g, "")
-        var msg = artist ? artist + " - " + title : title
-        return msg.toUpperCase()
-    }
-
-    function nowRelease() {
-        var album = String(player.album || "").replace(/^\s+|\s+$/g, "")
-        var label = String(player.label || "").replace(/^\s+|\s+$/g, "")
-        var year = String(player.year || "").replace(/^\s+|\s+$/g, "")
-        var parts = []
-        if (album)
-            parts.push(album)
-        if (label && label.toLowerCase() !== album.toLowerCase())
-            parts.push(label)
-        if (year)
-            parts.push(year)
-        return parts.join("  ").toUpperCase()
-    }
-
     function progressFrac() {
         var dur = Number(player.duration) || 0
         if (dur <= 0)
@@ -274,11 +265,6 @@ Item {
 
     function playerState() {
         return String(player.state || "")
-    }
-
-    function artLegend() {
-        var year = String(player.year || "").replace(/^\s+|\s+$/g, "")
-        return year || "artwork"
     }
 
     function soundcloudArtURL(value) {
@@ -332,7 +318,7 @@ Item {
     }
 
     function rowArt(path) {
-        var lists = [queue, shownTracks, searchHits]
+        var lists = [queue, shownTracks, searchHits, pageTracks]
         for (var n = 0; n < lists.length; n++) {
             var rows = lists[n] || []
             for (var i = 0; i < rows.length; i++) {
@@ -373,13 +359,17 @@ Item {
             return "download"
         if (mode === "eq")
             return "eq"
-        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
-        if (q)
-            return "search (" + ((searchHits && searchHits.length) || 0) + ")"
         if (mode === "help")
             return "help"
         if (mode === "discover")
             return "discover (" + ((discoverTracks && discoverTracks.length) || 0) + ")"
+        if (indexPage())
+            return page.kind + " (" + (indexRows ? indexRows.length : 0) + ")"
+        if (entityPage())
+            return page.kind
+        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
+        if (q)
+            return "search (" + ((searchHits && searchHits.length) || 0) + ")"
         if (shownPlaylist)
             return playlistLabel(shownPlaylist) + " (" + ((shownTracks && shownTracks.length) || 0) + ")"
         return "playlist (" + (queue ? queue.length : 0) + ")"
@@ -426,7 +416,21 @@ Item {
                 { key: "x", label: "dismiss" },
                 { key: "n", label: "more" }
             ]
+        if (indexPage())
+            return [
+                { key: "⏎", label: "open" },
+                { key: "/", label: "filter" },
+                { key: "esc", label: "back" }
+            ]
+        if (entityPage())
+            return [
+                { key: "esc", label: "back" },
+                { key: "g", label: "artist" },
+                { key: "l", label: "like" },
+                { key: "e", label: "edit" }
+            ]
         return [
+            { key: "g", label: "artist" },
             { key: "l", label: "like" },
             { key: "m", label: "move" },
             { key: "e", label: "edit" },
@@ -503,6 +507,9 @@ Item {
             }
             if (rows.length)
                 rows.push({ kind: "rule", type: "", label: "", path: "", count: 0, id: "" })
+            rows.push({ kind: "page", type: "", label: "artists", path: "", count: 0, id: "artists" })
+            rows.push({ kind: "page", type: "", label: "labels", path: "", count: 0, id: "labels" })
+            rows.push({ kind: "rule", type: "", label: "", path: "", count: 0, id: "" })
             rows.push({ kind: "tool", type: "", label: "download", path: "", count: 0, id: "download" })
             rows.push({ kind: "tool", type: "", label: "discover", path: "", count: 0, id: "discover" })
         sidebar = rows
@@ -762,7 +769,7 @@ Item {
     function closeTool() {
         stepOffTool()
         mode = "queue"
-        pane = "browse"
+        pane = "playlist"
         syncShownPlaylist()
         err = ""
     }
@@ -1013,7 +1020,7 @@ Item {
                 }
             }
         }
-        if (shownPlaylist)
+        if (shownPlaylist || page)
             return
         playlistIdx = idx
         playlistAnchor = idx
@@ -1029,7 +1036,7 @@ Item {
     }
 
     function revealPlaying() {
-        if (shownPlaylist)
+        if (shownPlaylist || page)
             return
         if (pane === "playlist" && mode === "queue")
             return
@@ -1043,7 +1050,7 @@ Item {
     }
 
     function focusPlayingRow() {
-        if (shownPlaylist)
+        if (shownPlaylist || page)
             return
         if (String(searchQuery || "").replace(/^\s+|\s+$/g, "") !== "")
             return
@@ -1074,10 +1081,21 @@ Item {
         }
         browseIdx = i
         syncSettingsMode()
+        syncPageRow()
         syncShownPlaylist()
         var landed = sidebar[i]
         if (landed && landed.kind === "playlist" && landed.id === "current")
             focusPlayingRow()
+    }
+
+    function syncPageRow() {
+        var row = sidebar[browseIdx]
+        if (row && row.kind === "page") {
+            openIndex(row.id)
+            return
+        }
+        if (row && row.kind !== "rule")
+            closePages()
     }
 
     function stepIndex(name, len, delta) {
@@ -1183,6 +1201,7 @@ Item {
             searchGen++
             textCapture = false
         }
+        closePages()
         var rows = sidebar || []
         var found = false
         for (var i = 0; i < rows.length; i++) {
@@ -1192,7 +1211,7 @@ Item {
                 break
             }
         }
-        pane = "browse"
+        pane = "playlist"
         textCapture = false
         if (found)
             syncShownPlaylist()
@@ -1205,6 +1224,401 @@ Item {
             Qt.callLater(function() {
                 root.focusPlayingRow()
             })
+        })
+    }
+
+    function searchActive() {
+        return String(searchQuery || "").replace(/^\s+|\s+$/g, "") !== ""
+    }
+
+    function indexPage() {
+        return !!page && (page.kind === "artists" || page.kind === "labels")
+    }
+
+    function entityPage() {
+        return !!page && !indexPage()
+    }
+
+    // Which rows the main list shows, most specific first.
+    function listSource() {
+        if (entityPage())
+            return "page"
+        if (indexPage())
+            return "index"
+        if (searchActive())
+            return "search"
+        if (shownPlaylist)
+            return "shown"
+        return "queue"
+    }
+
+    function leaveOverlays() {
+        if (mode === "discover")
+            closeDiscover()
+        else if (mode === "download")
+            closeDownload()
+        else if (mode !== "queue")
+            closeMode()
+    }
+
+    function openPage(kind, name, dir) {
+        name = String(name || "").replace(/^\s+|\s+$/g, "")
+        if (!name)
+            return
+        var spec = { kind: kind, name: name, dir: String(dir || "") }
+        if (page && page.kind === spec.kind && page.dir === spec.dir && String(page.name).toLowerCase() === name.toLowerCase())
+            return
+        leaveOverlays()
+        pushPage()
+        showPage(spec, null)
+        focusPane("playlist")
+    }
+
+    function openArtist(name) { openPage("artist", name, "") }
+    function openLabel(name) { openPage("label", name, "") }
+    function openGenre(name) { openPage("genre", name, "") }
+
+    function openAlbum(name, path) {
+        var p = String(path || "")
+        var slash = p.lastIndexOf("/")
+        openPage("album", name, slash > 0 ? p.slice(0, slash) : "")
+    }
+
+    function gotoSelected(kind) {
+        var t = mode === "queue" && pane === "playlist" ? selectedListTrack() : null
+        var name = String((t && t[kind]) || "").replace(/^\s+|\s+$/g, "")
+        if (!name)
+            name = String(player[kind] || "")
+        openPage(kind, name, "")
+    }
+
+    function pushPage() {
+        pageStack = pageStack.concat([{
+            page: page,
+            data: pageData,
+            rows: page ? pageTracks : null,
+            idx: playlistIdx,
+            scroll: playlistScroll,
+            index: indexIdx,
+            filter: indexFilter
+        }])
+    }
+
+    function showPage(spec, saved) {
+        pageGen++
+        playlistPicks = []
+        textCapture = false
+        pageBusy = false
+        if (spec.kind === "artists" || spec.kind === "labels") {
+            pageData = null
+            pageTracks = []
+            page = spec
+            indexFilter = saved ? String(saved.filter || "") : ""
+            indexIdx = saved ? saved.index : 0
+            loadIndex(indexKind())
+            return
+        }
+        if (saved && saved.data) {
+            reorderScroll = saved.scroll
+            pageData = saved.data
+            pageTracks = saved.rows || saved.data.tracks || []
+            page = spec
+            playlistIdx = saved.idx
+            return
+        }
+        pageData = null
+        pageTracks = []
+        page = spec
+        playlistIdx = 0
+        pageBusy = true
+        var gen = pageGen
+        ipc("library.entity", { kind: spec.kind, name: spec.name, dir: spec.dir }, function(data) {
+            if (gen !== root.pageGen)
+                return
+            root.pageBusy = false
+            root.pageData = data || {}
+            root.pageTracks = (data && data.tracks) || []
+            root.playlistIdx = 0
+        }, function() {
+            if (gen === root.pageGen)
+                root.pageBusy = false
+        })
+    }
+
+    function reloadPage() {
+        if (!entityPage())
+            return
+        var spec = page
+        var keep = playlistIdx
+        var scroll = playlistScroll
+        var gen = ++pageGen
+        ipc("library.entity", { kind: spec.kind, name: spec.name, dir: spec.dir }, function(data) {
+            if (gen !== root.pageGen)
+                return
+            root.reorderScroll = scroll
+            root.pageData = data || {}
+            root.pageTracks = (data && data.tracks) || []
+            root.playlistIdx = Math.max(0, Math.min(keep, root.pageTracks.length - 1))
+        })
+    }
+
+    function pageBack() {
+        if (!page)
+            return false
+        var stack = pageStack.slice()
+        var prev = stack.length ? stack.pop() : null
+        pageStack = stack
+        if (prev && prev.page) {
+            showPage(prev.page, prev)
+            return true
+        }
+        pageGen++
+        pageBusy = false
+        if (prev)
+            reorderScroll = prev.scroll
+        page = null
+        pageData = null
+        pageTracks = []
+        playlistPicks = []
+        if (prev)
+            playlistIdx = prev.idx
+        return true
+    }
+
+    function closePages() {
+        if (!page && !pageStack.length)
+            return
+        pageGen++
+        pageBusy = false
+        pageStack = []
+        page = null
+        pageData = null
+        pageTracks = []
+    }
+
+    function afterLibraryEdit() {
+        indexCache = ({})
+        if (entityPage())
+            reloadPage()
+        else
+            showNowPlaying()
+    }
+
+    function indexKind() {
+        return page && page.kind === "labels" ? "label" : "artist"
+    }
+
+    function openIndex(kind) {
+        if (page && page.kind === kind)
+            return
+        leaveOverlays()
+        if (!indexPage())
+            pushPage()
+        showPage({ kind: kind, name: kind, dir: "" }, null)
+    }
+
+    function loadIndex(kind) {
+        if (indexCache[kind]) {
+            applyIndexFilter()
+            return
+        }
+        indexRows = []
+        pageBusy = true
+        var gen = pageGen
+        ipc("library.index", { kind: kind }, function(data) {
+            var next = Object.assign({}, root.indexCache)
+            next[kind] = Array.isArray(data) ? data : []
+            root.indexCache = next
+            if (gen !== root.pageGen)
+                return
+            root.pageBusy = false
+            root.applyIndexFilter()
+        }, function() {
+            if (gen === root.pageGen)
+                root.pageBusy = false
+        })
+    }
+
+    function applyIndexFilter() {
+        var all = indexCache[indexKind()] || []
+        var q = String(indexFilter || "").replace(/^\s+|\s+$/g, "").toLowerCase()
+        if (!q) {
+            indexRows = all
+        } else {
+            var out = []
+            for (var i = 0; i < all.length; i++) {
+                if (String(all[i].name || "").toLowerCase().indexOf(q) >= 0)
+                    out.push(all[i])
+            }
+            indexRows = out
+        }
+        if (indexIdx >= indexRows.length)
+            indexIdx = Math.max(0, indexRows.length - 1)
+    }
+
+    function setIndexFilter(text) {
+        if (indexFilter === text)
+            return
+        indexFilter = String(text || "")
+        indexIdx = 0
+        indexFilterTimer.restart()
+    }
+
+    function openIndexAt(i) {
+        var row = (indexRows || [])[i]
+        if (!row)
+            return
+        indexIdx = i
+        openPage(indexKind(), row.name, "")
+    }
+
+    function stepIndexGrid(delta) {
+        var n = (indexRows || []).length
+        if (!n || !delta)
+            return
+        indexIdx = Math.max(0, Math.min(n - 1, indexIdx + delta))
+    }
+
+    function releaseText() {
+        textCapture = false
+        if (host && host.forceKeyFocus)
+            host.forceKeyFocus()
+    }
+
+    function longClock(sec) {
+        var m = Math.round((Number(sec) || 0) / 60)
+        if (m < 60)
+            return m + " min"
+        return Math.floor(m / 60) + " hr " + (m % 60) + " min"
+    }
+
+    function counted(n, word) {
+        n = Number(n) || 0
+        return n + " " + word + (n === 1 ? "" : "s")
+    }
+
+    function rowsDuration(rows) {
+        var total = 0
+        var list = rows || []
+        for (var i = 0; i < list.length; i++)
+            total += Number(list[i] && list[i].duration) || 0
+        return total
+    }
+
+    function rowArtUrl(row) {
+        return Util.fileUrl(String(row && (row.thumb || row.art) || ""))
+    }
+
+    function mosaicOf(rows) {
+        var out = []
+        var seen = {}
+        var list = rows || []
+        for (var i = 0; i < list.length && out.length < 4; i++) {
+            var url = rowArtUrl(list[i])
+            if (url && !seen[url]) {
+                seen[url] = true
+                out.push(url)
+            }
+        }
+        return out
+    }
+
+    function headerInfo() {
+        var src = listSource()
+        var rows = playlistRows()
+        if (src === "page") {
+            var d = pageData || {}
+            var stats = []
+            if (pageData) {
+                stats.push(counted(d.total, "track"))
+                if (d.duration)
+                    stats.push(longClock(d.duration))
+                if (d.years)
+                    stats.push(String(d.years))
+                var releases = (d.releases || []).length
+                if (page.kind !== "album" && releases)
+                    stats.push(releases >= 60 ? "60+ releases" : counted(releases, "release"))
+                if (d.liked)
+                    stats.push(d.liked + " liked")
+            } else if (pageBusy) {
+                stats.push("loading…")
+            }
+            var first = (d.releases || [])[0] || {}
+            var album = page.kind === "album"
+            return {
+                kind: page.kind,
+                caption: page.kind,
+                title: String(d.name || page.name || ""),
+                art: Util.fileUrl(String(d.art || "")),
+                blur: Util.fileUrl(String(d.thumb || d.art || "")),
+                round: page.kind === "artist",
+                mosaic: [],
+                artist: album ? String(first.artist || "") : "",
+                album: "",
+                label: album ? String(first.label || "") : "",
+                year: album ? String(first.year || "") : "",
+                stats: stats.join("  ·  "),
+                path: ""
+            }
+        }
+        if (src === "search" || src === "shown") {
+            var mosaic = mosaicOf(rows)
+            return {
+                kind: src === "search" ? "search" : "playlist",
+                caption: src === "search" ? "search" : "playlist",
+                title: src === "search" ? "“" + String(searchQuery).replace(/^\s+|\s+$/g, "") + "”" : playlistLabel(shownPlaylist),
+                art: mosaic.length === 1 ? mosaic[0] : "",
+                blur: mosaic[0] || "",
+                round: false,
+                mosaic: mosaic.length > 1 ? mosaic : [],
+                artist: "",
+                album: "",
+                label: "",
+                year: "",
+                stats: [counted(rows.length, src === "search" ? "result" : "track"), longClock(rowsDuration(rows))].join("  ·  "),
+                path: ""
+            }
+        }
+        var art = artSource()
+        var title = String(player.title || "").replace(/^\s+|\s+$/g, "")
+        if (!title && trackPath)
+            title = trackPath.slice(trackPath.lastIndexOf("/") + 1)
+        return {
+            kind: "queue",
+            caption: "now playing",
+            title: title || "nothing playing",
+            art: art,
+            blur: art,
+            round: false,
+            mosaic: [],
+            artist: String(player.artist || ""),
+            album: String(player.album || ""),
+            label: String(player.label || ""),
+            year: String(player.year || ""),
+            stats: ["queue  " + counted(rows.length, "track"), longClock(rowsDuration(rows))].join("  ·  "),
+            path: trackPath
+        }
+    }
+
+    function headerPlay() {
+        if (listSource() === "queue") {
+            togglePlay()
+            return
+        }
+        playTrackList(playlistRows(), "")
+    }
+
+    function headerShuffle() {
+        if (listSource() === "queue") {
+            toggleShuffle()
+            return
+        }
+        var rows = playlistRows()
+        if (!rows.length)
+            return
+        var start = rows[Math.floor(Math.random() * rows.length)]
+        ipc("playback.shuffle", { on: true }, function() {
+            root.playTrackList(rows, start && start.path)
         })
     }
 
@@ -1307,7 +1721,7 @@ Item {
     function playBrowseAt(index) {
         browseIdx = index
         var row = sidebar[index]
-        if (!row || row.kind === "tool" || row.kind === "rule")
+        if (!row || row.kind === "tool" || row.kind === "rule" || row.kind === "page")
             return
         if (row.kind === "playlist") {
             playPlaylist(row.id)
@@ -1365,6 +1779,16 @@ Item {
         }
         if (mode === "help" || mode === "tags")
             return
+        if (pane === "playlist" && indexPage()) {
+            openIndexAt(indexIdx)
+            return
+        }
+        if (pane === "playlist" && entityPage()) {
+            var pageRow = selectedListTrack()
+            if (pageRow && pageRow.path)
+                playTrackList(pageTracks, pageRow.path)
+            return
+        }
         var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
         if (q && (pane === "playlist" || pane === "search")) {
             var hit = (searchHits || [])[playlistIdx]
@@ -1387,6 +1811,11 @@ Item {
         var row = currentRow()
         if (!row)
             return
+        if (row.kind === "page") {
+            openIndex(row.id)
+            focusPane("playlist")
+            return
+        }
         if (row.kind === "tool") {
             if (row.id === "discover") {
                 if (mode !== "discover")
@@ -1499,6 +1928,8 @@ Item {
             shownTracks = withLiked(shownTracks, path, likedNow)
         if (searchHits && searchHits.length)
             searchHits = withLiked(searchHits, path, likedNow)
+        if (pageTracks && pageTracks.length)
+            pageTracks = withLiked(pageTracks, path, likedNow)
         if (service && String(player.path || "") === path && service.mergePlayer)
             service.mergePlayer({ path: path, liked: likedNow })
     }
@@ -1626,11 +2057,16 @@ Item {
     }
 
     function playlistRows() {
-        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
-        if (q)
+        switch (listSource()) {
+        case "page":
+            return pageTracks || []
+        case "index":
+            return []
+        case "search":
             return searchHits || []
-        if (shownPlaylist)
+        case "shown":
             return shownTracks || []
+        }
         return queue || []
     }
 
@@ -1775,11 +2211,11 @@ Item {
         queue = patch(queue)
         shownTracks = patch(shownTracks)
         searchHits = patch(searchHits)
+        pageTracks = patch(pageTracks)
     }
 
     function selectedListTrack() {
-        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")
-        var rows = q ? (searchHits || []) : (shownPlaylist ? shownTracks : queue)
+        var rows = playlistRows()
         if (!rows || playlistIdx < 0 || playlistIdx >= rows.length)
             return null
         return rows[playlistIdx]
@@ -1798,7 +2234,7 @@ Item {
     function pushOverlay(next) {
         if (mode === "queue") {
             savedPlaylistIdx = playlistIdx
-            savedFocus = pane === "search" ? "browse" : pane
+            savedFocus = pane === "search" ? "playlist" : pane
         }
         mode = next
         pane = "playlist"
@@ -1806,7 +2242,7 @@ Item {
     }
 
     function closeMode() {
-        var back = savedFocus || "browse"
+        var back = savedFocus || "playlist"
         mode = "queue"
         artPreview = ""
         artHits = []
@@ -1843,7 +2279,7 @@ Item {
         searchQuery = ""
         searchHits = []
         searchGen++
-        pane = "browse"
+        pane = "playlist"
         textCapture = false
         rebuildSidebar()
         if (host && host.forceKeyFocus)
@@ -1852,6 +2288,7 @@ Item {
 
     function setSearch(text) {
         dismissDownload()
+        closePages()
         searchQuery = String(text || "")
         searchTimer.restart()
     }
@@ -1914,6 +2351,7 @@ Item {
             root.closeMode()
             root.loadBrowse(root.browsePath)
             root.loadQueue()
+            root.reloadPage()
         })
     }
 
@@ -1977,7 +2415,7 @@ Item {
                 root.err = ""
                 root.patchSharedTags(paths)
                 root.closeMode()
-                root.showNowPlaying()
+                root.afterLibraryEdit()
             })
             return
         }
@@ -1996,7 +2434,7 @@ Item {
             root.tagBusy = false
             root.err = ""
             root.closeMode()
-            root.showNowPlaying()
+            root.afterLibraryEdit()
         })
     }
 
@@ -2143,6 +2581,7 @@ Item {
             queue = patchListArtPaths(queue, targets, artPath)
             shownTracks = patchListArtPaths(shownTracks, targets, artPath)
             searchHits = patchListArtPaths(searchHits, targets, artPath)
+            pageTracks = patchListArtPaths(pageTracks, targets, artPath)
         }
         err = ""
         if (!fromDrop)
@@ -2442,7 +2881,7 @@ Item {
     function reorderFrom(index, delta, scrollY) {
         if (String(searchQuery || "").replace(/^\s+|\s+$/g, "") !== "")
             return
-        if (shuffle || pane !== "playlist" || mode !== "queue" || shownPlaylist || reorderPending)
+        if (shuffle || pane !== "playlist" || mode !== "queue" || shownPlaylist || page || reorderPending)
             return
         if (!delta || index < 0 || index >= queue.length)
             return
@@ -2513,6 +2952,7 @@ Item {
         browseIdx = index
         pane = searchQuery ? "search" : "browse"
         syncSettingsMode()
+        syncPageRow()
         syncShownPlaylist()
         var row = sidebar[index]
         if (row && row.kind === "playlist" && row.id === "current")
@@ -2561,6 +3001,10 @@ Item {
         }
         if (mode !== "queue") {
             closeMode()
+            return
+        }
+        if (page && pane !== "search") {
+            pageBack()
             return
         }
         if (pane === "search") {
@@ -2667,6 +3111,29 @@ Item {
             if ((text === "l" || text === "L") && importPlayingPreview())
                 return true
         }
+        if (mode === "queue" && indexPage() && pane === "playlist") {
+            if (textCapture) {
+                if (key === Qt.Key_Escape) {
+                    if (indexFilter)
+                        setIndexFilter("")
+                    else
+                        releaseText()
+                    return true
+                }
+                if (key === Qt.Key_Return || key === Qt.Key_Enter) { openIndexAt(indexIdx); return true }
+                if (key === Qt.Key_Down) { releaseText(); return true }
+                return false
+            }
+            if (key === Qt.Key_Left) { stepIndexGrid(-1); return true }
+            if (key === Qt.Key_Right) { stepIndexGrid(1); return true }
+            if (key === Qt.Key_Up) { stepIndexGrid(-indexColumns); return true }
+            if (key === Qt.Key_Down) { stepIndexGrid(indexColumns); return true }
+            if (key === Qt.Key_PageUp) { stepIndexGrid(-indexColumns * 4); return true }
+            if (key === Qt.Key_PageDown) { stepIndexGrid(indexColumns * 4); return true }
+            if (key === Qt.Key_Return || key === Qt.Key_Enter) { openIndexAt(indexIdx); return true }
+            if (key === Qt.Key_Backspace) { pageBack(); return true }
+            if (text === "/") { indexFilterFocus++; return true }
+        }
         if (pane === "search" && textCapture) {
             if (key === Qt.Key_Escape) { clearSearch(); return true }
             if (key === Qt.Key_Return || key === Qt.Key_Enter) { playSelected(); return true }
@@ -2732,6 +3199,12 @@ Item {
             return true
         }
         if (text === "v" || text === "V") { toggleViz(); return true }
+        if (text === "g") { gotoSelected("artist"); return true }
+        if (text === "G") { gotoSelected("label"); return true }
+        if ((key === Qt.Key_Backspace || key === Qt.Key_Left) && page && pane !== "browse") {
+            pageBack()
+            return true
+        }
         if (key === Qt.Key_Backspace) { leaveFolder(); return true }
         if (key === Qt.Key_Left) {
             leaveFolder()
@@ -2774,6 +3247,12 @@ Item {
     }
 
     Timer {
+        id: indexFilterTimer
+        interval: 120
+        onTriggered: root.applyIndexFilter()
+    }
+
+    Timer {
         id: eqSend
         interval: 80
         onTriggered: root.sendEq()
@@ -2806,8 +3285,10 @@ Item {
             if (name === "scan") {
                 var running = String(data.status || "") === "running"
                 root.scanRunning = running
-                if (!running)
+                if (!running) {
+                    root.indexCache = ({})
                     root.loadBrowse(root.browsePath)
+                }
                 return
             }
             if (name === "download" || name === "download-url") {
@@ -3068,36 +3549,21 @@ Item {
             width: parent.width
             height: parent.height - nowPane.height - root.paneGap
 
-            readonly property int playlistReserve: 420
-            readonly property int artMin: 160
-            readonly property bool showArt: width - browsePane.width - root.paneGap * 2 - playlistReserve >= artMin
-
-            BrowsePane {
-                id: browsePane
-                width: Math.round(Math.max(180, Math.min(280, parent.width * 0.24)) * 0.6)
-                height: parent.height
-                view: root
-            }
-
             PlaylistPane {
-                anchors.left: browsePane.right
-                anchors.leftMargin: root.paneGap
-                anchors.right: artPane.left
-                anchors.rightMargin: panes.showArt ? root.paneGap : 0
+                anchors.left: parent.left
+                anchors.right: browse.left
+                anchors.rightMargin: root.paneGap
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 view: root
             }
 
-            ArtPane {
-                id: artPane
-                visible: panes.showArt
+            BrowsePane {
+                id: browse
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                width: panes.showArt
-                      ? Math.min(parent.height, parent.width - browsePane.width - root.paneGap * 2 - panes.playlistReserve)
-                      : 0
+                width: Math.round(Math.max(200, Math.min(260, panes.width * 0.22)))
                 view: root
             }
         }
@@ -3109,7 +3575,9 @@ Item {
         gesturePolicy: TapHandler.WithinBounds
         onTapped: function(eventPoint, button) {
             var back = button === Qt.BackButton || button === Qt.ExtraButton1 || button === Qt.ExtraButton4
-            if (back)
+            if (back && root.page)
+                root.pageBack()
+            else if (back)
                 root.leaveFolder()
             else
                 root.enterFolder()

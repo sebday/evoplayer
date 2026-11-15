@@ -6,8 +6,27 @@ Item {
 
     required property var view
 
+    readonly property int previewSide: width > 520 ? Math.min(height, Math.round(width * 0.42)) : 0
+
+    Cover {
+        id: preview
+        visible: root.previewSide > 0
+        anchors.right: parent.right
+        anchors.top: parent.top
+        width: root.previewSide
+        height: root.previewSide
+        corner: 6
+        cached: false
+        decodeSize: 600
+        source: root.view.artSource()
+    }
+
     Column {
-        anchors.fill: parent
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.left: parent.left
+        anchors.right: preview.visible ? preview.left : parent.right
+        anchors.rightMargin: preview.visible ? 16 : 0
         spacing: 4
 
         Rectangle {
