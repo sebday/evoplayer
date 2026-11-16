@@ -407,6 +407,28 @@ Item {
         return ""
     }
 
+    function tagChoices() {
+        var items = playlists || []
+        var out = []
+        var seen = {}
+        for (var i = 0; i < items.length; i++) {
+            var row = items[i] || {}
+            if (String(row.kind || "") !== "tag")
+                continue
+            var name = String(row.name || "").replace(/^\s+|\s+$/g, "")
+            if (!name || seen[name.toLowerCase()])
+                continue
+            seen[name.toLowerCase()] = true
+            out.push(name)
+        }
+        out.sort(function(a, b) {
+            a = a.toLowerCase()
+            b = b.toLowerCase()
+            return a < b ? -1 : (a > b ? 1 : 0)
+        })
+        return out
+    }
+
     function playlistLabel(name) {
         if (name === "all")
             return "Likes"

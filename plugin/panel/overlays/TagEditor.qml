@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Layouts
 import "../compat"
 import "../widgets"
 
@@ -85,7 +86,7 @@ Item {
                 spacing: 14
 
             Text {
-                width: parent.width
+                width: parent.width - 28
                 visible: editor.view.tagField !== "" || editor.view.tagMany
                 textFormat: Text.PlainText
                 text: editor.heading()
@@ -165,6 +166,7 @@ Item {
                 id: tagsField
                 visible: editor.view.tagField === "artist" || editor.view.tagField === "album" || (editor.view.tagField === "" && !editor.view.tagMany)
                 label: "tags"
+                suggest: true
                 index: (editor.view.tagField === "artist" || editor.view.tagField === "album") ? 1 : 6
                 view: editor.view
                 value: editor.view.tagTags
@@ -172,11 +174,12 @@ Item {
             }
             Row {
                 width: parent.width
-                spacing: 8
-                visible: editor.showArt
+                spacing: 6
 
                 Rectangle {
-                    width: folderText.implicitWidth + 28
+                    id: openBtn
+                    visible: editor.showArt
+                    width: visible ? folderText.implicitWidth + 20 : 0
                     height: 32
                     radius: 8
                     color: folderArea.containsMouse ? Theme.foregroundSubtle : Theme.foregroundFaint
@@ -185,7 +188,7 @@ Item {
                         id: folderText
                         anchors.centerIn: parent
                         textFormat: Text.PlainText
-                        text: "Open folder"
+                        text: "Open"
                         color: Theme.foreground
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeS
@@ -201,7 +204,9 @@ Item {
                 }
 
                 Rectangle {
-                    width: deleteText.implicitWidth + 28
+                    id: deleteBtn
+                    visible: editor.showArt
+                    width: visible ? deleteText.implicitWidth + 20 : 0
                     height: 32
                     radius: 8
                     color: editor.confirmDelete
@@ -235,14 +240,18 @@ Item {
                         }
                     }
                 }
-            }
-            Row {
-                width: parent.width
-                spacing: 8
-                layoutDirection: Qt.RightToLeft
+
+                Item {
+                    height: 32
+                    width: {
+                        var gaps = openBtn.visible ? 3 : 1
+                        return Math.max(0, parent.width - openBtn.width - deleteBtn.width - saveBtn.width - parent.spacing * gaps)
+                    }
+                }
 
                 Rectangle {
-                    width: saveText.implicitWidth + 28
+                    id: saveBtn
+                    width: saveText.implicitWidth + 20
                     height: 32
                     radius: 8
                     color: editor.view.tagBusy ? Theme.foregroundFaint : Theme.good
@@ -265,31 +274,6 @@ Item {
                         onClicked: editor.view.saveTags()
                     }
                 }
-
-                Rectangle {
-                    width: cancelText.implicitWidth + 28
-                    height: 32
-                    radius: 8
-                    color: cancelArea.containsMouse ? Theme.foregroundSubtle : Theme.foregroundFaint
-
-                    Text {
-                        id: cancelText
-                        anchors.centerIn: parent
-                        textFormat: Text.PlainText
-                        text: "Cancel"
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeS
-                    }
-
-                    MouseArea {
-                        id: cancelArea
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: editor.view.closeMode()
-                    }
-                }
             }
             }
 
@@ -300,15 +284,88 @@ Item {
                 view: editor.view
             }
         }
+
+        Text {
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 8
+            z: 2
+            width: 28
+            height: 28
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            textFormat: Text.PlainText
+            text: "×"
+            color: closeArea.containsMouse ? Theme.foreground : Theme.muted
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSizeL
+
+            MouseArea {
+                id: closeArea
+                anchors.fill: parent
+                anchors.margins: -6
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: editor.view.closeMode()
+            }
+        }
     }
 
     component TagField: Column {
+        id: field
         property string label: ""
         property int index: 0
         property string value: ""
+        property bool suggest: false
         property bool syncing: false
+        property bool picksOpen: false
         property var view: null
         signal edited(string text)
+
+        function chosenKeys() {
+            var parts = String(input.text || "").split(/[;,]/)
+            var keys = {}
+            for (var i = 0; i < parts.length; i++) {
+                var name = parts[i].replace(/^\s+|\s+$/g, "")
+                if (name)
+                    keys[name.toLowerCase()] = true
+            }
+            return keys
+        }
+
+        function suggestChoices() {
+            if (!suggest || !view || !view.tagChoices)
+                return []
+            var have = chosenKeys()
+            var all = view.tagChoices()
+            var out = []
+            for (var i = 0; i < all.length; i++) {
+                if (!have[String(all[i] || "").toLowerCase()])
+                    out.push(all[i])
+            }
+            return out
+        }
+
+        function addTag(name) {
+            name = String(name || "").replace(/^\s+|\s+$/g, "")
+            if (!name || chosenKeys()[name.toLowerCase()])
+                return
+            var parts = String(input.text || "").split(/[;,]/)
+            var kept = []
+            for (var i = 0; i < parts.length; i++) {
+                var bit = parts[i].replace(/^\s+|\s+$/g, "")
+                if (bit)
+                    kept.push(bit)
+            }
+            kept.push(name)
+            var next = kept.join("; ")
+            syncing = true
+            input.text = next
+            syncing = false
+            edited(next)
+            picksOpen = true
+            input.forceActiveFocus()
+        }
 
         width: parent.width
         spacing: 6
@@ -351,9 +408,12 @@ Item {
                         return
                     parent.parent.view.textCapture = activeFocus
                     if (activeFocus) {
+                        parent.parent.picksOpen = true
                         parent.parent.view.artPicking = false
                         parent.parent.view.artQueryFocus = false
                         parent.parent.view.tagFocus = parent.parent.index
+                    } else {
+                        pickClose.restart()
                     }
                 }
                 Keys.priority: Keys.BeforeItem
@@ -361,6 +421,76 @@ Item {
                     if (parent.parent.view && parent.parent.view.dispatch(event))
                         event.accepted = true
                 }
+            }
+        }
+
+        Flickable {
+            id: tagPick
+            visible: field.suggest && field.picksOpen && tagPick.picks.length > 0
+            width: parent.width
+            height: visible ? Math.min(tagPick.contentHeight, 132) : 0
+            contentHeight: pickFlow.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+
+            readonly property var picks: {
+                var listed = field.view ? field.view.playlists : null
+                var typed = input.text
+                return listed !== undefined && typed !== undefined ? field.suggestChoices() : []
+            }
+
+            MouseArea {
+                id: pickHover
+                anchors.fill: parent
+                hoverEnabled: true
+                z: 0
+                onPressed: function(mouse) { mouse.accepted = false }
+            }
+
+            Flow {
+                id: pickFlow
+                width: tagPick.width
+                spacing: 6
+                z: 1
+
+                Repeater {
+                    model: tagPick.picks
+
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: pickText.implicitWidth + 16
+                        height: 24
+                        radius: height / 2
+                        color: pickArea.containsMouse ? Theme.foregroundSubtle : Theme.foregroundFaint
+
+                        Text {
+                            id: pickText
+                            anchors.centerIn: parent
+                            textFormat: Text.PlainText
+                            text: String(modelData)
+                            color: Theme.foreground
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSizeS
+                        }
+
+                        MouseArea {
+                            id: pickArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: field.addTag(modelData)
+                        }
+                    }
+                }
+            }
+        }
+
+        Timer {
+            id: pickClose
+            interval: 180
+            onTriggered: {
+                if (!pickHover.containsMouse)
+                    field.picksOpen = false
             }
         }
 
