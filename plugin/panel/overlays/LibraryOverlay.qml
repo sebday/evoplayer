@@ -116,7 +116,6 @@ Item {
             Repeater {
                 model: [
                     { title: "Rebuild", method: "library.cache", params: { force: true } },
-                    { title: "Restart", method: "restart", params: {} },
                     { title: "Import", method: "library.import", params: {} },
                     { title: "Sync Likes", method: "library.soundcloud.download", params: { import: false } }
                 ]
@@ -128,10 +127,6 @@ Item {
                     onActivated: {
                         if (!enabled)
                             return
-                        if (modelData.method === "restart") {
-                            view.restartPlayer()
-                            return
-                        }
                         if (view.libraryJob && view.libraryJob.status === "running")
                             return
                         view.startLibraryJob(modelData.method, modelData.params)
@@ -149,6 +144,7 @@ Item {
             Chip {
                 visible: view.libraryJob && view.libraryJob.status === "running"
                 text: "stop"
+                danger: true
                 onActivated: view.cancelLibraryJob()
             }
         }

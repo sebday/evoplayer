@@ -250,6 +250,19 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		return map[string]any{"tracks": tracks}, nil
 	case "library.playlist.list":
 		return playlist.ListIndex(playlist.EnvFrom(d.env()))
+	case "library.playlist.tracks.order":
+		var order struct {
+			Name  string   `json:"name"`
+			Paths []string `json:"paths"`
+		}
+		if err := ipc.DecodeParams(req.Params, &order); err != nil {
+			return nil, err
+		}
+		plEnv := playlist.EnvFrom(d.env())
+		if err := playlist.SetTrackOrder(plEnv, order.Name, order.Paths); err != nil {
+			return nil, err
+		}
+		return map[string]any{"name": strings.TrimSpace(order.Name)}, nil
 	case "library.playlist.filter":
 		var filt struct {
 			LikedOnly *bool `json:"liked_only"`

@@ -51,19 +51,6 @@ func ListIndex(env Env) ([]IndexItem, error) {
 	db, dbErr := library.EnsureDB(env.Env)
 	var out []IndexItem
 
-	allCount, err := countLikedAll(env, db, dbErr)
-	if err != nil {
-		return nil, err
-	}
-	if allCount > 0 {
-		out = append(out, IndexItem{
-			Name:    "all",
-			Count:   allCount,
-			Kind:    "system",
-			Starred: isStarred(stars, "all"),
-		})
-	}
-
 	currentCount := 0
 	if paths, err := ReadCurrentPaths(env); err == nil {
 		currentCount = len(paths)
@@ -124,6 +111,7 @@ func ListIndex(env Env) ([]IndexItem, error) {
 		}
 	}
 	out = append(out, listExtraPlaylists(env, stars, out)...)
+	sortPlaylists(out)
 	return out, nil
 }
 
@@ -209,6 +197,10 @@ func TracksPageFor(env Env, name string, offset, limit int) (TracksPage, error) 
 		return TracksPage{}, err
 	}
 	paths, err := readM3UPaths(listPath)
+	if err != nil {
+		return TracksPage{}, err
+	}
+	paths, err = orderedPaths(env, name, paths)
 	if err != nil {
 		return TracksPage{}, err
 	}
@@ -425,14 +417,13 @@ func tracksPageFromDB(env Env, db *sql.DB, name string, offset, limit int) (Trac
 		if err != nil {
 			return TracksPage{}, true, err
 		}
+		paths, err = orderedPaths(env, name, paths)
+		if err != nil {
+			return TracksPage{}, true, err
+		}
 		return paginatePaths(env, paths, name, offset, limit), true, nil
 	case "all":
-		var total int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE liked=1`).Scan(&total); err != nil {
-			return TracksPage{}, false, nil
-		}
-		rows, err := db.Query(`
-SELECT path FROM tracks WHERE liked=1 ORDER BY path LIMIT ? OFFSET ?`, limit, offset)
+		rows, err := db.Query(`SELECT path FROM tracks WHERE liked=1 ORDER BY path`)
 		if err != nil {
 			return TracksPage{}, true, err
 		}
@@ -441,20 +432,28 @@ SELECT path FROM tracks WHERE liked=1 ORDER BY path LIMIT ? OFFSET ?`, limit, of
 		if err != nil {
 			return TracksPage{}, true, err
 		}
-		return TracksPage{
-			Total:  total,
-			Offset: offset,
-			Items:  tracksFromPaths(env.Env, paths, name),
-		}, true, nil
+		paths, err = orderedPaths(env, name, paths)
+		if err != nil {
+			return TracksPage{}, true, err
+		}
+		return paginatePaths(env, paths, name, offset, limit), true, nil
 	default:
 		if paths, err := library.LikedPathsForGenreTag(db, name); err != nil {
 			return TracksPage{}, true, err
 		} else if len(paths) > 0 {
+			paths, err = orderedPaths(env, name, paths)
+			if err != nil {
+				return TracksPage{}, true, err
+			}
 			return paginatePaths(env, paths, name, offset, limit), true, nil
 		}
 		if paths, err := library.PathsForTag(db, name, LikedOnly(env)); err != nil {
 			return TracksPage{}, true, err
 		} else if len(paths) > 0 {
+			paths, err = orderedPaths(env, name, paths)
+			if err != nil {
+				return TracksPage{}, true, err
+			}
 			return paginatePaths(env, paths, name, offset, limit), true, nil
 		}
 		if library.ArtistStarred(env.Env, name) {
@@ -463,6 +462,10 @@ SELECT path FROM tracks WHERE liked=1 ORDER BY path LIMIT ? OFFSET ?`, limit, of
 				return TracksPage{}, true, err
 			}
 			if len(paths) > 0 {
+				paths, err = orderedPaths(env, name, paths)
+				if err != nil {
+					return TracksPage{}, true, err
+				}
 				return paginatePaths(env, paths, name, offset, limit), true, nil
 			}
 		}
@@ -472,6 +475,10 @@ SELECT path FROM tracks WHERE liked=1 ORDER BY path LIMIT ? OFFSET ?`, limit, of
 				return TracksPage{}, true, err
 			}
 			if len(paths) > 0 {
+				paths, err = orderedPaths(env, name, paths)
+				if err != nil {
+					return TracksPage{}, true, err
+				}
 				return paginatePaths(env, paths, name, offset, limit), true, nil
 			}
 		}
@@ -542,20 +549,6 @@ func ensurePlaylistM3U(env Env, name string) (string, error) {
 		return "", fmt.Errorf("unknown playlist: %s", name)
 	}
 	return out, nil
-}
-
-func countLikedAll(env Env, db *sql.DB, dbErr error) (int, error) {
-	if dbErr == nil && db != nil && library.Ready(db) {
-		var n int
-		if err := db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE liked=1`).Scan(&n); err == nil {
-			return n, nil
-		}
-	}
-	likes, err := readLikes(env.LikesFile)
-	if err != nil {
-		return 0, err
-	}
-	return len(likes), nil
 }
 
 func countLikedMixes(env Env, db *sql.DB, dbErr error) (int, error) {

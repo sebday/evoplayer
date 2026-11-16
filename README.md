@@ -1,10 +1,10 @@
 # Evoplayer
 
-Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. The panel is Quickshell, with a bar icon.
+Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. The panel is Quickshell with a Go backend.
 
-I used Soundcloud for years and ignored my mp3 collection. This is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library. 
+The top of the panel is transport, a like, settings, then Now Playing, Playlists, and Genres, with search on the right. Now Playing is the queue under a hero: title, label, year, the waveform, and the cover. Liked tracks, genre, year, and length line up on each row. Related SoundCloud tracks sit under the queue. Playlists are genres, tags, and favorited artists and albums. Search finds artists, albums, and tracks.
 
-Search, download and sort Soundcloud and Youtube from in Evoplayer.
+I used Soundcloud for years and ignored my mp3 collection. This is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library.
 
 ![Evoplayer](preview.png)
 
@@ -16,8 +16,6 @@ server/            daemon, playback, library, ipc, cli
 plugin/            quickshell panel
 scripts/           install (binary, desktop entry, plugin link)
 ```
-
-
 
 ## Install
 
@@ -43,8 +41,6 @@ evoplayer close              # stop playback
 evoplayer version
 ```
 
-
-
 ### Transport
 
 ```bash
@@ -60,8 +56,6 @@ evoplayer open [--json]
 evoplayer playback <toggle|next|prev|stop|seek|volume|shuffle> …
 ```
 
-
-
 ### Queue
 
 ```bash
@@ -70,8 +64,6 @@ evoplayer queue play <start-path> <path> [...]
 evoplayer queue extend [--json]
 evoplayer queue up-next [--limit N] [--json]
 ```
-
-
 
 ### Library
 
@@ -86,8 +78,6 @@ evoplayer stats [--json]
 evoplayer library browse|meta|import|cache|download …
 ```
 
-
-
 ### Downloads and jobs
 
 ```bash
@@ -98,8 +88,6 @@ evoplayer discover keep|dismiss <id>
 evoplayer job status|stop|cancel [--json]
 ```
 
-
-
 ### Playlists and favorites
 
 ```bash
@@ -108,8 +96,6 @@ evoplayer playlist create|rename|delete|star <name> …
 evoplayer favorite <path>
 evoplayer current [load|save|clear] [--json]
 ```
-
-
 
 ### Tags, art, and library tools
 
@@ -125,8 +111,6 @@ evoplayer warm --batch <paths...>
 evoplayer placement log|undo-plan [--json] [--undoable] [--limit N]
 ```
 
-
-
 ### Scrobbling and history
 
 ```bash
@@ -136,16 +120,12 @@ evoplayer history report [--json] [--week N] [--limit N]
 evoplayer jsonlog scrobble-recent|queue-up-next …
 ```
 
-
-
 ### Config and viz
 
 ```bash
 evoplayer config get|set|toml-get|toml-set|toml-json|toml-prune-derived|read-root|skip-dirs|pick …
 evoplayer viz apply|stream [--fps N]|get
 ```
-
-
 
 ### Examples
 
@@ -154,8 +134,6 @@ evoplayer download https://soundcloud.com/you/likes
 evoplayer cache --force drum&bass
 evoplayer viz stream --fps 30
 ```
-
-
 
 ## Library folders
 
@@ -167,11 +145,9 @@ A genre tag is only a hint for which of those folders to use. Untagged downloads
 
 The daemon loads secrets from `pass` once at startup, under `evoshell/` (override with `EVOPLAYER_PASS_PREFIX`), unless the environment variable is already set:
 
-
 | Variable                                                    | pass entry                                                  | Used for                                                                                         |
 | ----------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `LASTFM_API_KEY`, `LASTFM_API_SECRET`, `LASTFM_SESSION_KEY` | `lastfm/api-key`, `lastfm/api-secret`, `lastfm/session-key` | Scrobbling (the daemon is the only scrobbler; failed submits retry from `scrobble-pending.json`) |
 | `DISCOGS_TOKEN`                                             | `discogs/token`                                             | Discogs cover search                                                                             |
-
 
 The SoundCloud token comes from Brave/Chromium cookies or pass. Daemon startup output goes to `daemon.log` in the state directory.

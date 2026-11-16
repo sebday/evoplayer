@@ -509,7 +509,7 @@ Item {
             }
         }
         function onSearchQueryChanged() {
-            if (!searchField.activeFocus && searchField.text !== view.searchQuery)
+            if (searchField.text !== view.searchQuery)
                 searchField.text = view.searchQuery
         }
     }

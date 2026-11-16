@@ -55,6 +55,7 @@ func capabilities() map[string]any {
 			{"name": "library.playlist.list", "params": nil},
 			{"name": "library.playlist.filter", "params": map[string]string{"liked_only": "bool?"}},
 			{"name": "library.playlist.tracks", "params": map[string]string{"name": "string", "offset": "int", "limit": "int"}},
+			{"name": "library.playlist.tracks.order", "params": map[string]string{"name": "string", "paths": "[]string"}},
 			{"name": "library.playlist.star", "params": map[string]string{"name": "string"}},
 			{"name": "library.favorite.toggle", "params": map[string]string{"path": "string"}},
 			{"name": "library.track.move", "params": map[string]string{"path": "string", "folder": "string"}},

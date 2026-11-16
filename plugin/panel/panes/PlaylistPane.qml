@@ -65,24 +65,17 @@ Card {
     active: view.pane === "playlist"
     property int sideMargin: 0
     readonly property int scrollGutter: 12
-    readonly property bool likesOpen: view.shownPlaylist === "all" && view.listSource() === "shown"
-    readonly property bool likesGrid: likesOpen && view.asGrid
     readonly property bool showLibrary: view.mode === "queue" || view.mode === "tags"
     readonly property bool coverList: view.mode === "library"
-    readonly property bool trackGrid: view.asGrid && pane.showLibrary && !view.indexPage()
-        && (view.listSource() === "shown" || view.listSource() === "page" || view.listSource() === "search")
-    readonly property bool plainHead: view.listSource() === "files" || view.listSource() === "lists"
+    readonly property bool plainHead: view.listSource() === "lists"
     readonly property bool trackHeading: view.listSource() === "page"
     readonly property bool releaseColumn: trackHeading && view.page && String(view.page.kind) !== "album"
         && view.pageData && (view.pageData.releases || []).length > 0
-    readonly property bool titledHead: view.listSource() === "files"
     property int menuTop: 0
 
     function activeFlick() {
         if (view.indexPage())
             return indexGrid
-        if (trackGrid)
-            return trackView
         if (view.listSource() === "lists")
             return playlistGrid
         return list
@@ -150,7 +143,7 @@ Card {
             anchors.right: parent.right
             anchors.rightMargin: pane.plainHead ? pane.sideMargin : 0
             visible: pane.showLibrary && !view.indexPage()
-            height: visible ? (pane.plainHead ? (pane.titledHead ? plainHead.implicitHeight : 0) : banner.implicitHeight) : 0
+            height: visible ? (pane.plainHead ? 0 : banner.implicitHeight) : 0
             onHeightChanged: pane.menuTop = pane.plainHead ? 0 : height
             onVisibleChanged: pane.menuTop = visible && !pane.plainHead ? height : 0
 
@@ -160,67 +153,13 @@ Card {
                 width: head.width
                 visible: !pane.plainHead
             }
-
-            Column {
-                id: plainHead
-                width: parent.width
-                visible: pane.titledHead
-                spacing: 4
-                bottomPadding: 10
-
-                Row {
-                    width: parent.width
-                    height: 40
-                    spacing: 12
-
-                    Text {
-                        visible: view.listSource() === "files" && view.browsePath !== ""
-                        anchors.verticalCenter: parent.verticalCenter
-                        textFormat: Text.PlainText
-                        text: "‹"
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSize2xl
-
-                        MouseArea {
-                            anchors.fill: parent
-                            anchors.margins: -8
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: view.leaveFolder()
-                        }
-                    }
-
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: Math.min(implicitWidth, parent.width - 90)
-                        textFormat: Text.PlainText
-                        text: pane.likesGrid ? "Likes" : (view.listSource() === "files" ? (view.browsePath || "Filesystem") : "Playlists")
-                        elide: Text.ElideMiddle
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.bold: true
-                        font.pixelSize: Theme.fontSize2xl
-                    }
-
-                    Text {
-                        anchors.verticalCenter: parent.verticalCenter
-                        textFormat: Text.PlainText
-                        text: pane.likesGrid ? String((view.shownTracks || []).length)
-                            : (view.listSource() === "files"
-                            ? String((view.browseEntries || []).length)
-                            : String(view.playlistIndexRows().length))
-                        color: Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeS
-                    }
-                }
-            }
         }
 
         GridView {
             id: playlistGrid
             visible: view.listSource() === "lists"
             anchors.top: head.bottom
+            anchors.topMargin: 8
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.rightMargin: pane.sideMargin
@@ -231,9 +170,9 @@ Card {
             currentIndex: view.playlistIdx
             highlightFollowsCurrentItem: false
 
-            readonly property int columns: Math.max(2, Math.floor(width / 160))
+            readonly property int columns: Math.max(1, Math.floor(width / 150))
             cellWidth: Math.floor(width / columns)
-            cellHeight: cellWidth + 36
+            cellHeight: cellWidth + 34
             onColumnsChanged: view.playlistColumns = columns
             Component.onCompleted: view.playlistColumns = columns
 
@@ -247,192 +186,18 @@ Card {
                 font.pixelSize: Theme.fontSizeM
             }
 
-            delegate: Item {
+            delegate: IndexTile {
                 required property int index
                 required property var modelData
 
                 width: playlistGrid.cellWidth
                 height: playlistGrid.cellHeight
-
-                readonly property bool selected: view.pane === "playlist" && index === view.playlistIdx
-                readonly property bool hot: cellArea.containsMouse || selected
-
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.margins: 4
-                    radius: 8
-                    color: selected ? Theme.withOpacity(Theme.border, 0.16) : (cellArea.containsMouse ? Theme.foregroundWash : "transparent")
-                    border.width: selected ? 1 : 0
-                    border.color: Theme.border
-                }
-
-                Cover {
-                    id: face
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.top
-                    anchors.topMargin: 12
-                    width: parent.width - 36
-                    height: width
-                    corner: 6
-                    name: String(modelData.title || "")
-                    source: view.playlistCoverUrl(String(modelData.id || ""), modelData)
-                    decodeSize: Math.ceil((width > 0 ? width : 160) * Screen.devicePixelRatio)
-                    scale: hot ? 1.04 : 1
-
-                    Behavior on scale {
-                        NumberAnimation { duration: Theme.motionFast }
-                    }
-                }
-
-                Text {
-                    id: nameText
-                    anchors.top: face.bottom
-                    anchors.topMargin: 8
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: parent.width - 16
-                    horizontalAlignment: Text.AlignHCenter
-                    textFormat: Text.PlainText
-                    text: String(modelData.title || "")
-                    elide: Text.ElideRight
-                    color: hot ? Theme.foreground : Theme.withOpacity(Theme.foreground, 0.85)
-                    font.family: Theme.fontFamily
-                    font.bold: true
-                    font.pixelSize: Theme.fontSizeM
-                }
-
-                Text {
-                    anchors.top: nameText.bottom
-                    anchors.topMargin: 2
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    textFormat: Text.PlainText
-                    text: view.counted(modelData.count, "track")
-                    color: Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeXs
-                }
-
-                MouseArea {
-                    id: cellArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        view.playlistIdx = index
-                        view.openListedPlaylist(String(modelData.id || ""))
-                    }
-                }
-            }
-        }
-
-        GridView {
-            id: trackView
-            visible: pane.trackGrid
-            anchors.top: head.bottom
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
-            model: view.listSource() === "page" ? (view.pageTracks || [])
-                : (view.listSource() === "search" ? (view.searchHits || []) : (view.shownTracks || []))
-            currentIndex: view.playlistIdx
-            highlightFollowsCurrentItem: false
-
-            readonly property int columns: Math.max(2, Math.floor(width / 160))
-            cellWidth: Math.floor(width / columns)
-            cellHeight: cellWidth + 48
-            onColumnsChanged: view.playlistColumns = columns
-            Component.onCompleted: view.playlistColumns = columns
-
-            Text {
-                anchors.centerIn: parent
-                visible: trackView.count === 0
-                textFormat: Text.PlainText
-                text: view.listSource() === "search" ? "no matches"
-                    : (view.shownPlaylist === "all" ? "no likes" : "no tracks")
-                color: Theme.muted
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontSizeM
-            }
-
-            delegate: Item {
-                required property int index
-                required property var modelData
-
-                width: trackView.cellWidth
-                height: trackView.cellHeight
-
-                readonly property bool selected: view.pane === "playlist" && index === view.playlistIdx
-                readonly property bool hot: likeArea.containsMouse || selected
-
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.margins: 4
-                    radius: 8
-                    color: selected ? Theme.withOpacity(Theme.border, 0.16) : (likeArea.containsMouse ? Theme.foregroundWash : "transparent")
-                    border.width: selected ? 1 : 0
-                    border.color: Theme.border
-                }
-
-                Cover {
-                    id: likeFace
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.top
-                    anchors.topMargin: 12
-                    width: parent.width - 36
-                    height: width
-                    corner: 6
-                    name: String(modelData.title || "")
-                    source: view.rowCoverUrl(modelData)
-                    decodeSize: Math.ceil((width > 0 ? width : 160) * Screen.devicePixelRatio)
-                    scale: hot ? 1.04 : 1
-
-                    Behavior on scale {
-                        NumberAnimation { duration: Theme.motionFast }
-                    }
-                }
-
-                Text {
-                    id: likeTitle
-                    anchors.top: likeFace.bottom
-                    anchors.topMargin: 8
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: parent.width - 16
-                    horizontalAlignment: Text.AlignHCenter
-                    textFormat: Text.PlainText
-                    text: String(modelData.title || "")
-                    elide: Text.ElideRight
-                    color: hot ? Theme.foreground : Theme.withOpacity(Theme.foreground, 0.85)
-                    font.family: Theme.fontFamily
-                    font.bold: true
-                    font.pixelSize: Theme.fontSizeM
-                }
-
-                Text {
-                    anchors.top: likeTitle.bottom
-                    anchors.topMargin: 2
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    width: parent.width - 16
-                    horizontalAlignment: Text.AlignHCenter
-                    textFormat: Text.PlainText
-                    text: String(modelData.artist || "")
-                    elide: Text.ElideRight
-                    color: Theme.muted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeXs
-                }
-
-                MouseArea {
-                    id: likeArea
-                    anchors.fill: parent
-                    hoverEnabled: true
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: {
-                        view.playlistIdx = index
-                        view.focusPane("playlist")
-                        if (modelData.path)
-                            view.playTrack(String(modelData.path))
-                    }
+                view: pane.view
+                row: modelData
+                selected: view.pane === "playlist" && index === view.playlistIdx
+                onActivated: {
+                    view.playlistIdx = index
+                    view.openListedPlaylist(String(modelData.id || ""))
                 }
             }
         }
@@ -584,7 +349,7 @@ Card {
             anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
             anchors.rightMargin: (pane.releaseColumn ? 16 : pane.sideMargin) + pane.scrollGutter
             anchors.bottom: parent.bottom
-            visible: pane.showLibrary && !pane.coverList && !view.indexPage() && view.listSource() !== "lists" && !pane.trackGrid
+            visible: pane.showLibrary && !pane.coverList && !view.indexPage() && view.listSource() !== "lists"
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
@@ -775,8 +540,7 @@ Card {
                         textFormat: Text.PlainText
                         visible: list.count === 0 && !parent.searchSections
                         text: view.pageBusy ? "loading…"
-                            : (view.listSource() === "search" ? "no matches"
-                            : (view.listSource() === "files" ? "empty folder" : "no tracks"))
+                            : (view.listSource() === "search" ? "no matches" : "no tracks")
                         color: Theme.muted
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeM
@@ -900,8 +664,11 @@ Card {
                 }
             }
 
-            // A drag reorders the live queue. Wheel scrolling stays.
-            readonly property bool canReorder: !view.shuffle && view.mode === "queue" && view.listSource() === "queue"
+            // A drag reorders the queue, or the tracks inside an open playlist.
+            readonly property bool canReorder: view.mode === "queue" && !view.page && (
+                (view.listSource() === "queue" && !view.shuffle) ||
+                (view.listSource() === "shown" && view.shownPlaylist !== "" && view.shownPlaylist !== "current")
+            )
             property int dragFrom: -1
             property int dragTo: -1
             property real dragOffset: 0
@@ -954,8 +721,6 @@ Card {
                 function onPlaylistIdxChanged() {
                     if (view.mode !== "queue" || view.playlistIdx < 0 || view.holdScroll)
                         return
-                    if (pane.trackGrid && view.playlistIdx < trackView.count)
-                        trackView.positionViewAtIndex(view.playlistIdx, GridView.Contain)
                     if (view.listSource() === "lists" && view.playlistIdx < playlistGrid.count)
                         playlistGrid.positionViewAtIndex(view.playlistIdx, GridView.Contain)
                     list.currentIndex = view.playlistIdx

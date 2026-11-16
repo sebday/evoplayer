@@ -13,6 +13,7 @@ Rectangle {
     property bool inverted: false
     property bool toggle: false
     property bool on: false
+    property bool danger: false
     property int maxWidth: 220
 
     readonly property bool hovered: enabled && area.containsMouse
@@ -23,6 +24,8 @@ Rectangle {
     color: {
         if (!enabled)
             return Theme.foregroundFaint
+        if (danger)
+            return hovered ? Theme.mixColors(Theme.liked, Theme.foreground, 0.18) : Theme.fillUrgentSubtle
         if (toggle && on)
             return Theme.fillAccentSubtle
         if (inverted)
@@ -33,6 +36,8 @@ Rectangle {
     border.color: {
         if (!enabled)
             return "transparent"
+        if (danger)
+            return Theme.liked
         if (toggle)
             return on ? Theme.good : Theme.inactiveBorder
         if (inverted)
@@ -50,6 +55,8 @@ Rectangle {
         color: {
             if (!chip.enabled)
                 return Theme.muted
+            if (chip.danger)
+                return Theme.liked
             if (chip.toggle)
                 return chip.on ? Theme.good : Theme.muted
             if (chip.inverted)

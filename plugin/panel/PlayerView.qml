@@ -39,13 +39,21 @@ Item {
     property string browsePath: ""
     property string libraryView: ""
     property int playlistColumns: 4
-    property bool asGrid: false
     property string browseParent: ""
     property var browseEntries: []
     property var playlists: []
     property var playlistCovers: ({})
+    property bool coverCacheReady: false
+    readonly property string playlistCoverCachePath: {
+        var cache = String(Quickshell.env("EVO_PLAYER_MUSIC_CACHE") || "")
+        if (!cache) {
+            var xdg = String(Quickshell.env("XDG_CACHE_HOME") || "")
+            var home = String(Quickshell.env("HOME") || "")
+            cache = (xdg || (home + "/.cache")) + "/evoplayer"
+        }
+        return cache + "/playlist-covers.json"
+    }
     property int playlistCoverRev: 0
-    property var likesCoverChoices: []
     property int playlistCoverGen: 0
     property var sidebar: []
     property int browseIdx: 0
@@ -433,7 +441,7 @@ Item {
             var count = Number(items[i].count) || 0
             if (name === "current")
                 current = count || current
-            else if (name)
+            else if (name && name !== "all")
                 others++
         }
         var rows = []
@@ -1497,8 +1505,8 @@ Item {
         return -1
     }
 
-    function loadQueue() {
-        var keep = queue[playlistIdx] ? String(queue[playlistIdx].path || "") : ""
+    function loadQueue(keepPath) {
+        var keep = keepPath !== undefined ? String(keepPath || "") : (queue[playlistIdx] ? String(queue[playlistIdx].path || "") : "")
         loadPlaylistItems("current", function(items) {
             root.applyQueue(items, keep)
         })
@@ -1607,30 +1615,19 @@ Item {
         return sidebar[browseIdx] || null
     }
 
-    function enterFolder() {
-    }
-
-    function leaveFolder() {
-        if (libraryView !== "files" || !browsePath)
-            return
-        loadBrowse(browseParent)
-    }
-
     function scrollKey() {
         if (mode !== "queue")
             return ""
         if (indexPage())
             return "index:" + page.kind
         if (entityPage())
-            return "page:" + page.kind + ":" + page.name + (asGrid ? ":grid" : ":list")
+            return "page:" + page.kind + ":" + page.name
         if (searchActive())
-            return "search:" + (asGrid ? "grid" : "list")
+            return "search"
         if (listSource() === "lists")
             return "playlists"
-        if (shownPlaylist === "all")
-            return asGrid ? "likes-grid" : "likes-list"
         if (shownPlaylist)
-            return "pl:" + shownPlaylist + (asGrid ? ":grid" : ":list")
+            return "pl:" + shownPlaylist
         if (listSource() === "queue")
             return "queue"
         return ""
@@ -1670,21 +1667,15 @@ Item {
         Qt.callLater(function() { holdScroll = false })
     }
 
-    function setLayout(grid) {
-        if (asGrid === !!grid)
-            return
-        beginViewChange()
-        asGrid = !!grid
-        endViewChange()
-    }
-
     function openPlaylists() {
         beginViewChange()
         leaveOverlays()
         libraryView = "lists"
         closePages()
         clearShownPlaylist()
-        playlistIdx = 0
+        if (searchActive())
+            clearSearch()
+        playlistIdx = -1
         endViewChange()
     }
 
@@ -1692,7 +1683,7 @@ Item {
         beginViewChange()
         clearShownPlaylist()
         libraryView = "lists"
-        playlistIdx = 0
+        playlistIdx = -1
         endViewChange()
     }
 
@@ -1711,65 +1702,27 @@ Item {
         endViewChange()
     }
 
-    function fileRows() {
-        var entries = browseEntries || []
-        var out = []
-        for (var i = 0; i < entries.length; i++) {
-            var en = entries[i] || {}
-            if (String(en.type || "") === "dir") {
-                out.push({
-                    type: "dir",
-                    title: String(en.name || en.path || ""),
-                    path: String(en.path || ""),
-                    count: Number(en.count) || 0
-                })
-            } else {
-                out.push(en)
-            }
-        }
-        return out
-    }
-
     function playlistIndexRows() {
         var items = orderedPlaylists()
         var out = []
         for (var i = 0; i < items.length; i++) {
             var name = String(items[i].name || "")
-            if (!name || name === "current")
+            if (!name || name === "current" || name === "all")
                 continue
             var cover = playlistCovers[name] || {}
             var row = {
                 type: "playlist",
                 id: name,
+                name: playlistLabel(name),
                 title: playlistLabel(name),
                 path: "",
                 count: Number(items[i].count) || 0,
                 art: String(cover.art || ""),
                 thumb: String(cover.thumb || "")
             }
-            if (name === "all")
-                out.unshift(row)
-            else
-                out.push(row)
+            out.push(row)
         }
         return out
-    }
-
-    function openFileSelection() {
-        var rows = fileRows()
-        var row = rows[playlistIdx]
-        if (!row)
-            return
-        if (String(row.type || "") === "dir") {
-            openBrowsePath(row.path)
-            return
-        }
-        var paths = []
-        for (var i = 0; i < rows.length; i++) {
-            if (String(rows[i].type || "") !== "dir" && rows[i].path)
-                paths.push(String(rows[i].path))
-        }
-        playPaths(paths, String(row.path || ""))
     }
 
     function queueHas(path) {
@@ -1811,7 +1764,7 @@ Item {
         }
         ipc("queue.replace", { paths: list, start_path: start || list[0] }, function() {
             root.err = ""
-            root.loadQueue()
+            root.loadQueue(start || list[0])
             root.loadPlaylistIndex()
         })
     }
@@ -1837,7 +1790,7 @@ Item {
     }
 
     // Leave whatever list was open and land on the playing row of the current queue.
-    function showNowPlaying() {
+    function showNowPlaying(reload) {
         beginViewChange()
         libraryView = ""
         if (String(searchQuery || "").replace(/^\s+|\s+$/g, "") !== "") {
@@ -1866,13 +1819,15 @@ Item {
             clearShownPlaylist()
         if (host && host.forceKeyFocus)
             host.forceKeyFocus()
-        loadPlaylistItems("current", function(items) {
-            root.applyQueue(items, root.trackPath)
-            Qt.callLater(function() {
-                if (root.savedScroll("queue") < 0)
-                    root.focusPlayingRow()
+        if (reload !== false) {
+            loadPlaylistItems("current", function(items) {
+                root.applyQueue(items, root.trackPath)
+                Qt.callLater(function() {
+                    if (root.savedScroll("queue") < 0)
+                        root.focusPlayingRow()
+                })
             })
-        })
+        }
         endViewChange()
     }
 
@@ -2006,7 +1961,7 @@ Item {
             pageTracks = []
             page = spec
             indexFilter = saved ? String(saved.filter || "") : ""
-            indexIdx = saved ? saved.index : 0
+            indexIdx = saved ? saved.index : -1
             loadIndex(indexKind())
             endViewChange()
             return
@@ -2214,7 +2169,7 @@ Item {
         if (indexFilter === text)
             return
         indexFilter = String(text || "")
-        indexIdx = 0
+        indexIdx = -1
         indexFilterTimer.restart()
     }
 
@@ -2231,7 +2186,7 @@ Item {
         var gen = ++playlistCoverGen
         for (var i = 0; i < items.length; i++) {
             var name = String(items[i].name || "")
-            if (!name || name === "current")
+            if (!name || name === "current" || name === "all")
                 continue
             fetchPlaylistCover(name, gen)
         }
@@ -2285,53 +2240,80 @@ Item {
         return fallback
     }
 
-    function playlistCoverUrl(name, row) {
-        var bump = playlistCoverRev
-        var cover = (playlistCovers || {})[String(name || "")] || {}
-        return rowCoverUrl({
-            art: String((bump >= 0 && cover.art) || (row && row.art) || ""),
-            thumb: String(cover.thumb || (row && row.thumb) || "")
-        })
-    }
-
     function storePlaylistCover(name, cover) {
+        var art = String(cover && cover.art || "")
+        var thumb = String(cover && cover.thumb || "")
+        var prev = (playlistCovers || {})[name] || {}
+        if (!art && !thumb && (prev.art || prev.thumb))
+            return
         var next = Object.assign({}, playlistCovers)
-        next[name] = cover
+        next[name] = { art: art, thumb: thumb }
         playlistCovers = next
         playlistCoverRev = playlistCoverRev + 1
-        if (name !== "all")
-            refreshLikesCover()
+        scheduleCoverCache()
     }
 
-    function refreshLikesCover() {
-        if (!(likesCoverChoices || []).length)
+    function applyCoverCache(raw) {
+        var data = {}
+        try {
+            data = JSON.parse(String(raw || "").trim() || "{}")
+        } catch (e) {
             return
-        var pick = chooseCover(likesCoverChoices, "all")
-        var cur = (playlistCovers || {})["all"] || {}
-        if (coverKeys(cur).join("\n") === coverKeys(pick).join("\n"))
+        }
+        if (!data || typeof data !== "object" || Array.isArray(data))
             return
-        var next = Object.assign({}, playlistCovers)
-        next["all"] = pick
-        playlistCovers = next
+        var cur = Object.assign({}, playlistCovers || {})
+        var names = Object.keys(data)
+        var changed = false
+        for (var i = 0; i < names.length; i++) {
+            var name = names[i]
+            var have = cur[name] || {}
+            if (have.art || have.thumb)
+                continue
+            var row = data[name] || {}
+            var art = String(row.art || "")
+            var thumb = String(row.thumb || "")
+            if (!art && !thumb)
+                continue
+            cur[name] = { art: art, thumb: thumb }
+            changed = true
+        }
+        if (!changed)
+            return
+        playlistCovers = cur
         playlistCoverRev = playlistCoverRev + 1
+    }
+
+    function scheduleCoverCache() {
+        coverSaveTimer.restart()
+    }
+
+    function writeCoverCache() {
+        if (!coverCacheReady || !coverCache.path)
+            return
+        var covers = playlistCovers || {}
+        var names = Object.keys(covers)
+        var out = {}
+        for (var i = 0; i < names.length; i++) {
+            var row = covers[names[i]] || {}
+            var art = String(row.art || "")
+            var thumb = String(row.thumb || "")
+            if (!art && !thumb)
+                continue
+            out[names[i]] = { art: art, thumb: thumb }
+        }
+        if (!Object.keys(out).length)
+            return
+        coverCache.setText(JSON.stringify(out) + "\n")
     }
 
     function fetchPlaylistCover(name, gen) {
-        ipc("library.playlist.tracks", { name: name, offset: 0, limit: name === "all" ? 200 : 24 }, function(data) {
+        ipc("library.playlist.tracks", { name: name, offset: 0, limit: 24 }, function(data) {
             if (gen !== root.playlistCoverGen)
                 return
             var rows = (data && data.items) || []
-            if (name === "all")
-                root.likesCoverChoices = rows
-            root.storePlaylistCover(name, root.chooseCover(rows, name === "all" ? "all" : ""))
+            root.storePlaylistCover(name, root.chooseCover(rows, name))
         })
-    }
-
-    function stepTrackGrid(delta) {
-        var n = playlistRows().length
-        if (!n || !delta)
-            return
-        playlistIdx = Math.max(0, Math.min(n - 1, playlistIdx + delta))
     }
 
     function stepPlaylistGrid(delta) {
@@ -2491,7 +2473,9 @@ Item {
             togglePlay()
             return
         }
-        playTrackList(playlistRows(), "")
+        var rows = playlistRows()
+        showNowPlaying(false)
+        playTrackList(rows, "")
     }
 
     function headerAdd() {
@@ -2627,14 +2611,6 @@ Item {
     }
 
     function openBrowseAt(index) {
-        browseIdx = index
-        var row = sidebar[index]
-        if (!row)
-            return
-        if (row.kind === "entry" && row.type === "dir") {
-            enterFolder()
-            return
-        }
         playBrowseAt(index)
     }
 
@@ -2690,10 +2666,6 @@ Item {
         }
         if (mode === "tags")
             return
-        if (listSource() === "files") {
-            openFileSelection()
-            return
-        }
         if (listSource() === "lists") {
             var listed = playlistIndexRows()[playlistIdx]
             if (listed)
@@ -3061,8 +3033,6 @@ Item {
             return []
         case "search":
             return searchHits || []
-        case "files":
-            return fileRows()
         case "lists":
             return playlistIndexRows()
         case "shown":
@@ -3877,13 +3847,6 @@ Item {
         })
     }
 
-    function restartPlayer() {
-        if (!service)
-            return
-        err = ""
-        Quickshell.execDetached(service.playerCmd(["restart"]))
-    }
-
     function cancelLibraryJob() {
         ipc("job.cancel", {}, function() {
             root.refreshLibraryJob()
@@ -4065,6 +4028,10 @@ Item {
     function reorderFrom(index, delta, scrollY) {
         if (String(searchQuery || "").replace(/^\s+|\s+$/g, "") !== "")
             return
+        if (listSource() === "shown" && shownPlaylist && shownPlaylist !== "current") {
+            reorderShownTracks(index, delta, scrollY)
+            return
+        }
         if (shuffle || pane !== "playlist" || mode !== "queue" || shownPlaylist || page || reorderPending)
             return
         if (!delta || index < 0 || index >= queue.length)
@@ -4103,6 +4070,46 @@ Item {
             })
         }
         stepOnce()
+    }
+
+    function reorderShownTracks(index, delta, scrollY) {
+        if (pane !== "playlist" || mode !== "queue" || !shownPlaylist || shownPlaylist === "current" || page)
+            return
+        var items = (shownTracks || []).slice()
+        if (!delta || index < 0 || index >= items.length)
+            return
+        var dest = index + delta
+        if (dest < 0)
+            dest = 0
+        if (dest >= items.length)
+            dest = items.length - 1
+        delta = dest - index
+        if (!delta)
+            return
+        var moved = items.splice(index, 1)[0]
+        items.splice(dest, 0, moved)
+        var paths = []
+        for (var i = 0; i < items.length; i++) {
+            var path = String(items[i] && items[i].path || "")
+            if (path)
+                paths.push(path)
+        }
+        if (!paths.length)
+            return
+        playlistIdx = dest
+        if (scrollY >= 0)
+            reorderScroll = scrollY
+        shownTracks = items
+        var name = shownPlaylist
+        ipc("library.playlist.tracks.order", { name: name, paths: paths }, function() {
+            if (root.reorderPending === 0 && root.reorderScroll >= 0)
+                root.reorderScroll = -1
+        }, function() {
+            root.loadPlaylistItems(name, function(rows) {
+                if (root.shownPlaylist === name)
+                    root.shownTracks = rows
+            })
+        })
     }
 
     function cycleFocus(dir) {
@@ -4308,15 +4315,6 @@ Item {
             if (key === Qt.Key_Escape) { onEsc(); return true }
             if (text === "l" || text === "L") { likePlaying(); return true }
         }
-        if (mode === "queue" && asGrid && pane === "playlist"
-                && (listSource() === "shown" || listSource() === "page" || listSource() === "search")) {
-            if (key === Qt.Key_Left) { stepTrackGrid(-1); return true }
-            if (key === Qt.Key_Right) { stepTrackGrid(1); return true }
-            if (key === Qt.Key_Up) { stepTrackGrid(-playlistColumns); return true }
-            if (key === Qt.Key_Down) { stepTrackGrid(playlistColumns); return true }
-            if (key === Qt.Key_PageUp) { stepTrackGrid(-playlistColumns * 4); return true }
-            if (key === Qt.Key_PageDown) { stepTrackGrid(playlistColumns * 4); return true }
-        }
         if (mode === "queue" && listSource() === "lists" && pane === "playlist") {
             if (key === Qt.Key_Left) { stepPlaylistGrid(-1); return true }
             if (key === Qt.Key_Right) { stepPlaylistGrid(1); return true }
@@ -4421,6 +4419,29 @@ Item {
         id: searchTimer
         interval: 180
         onTriggered: root.runSearch()
+    }
+
+    FileView {
+        id: coverCache
+        path: root.playlistCoverCachePath
+        watchChanges: false
+        printErrors: false
+        preload: true
+        atomicWrites: true
+        onLoaded: {
+            root.applyCoverCache(text())
+            root.coverCacheReady = true
+            root.writeCoverCache()
+        }
+        onLoadFailed: {
+            root.coverCacheReady = true
+        }
+    }
+
+    Timer {
+        id: coverSaveTimer
+        interval: 400
+        onTriggered: root.writeCoverCache()
     }
 
     Timer {
