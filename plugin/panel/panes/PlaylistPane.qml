@@ -724,6 +724,7 @@ Card {
                             height: albumWrap.cellH
                             view: pane.view
                             row: modelData
+                            starred: !!modelData.starred
                             onActivated: pane.view.openAlbum(String(modelData.name || ""), "")
                             onContextActivated: pane.view.openFieldTags("album", String(modelData.name || ""))
                         }

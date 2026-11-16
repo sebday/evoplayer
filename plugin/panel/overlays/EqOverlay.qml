@@ -38,7 +38,7 @@ Item {
             "cache": "Rebuild",
             "import": "Import",
             "art-maintain": "Artwork",
-            "download": "Sync likes",
+            "download": "Sync Likes",
             "download-url": "Download"
         }
         var line = (names[String(job.name || "")] || String(job.name || "job")) + " · " + String(job.status || "")

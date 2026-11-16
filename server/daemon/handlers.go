@@ -215,6 +215,23 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		return map[string]any{"name": strings.TrimSpace(fav.Name), "starred": starred}, nil
+	case "library.album.favorite":
+		{
+			var albumFav struct {
+				Name string `json:"name"`
+			}
+			if err := ipc.DecodeParams(req.Params, &albumFav); err != nil {
+				return nil, err
+			}
+			if strings.TrimSpace(albumFav.Name) == "" {
+				return nil, ipc.ErrInvalidParams("name required")
+			}
+			starred, err := library.ToggleAlbumStar(libEnv, albumFav.Name)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"name": strings.TrimSpace(albumFav.Name), "starred": starred}, nil
+		}
 	case "library.soundcloud.search":
 		var search struct {
 			Query string `json:"query"`
@@ -233,6 +250,20 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		return map[string]any{"tracks": tracks}, nil
 	case "library.playlist.list":
 		return playlist.ListIndex(playlist.EnvFrom(d.env()))
+	case "library.playlist.filter":
+		var filt struct {
+			LikedOnly *bool `json:"liked_only"`
+		}
+		if err := ipc.DecodeParams(req.Params, &filt); err != nil {
+			return nil, err
+		}
+		plEnv := playlist.EnvFrom(d.env())
+		if filt.LikedOnly != nil {
+			if err := playlist.SetLikedOnly(plEnv, *filt.LikedOnly); err != nil {
+				return nil, err
+			}
+		}
+		return map[string]any{"liked_only": playlist.LikedOnly(plEnv)}, nil
 	case "library.playlist.tracks":
 		var p struct {
 			Name   string `json:"name"`
@@ -368,7 +399,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			paths = []string{}
 		}
 		out := map[string]any{"paths": paths}
-		if q.Field == "artist" {
+		if q.Field == "artist" || q.Field == "album" {
 			list, uniform, err := library.SharedTagList(db, paths)
 			if err != nil {
 				return nil, err
@@ -390,8 +421,8 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		libEnv := library.EnvFrom(d.env())
 		var n int
 		var err error
-		if one.Tags != nil && one.Field == "artist" {
-			n, err = library.UpdateArtistTags(libEnv, one.Value, *one.Tags, one.Paths)
+		if one.Tags != nil && (one.Field == "artist" || one.Field == "album") {
+			n, err = library.UpdateFieldTags(libEnv, one.Field, one.Value, *one.Tags, one.Paths)
 		} else {
 			n, err = library.UpdateField(libEnv, one.Field, one.Value, one.Paths)
 		}

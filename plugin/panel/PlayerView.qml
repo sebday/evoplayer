@@ -65,6 +65,7 @@ Item {
     property int scrollEpoch: 0
     property int viewChangeDepth: 0
     property bool scrollPending: false
+    property bool playlistLikedOnly: false
     property string shownPlaylist: ""
     property var shownTracks: []
     property int shownGen: 0
@@ -439,8 +440,6 @@ Item {
         rows.push({ kind: "playlist", type: "", label: "Now Playing", path: "", count: current, id: "current", depth: 0 })
         rows.push({ kind: "lists", type: "", label: "Playlists", path: "", count: others, id: "playlists", depth: 0 })
         rows.push({ kind: "page", type: "", label: "Genres", path: "", count: indexCount("genre"), id: "genres", depth: 0 })
-        rows.push({ kind: "page", type: "", label: "Artists", path: "", count: indexCount("artist"), id: "artists", depth: 0 })
-        rows.push({ kind: "page", type: "", label: "Albums", path: "", count: indexCount("album"), id: "albums", depth: 0 })
         sidebar = rows
         var tab = tabIndexForView()
         if (tab >= 0)
@@ -451,7 +450,7 @@ Item {
         var id = "current"
         if (libraryView === "lists")
             id = "playlists"
-        else if (page && (page.kind === "artists" || page.kind === "genres" || page.kind === "albums"))
+        else if (page && page.kind === "genres")
             id = page.kind
         else if (shownPlaylist)
             id = shownPlaylist
@@ -1405,6 +1404,7 @@ Item {
         libraryTries++
         loadBrowse(browsePath || "")
         loadPlaylistIndex()
+        loadPlaylistFilter()
         prefetchIndexes()
     }
 
@@ -1435,6 +1435,20 @@ Item {
             rebuildSidebar()
         }, function() {
             root.noteLibraryMiss()
+        })
+    }
+
+    function loadPlaylistFilter() {
+        ipc("library.playlist.filter", {}, function(data) {
+            root.playlistLikedOnly = !!(data && data.liked_only)
+        })
+    }
+
+    function togglePlaylistFilter() {
+        ipc("library.playlist.filter", { liked_only: !playlistLikedOnly }, function(data) {
+            root.playlistLikedOnly = !!(data && data.liked_only)
+            root.loadPlaylistIndex()
+            root.reloadShownPlaylist()
         })
     }
 
@@ -1867,7 +1881,7 @@ Item {
     }
 
     function indexPage() {
-        return !!page && (page.kind === "artists" || page.kind === "genres" || page.kind === "albums")
+        return !!page && page.kind === "genres"
     }
 
     function entityPage() {
@@ -1913,22 +1927,24 @@ Item {
 
     function openArtist(name) { openPage("artist", name, "") }
 
-    function toggleArtistFav() {
-        if (!page || page.kind !== "artist")
+    function togglePageFav() {
+        if (!page || (page.kind !== "artist" && page.kind !== "album"))
             return
         var name = String(page.name || "")
         if (!name)
             return
-        ipc("library.artist.favorite", { name: name }, function(data) {
+        var album = page.kind === "album"
+        ipc(album ? "library.album.favorite" : "library.artist.favorite", { name: name }, function(data) {
             var starred = !!(data && data.starred)
-            if (root.page && root.page.kind === "artist" && String(root.page.name || "") === name && root.pageData)
+            if (root.page && root.page.kind === (album ? "album" : "artist") && String(root.page.name || "") === name && root.pageData)
                 root.pageData = Object.assign({}, root.pageData, { starred: starred })
-            root.placeArtistStar(name, starred)
+            root.placeIndexStar(album ? "album" : "artist", album ? "albums" : "artists", name, starred)
+            root.loadPlaylistIndex()
         })
     }
 
-    function placeArtistStar(name, starred) {
-        var rows = (indexCache && indexCache.artist) || []
+    function placeIndexStar(cacheKind, pageKind, name, starred) {
+        var rows = (indexCache && indexCache[cacheKind]) || []
         if (!rows.length)
             return
         var key = String(name || "").toLowerCase()
@@ -1944,10 +1960,10 @@ Item {
                 rest.push(row)
         }
         var next = Object.assign({}, indexCache)
-        next.artist = fav.concat(rest)
+        next[cacheKind] = fav.concat(rest)
         indexCache = next
         indexShown = ""
-        if (indexPage() && page && page.kind === "artists")
+        if (indexPage() && page && page.kind === pageKind)
             applyIndexFilter()
     }
     function openGenre(name) { openPage("genre", name, "") }
@@ -1985,7 +2001,7 @@ Item {
         playlistPicks = []
         textCapture = false
         pageBusy = false
-        if (spec.kind === "artists" || spec.kind === "genres" || spec.kind === "albums") {
+        if (spec.kind === "genres") {
             pageData = null
             pageTracks = []
             page = spec
@@ -3493,7 +3509,7 @@ Item {
             root.tagScope = paths.length + " tracks · " + value
             root.tagPath = String(paths[0] || "")
             root.tagTags = ""
-            if (field === "artist" && data.tags_uniform)
+            if ((field === "artist" || field === "album") && data.tags_uniform)
                 root.tagTags = String(data.tags || "")
             root.tagTagsInitial = root.tagTags
             root.tagBusy = false
@@ -3503,11 +3519,11 @@ Item {
     }
 
     function tagLimit() {
-        if (tagField === "artist")
+        if (tagField === "artist" || tagField === "album")
             return 2
         if (tagField)
             return 1
-        return tagMany ? 2 : 6
+        return tagMany ? 2 : 7
     }
 
     function moveTag(delta) {
@@ -3535,7 +3551,7 @@ Item {
                 value: tagFieldValue,
                 paths: fieldPaths
             }
-            if (tagField === "artist" && tagTags !== tagTagsInitial)
+            if ((tagField === "artist" || tagField === "album") && tagTags !== tagTagsInitial)
                 params.tags = tagTags
             ipc("library.track.tags.set_field", params, function() {
                 root.tagBusy = false
@@ -4445,6 +4461,7 @@ Item {
             root.libraryTries = 0
             root.ensureLibrary()
             root.loadPlaylistIndex()
+            root.loadPlaylistFilter()
         }
         function onDaemonJobUpdated(data) {
             if (!data)

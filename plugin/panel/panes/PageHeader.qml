@@ -176,7 +176,7 @@ Column {
 
                 Text {
                     id: artistFav
-                    visible: hero.pageKind === "artist"
+                    visible: hero.pageKind === "artist" || hero.pageKind === "album"
                     topPadding: 8
                     textFormat: Text.PlainText
                     text: "♥"
@@ -188,7 +188,7 @@ Column {
                         anchors.fill: parent
                         anchors.margins: -8
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: hero.view.toggleArtistFav()
+                        onClicked: hero.view.togglePageFav()
                     }
                 }
             }

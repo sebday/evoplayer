@@ -19,17 +19,21 @@ func LikedGenrePlaylists(db *sql.DB) ([]TagPlaylist, error) {
 	return likedColumnPlaylists(db, "genre")
 }
 
-// TagPlaylists lists every tag that appears on a library track.
-// A record label does not seed a playlist, and a like is not required.
-func TagPlaylists(db *sql.DB) ([]TagPlaylist, error) {
+// TagPlaylists lists tags on library tracks.
+// likedOnly keeps tags that appear on a liked track, and counts only those tracks.
+func TagPlaylists(db *sql.DB, likedOnly bool) ([]TagPlaylist, error) {
 	if db == nil || !Ready(db) {
 		return nil, nil
+	}
+	liked := ""
+	if likedOnly {
+		liked = "tracks.liked=1 AND "
 	}
 	rows, err := db.Query(`
 SELECT replace(trim(track_tags.tag), char(0), '') AS name, COUNT(DISTINCT track_tags.path)
 FROM track_tags
 JOIN tracks ON tracks.path = track_tags.path
-WHERE replace(trim(track_tags.tag), char(0), '') != ''
+WHERE ` + liked + `replace(trim(track_tags.tag), char(0), '') != ''
 GROUP BY replace(trim(track_tags.tag), char(0), '')
 ORDER BY name`)
 	if err != nil {
@@ -87,8 +91,9 @@ func LikedPathsForGenreTag(db *sql.DB, name string) ([]string, error) {
 	return likedPathsForColumn(db, "genre", name)
 }
 
-// PathsForTag returns every library track that carries tag name.
-func PathsForTag(db *sql.DB, name string) ([]string, error) {
+// PathsForTag returns library tracks that carry tag name.
+// likedOnly drops tracks that are not liked.
+func PathsForTag(db *sql.DB, name string, likedOnly bool) ([]string, error) {
 	if db == nil || !Ready(db) {
 		return nil, nil
 	}
@@ -96,12 +101,85 @@ func PathsForTag(db *sql.DB, name string) ([]string, error) {
 	if name == "" {
 		return nil, nil
 	}
+	liked := ""
+	if likedOnly {
+		liked = "tracks.liked=1 AND "
+	}
 	rows, err := db.Query(`
 SELECT tracks.path
 FROM track_tags
 JOIN tracks ON tracks.path = track_tags.path
-WHERE replace(trim(track_tags.tag), char(0), '') = ?
+WHERE `+liked+`replace(trim(track_tags.tag), char(0), '') = ?
 ORDER BY tracks.path`, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		out = append(out, path)
+	}
+	return out, rows.Err()
+}
+
+// PathsForArtist returns tracks credited to name.
+// likedOnly drops tracks that are not liked.
+func PathsForArtist(db *sql.DB, name string, likedOnly bool) ([]string, error) {
+	if db == nil || !Ready(db) {
+		return nil, nil
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, nil
+	}
+	lname := strings.ToLower(name)
+	liked := ""
+	if likedOnly {
+		liked = " AND liked=1"
+	}
+	rows, err := db.Query(`
+SELECT path, COALESCE(artist,'') FROM tracks
+WHERE lower(artist) LIKE ? ESCAPE '\'`+liked+`
+ORDER BY path`, likeEscape(lname))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var path, artist string
+		if err := rows.Scan(&path, &artist); err != nil {
+			return nil, err
+		}
+		if creditedTo(artist, lname) {
+			out = append(out, path)
+		}
+	}
+	return out, rows.Err()
+}
+
+// PathsForAlbum returns tracks on the album.
+// likedOnly drops tracks that are not liked.
+func PathsForAlbum(db *sql.DB, name string, likedOnly bool) ([]string, error) {
+	if db == nil || !Ready(db) {
+		return nil, nil
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, nil
+	}
+	liked := ""
+	if likedOnly {
+		liked = " AND liked=1"
+	}
+	rows, err := db.Query(`
+SELECT path FROM tracks
+WHERE lower(trim(COALESCE(album,''))) = lower(?)`+liked+`
+ORDER BY path`, name)
 	if err != nil {
 		return nil, err
 	}

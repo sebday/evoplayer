@@ -78,7 +78,7 @@ func TestLikedTagPlaylists(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	got, err := TagPlaylists(db)
+	got, err := TagPlaylists(db, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,12 +92,30 @@ func TestLikedTagPlaylists(t *testing.T) {
 	if _, ok := counts["31 Records"]; ok {
 		t.Fatalf("record label became a playlist: %+v", got)
 	}
-	paths, err := PathsForTag(db, "bass")
+	paths, err := PathsForTag(db, "bass", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(paths) != 3 {
 		t.Fatalf("paths = %v", paths)
+	}
+	likedOnly, err := TagPlaylists(db, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	likedCounts := map[string]int{}
+	for _, item := range likedOnly {
+		likedCounts[item.Name] = item.Count
+	}
+	if len(likedCounts) != 2 || likedCounts["bass"] != 2 || likedCounts["remix"] != 1 {
+		t.Fatalf("liked tag playlists = %+v", likedOnly)
+	}
+	likedPaths, err := PathsForTag(db, "bass", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(likedPaths) != 2 {
+		t.Fatalf("liked paths = %v", likedPaths)
 	}
 }
 

@@ -22,13 +22,13 @@ Item {
     }
 
     function fields() {
-        if (editor.view.tagField === "artist")
+        if (editor.view.tagField === "artist" || editor.view.tagField === "album")
             return [fieldOnly, tagsField]
         if (editor.view.tagField)
             return [fieldOnly]
         if (editor.view.tagMany)
             return [albumField, yearField]
-        return [titleField, artistField, albumField, yearField, genreField, tagsField]
+        return [titleField, artistField, albumField, yearField, genreField, labelField, tagsField]
     }
 
     function focusIndex(i) {
@@ -85,6 +85,7 @@ Item {
 
             Text {
                 width: parent.width
+                visible: editor.view.tagField !== "" || editor.view.tagMany
                 textFormat: Text.PlainText
                 text: editor.heading()
                 color: Theme.foreground
@@ -151,10 +152,19 @@ Item {
                 onEdited: function(text) { if (editor.view.tagGenre !== text) editor.view.tagGenre = text }
             }
             TagField {
+                id: labelField
+                visible: editor.view.tagField === "" && !editor.view.tagMany
+                label: "label"
+                index: 5
+                view: editor.view
+                value: editor.view.tagLabel
+                onEdited: function(text) { if (editor.view.tagLabel !== text) editor.view.tagLabel = text }
+            }
+            TagField {
                 id: tagsField
-                visible: editor.view.tagField === "artist" || (editor.view.tagField === "" && !editor.view.tagMany)
+                visible: editor.view.tagField === "artist" || editor.view.tagField === "album" || (editor.view.tagField === "" && !editor.view.tagMany)
                 label: "tags"
-                index: editor.view.tagField === "artist" ? 1 : 5
+                index: (editor.view.tagField === "artist" || editor.view.tagField === "album") ? 1 : 6
                 view: editor.view
                 value: editor.view.tagTags
                 onEdited: function(text) { if (editor.view.tagTags !== text) editor.view.tagTags = text }

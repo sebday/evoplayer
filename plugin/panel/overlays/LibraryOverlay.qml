@@ -17,7 +17,7 @@ Item {
             "cache": "Rebuild",
             "import": "Import",
             "art-maintain": "Artwork",
-            "download": "Sync likes",
+            "download": "Sync Likes",
             "download-url": "Download"
         }
         var name = String(view.libraryJob && view.libraryJob.name || "")
@@ -118,13 +118,16 @@ Item {
                     { title: "Rebuild", method: "library.cache", params: { force: true } },
                     { title: "Restart", method: "restart", params: {} },
                     { title: "Import", method: "library.import", params: {} },
-                    { title: "Sync likes", method: "library.soundcloud.download", params: { import: false } }
+                    { title: "Sync Likes", method: "library.soundcloud.download", params: { import: false } }
                 ]
 
                 Chip {
                     required property var modelData
                     text: modelData.title
+                    enabled: modelData.method !== "library.import" || (view.incomingFiles || []).length > 0
                     onActivated: {
+                        if (!enabled)
+                            return
                         if (modelData.method === "restart") {
                             view.restartPlayer()
                             return
@@ -134,6 +137,13 @@ Item {
                         view.startLibraryJob(modelData.method, modelData.params)
                     }
                 }
+            }
+
+            Chip {
+                text: "All Tracks"
+                toggle: true
+                on: !view.playlistLikedOnly
+                onActivated: view.togglePlaylistFilter()
             }
 
             Chip {
@@ -207,7 +217,7 @@ Item {
         anchors.bottom: parent.bottom
         height: {
             var rows = (view.incomingFiles || []).length
-            var listH = rows === 0 ? 36 : rows * 60
+            var listH = rows * 60
             var foldersH = view.incomingGenrePath !== "" ? 40 : 0
             var room = parent.height - tools.height - 10 - foldersH
             var listCap = Math.min(listH, Math.max(0, room - 180))
@@ -256,18 +266,6 @@ Item {
                 inverted: fileRow.filled
                 onActivated: view.toggleIncomingGenre(String(fileRow.modelData.path || ""))
             }
-        }
-
-        footer: Text {
-            width: files.width
-            visible: files.count === 0
-            leftPadding: 8
-            topPadding: 12
-            textFormat: Text.PlainText
-            text: "Incoming is empty."
-            color: Theme.muted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeS
         }
     }
 

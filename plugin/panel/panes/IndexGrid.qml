@@ -8,6 +8,7 @@ Item {
     required property var view
 
     readonly property bool artists: view.page && view.page.kind === "artists"
+    readonly property bool albums: view.page && view.page.kind === "albums"
 
     function readScroll() { return grid.contentY }
     function writeScroll(y) { grid.contentY = y }
@@ -84,7 +85,7 @@ Item {
             view: root.view
             row: modelData
             round: root.artists
-            starred: root.artists && !!modelData.starred
+            starred: (root.artists || root.albums) && !!modelData.starred
             selected: root.view.pane === "playlist" && !root.view.textCapture && index === root.view.indexIdx
             onActivated: {
                 root.view.indexIdx = index

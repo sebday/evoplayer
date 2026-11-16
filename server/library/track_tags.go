@@ -69,11 +69,15 @@ func UpdateTrackTags(env Env, path string, patch TrackTagsPatch) (Track, error) 
 	})
 }
 
-// UpdateArtistTags writes the artist and the tag list on each path in one pass.
-func UpdateArtistTags(env Env, artist, tagList string, paths []string) (int, error) {
+// UpdateFieldTags writes one tag field and the tag list on each path in one pass.
+func UpdateFieldTags(env Env, field, value, tagList string, paths []string) (int, error) {
+	key, err := fieldWriteKey(field)
+	if err != nil {
+		return 0, err
+	}
 	fields := map[string]string{
-		"artist": strings.TrimSpace(artist),
-		"tags":   strings.TrimSpace(tagList),
+		key:    strings.TrimSpace(value),
+		"tags": strings.TrimSpace(tagList),
 	}
 	n := 0
 	seen := map[string]struct{}{}

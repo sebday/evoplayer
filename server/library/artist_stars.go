@@ -7,12 +7,12 @@ import (
 	"strings"
 )
 
-func artistStarsPath(env Env) string {
-	return filepath.Join(env.StateDir, "artist-stars.json")
+func namedStarsPath(env Env, file string) string {
+	return filepath.Join(env.StateDir, file)
 }
 
-func loadArtistStars(env Env) ([]string, error) {
-	raw, err := os.ReadFile(artistStarsPath(env))
+func loadNamedStars(env Env, file string) ([]string, error) {
+	raw, err := os.ReadFile(namedStarsPath(env, file))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return []string{}, nil
@@ -26,7 +26,7 @@ func loadArtistStars(env Env) ([]string, error) {
 	return names, nil
 }
 
-func saveArtistStars(env Env, names []string) error {
+func saveNamedStars(env Env, file string, names []string) error {
 	if env.StateDir == "" {
 		return os.ErrInvalid
 	}
@@ -40,11 +40,11 @@ func saveArtistStars(env Env, names []string) error {
 	if err != nil {
 		return err
 	}
-	return WriteFileAtomic(artistStarsPath(env), append(raw, '\n'), 0o644)
+	return WriteFileAtomic(namedStarsPath(env, file), append(raw, '\n'), 0o644)
 }
 
-func artistStarSet(env Env) map[string]bool {
-	names, err := loadArtistStars(env)
+func namedStarSet(env Env, file string) map[string]bool {
+	names, err := loadNamedStars(env, file)
 	if err != nil {
 		return map[string]bool{}
 	}
@@ -58,17 +58,16 @@ func artistStarSet(env Env) map[string]bool {
 	return out
 }
 
-func artistStarred(env Env, name string) bool {
-	return artistStarSet(env)[strings.ToLower(strings.TrimSpace(name))]
+func namedStarred(env Env, file, name string) bool {
+	return namedStarSet(env, file)[strings.ToLower(strings.TrimSpace(name))]
 }
 
-// ToggleArtistStar favorites or unfavorites an artist by name.
-func ToggleArtistStar(env Env, name string) (bool, error) {
+func toggleNamedStar(env Env, file, name string) (bool, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false, os.ErrInvalid
 	}
-	names, err := loadArtistStars(env)
+	names, err := loadNamedStars(env, file)
 	if err != nil {
 		return false, err
 	}
@@ -83,7 +82,75 @@ func ToggleArtistStar(env Env, name string) (bool, error) {
 		kept = append(kept, cur)
 	}
 	if found {
-		return false, saveArtistStars(env, kept)
+		return false, saveNamedStars(env, file, kept)
 	}
-	return true, saveArtistStars(env, append(kept, name))
+	return true, saveNamedStars(env, file, append(kept, name))
+}
+
+func artistStarSet(env Env) map[string]bool {
+	return namedStarSet(env, "artist-stars.json")
+}
+
+func starNames(env Env, file string) []string {
+	names, err := loadNamedStars(env, file)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	seen := map[string]struct{}{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		key := strings.ToLower(name)
+		if key == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, name)
+	}
+	return out
+}
+
+// ArtistStarNames is the saved spelling of each favorited artist.
+func ArtistStarNames(env Env) []string {
+	return starNames(env, "artist-stars.json")
+}
+
+// AlbumStarNames is the saved spelling of each favorited album.
+func AlbumStarNames(env Env) []string {
+	return starNames(env, "album-stars.json")
+}
+
+func artistStarred(env Env, name string) bool {
+	return namedStarred(env, "artist-stars.json", name)
+}
+
+// ArtistStarred reports whether the artist is favorited.
+func ArtistStarred(env Env, name string) bool {
+	return artistStarred(env, name)
+}
+
+// ToggleArtistStar favorites or unfavorites an artist by name.
+func ToggleArtistStar(env Env, name string) (bool, error) {
+	return toggleNamedStar(env, "artist-stars.json", name)
+}
+
+func albumStarSet(env Env) map[string]bool {
+	return namedStarSet(env, "album-stars.json")
+}
+
+func albumStarred(env Env, name string) bool {
+	return namedStarred(env, "album-stars.json", name)
+}
+
+// AlbumStarred reports whether the album is favorited.
+func AlbumStarred(env Env, name string) bool {
+	return albumStarred(env, name)
+}
+
+// ToggleAlbumStar favorites or unfavorites an album by name.
+func ToggleAlbumStar(env Env, name string) (bool, error) {
+	return toggleNamedStar(env, "album-stars.json", name)
 }

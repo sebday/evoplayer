@@ -103,7 +103,7 @@ func ListIndex(env Env) ([]IndexItem, error) {
 				Starred: isStarred(stars, genre.Name),
 			})
 		}
-		tagLists, err := library.TagPlaylists(db)
+		tagLists, err := library.TagPlaylists(db, LikedOnly(env))
 		if err != nil {
 			return nil, err
 		}
@@ -117,10 +117,66 @@ func ListIndex(env Env) ([]IndexItem, error) {
 				Kind:    "tag",
 				Starred: isStarred(stars, tag.Name),
 			})
+			seen[tag.Name] = struct{}{}
+		}
+		if err := appendStarredPlaylists(env, db, stars, seen, &out, LikedOnly(env)); err != nil {
+			return nil, err
 		}
 	}
 	out = append(out, listExtraPlaylists(env, stars, out)...)
 	return out, nil
+}
+
+func appendStarredPlaylists(env Env, db *sql.DB, stars []string, seen map[string]struct{}, out *[]IndexItem, likedOnly bool) error {
+	if err := appendNamedPlaylists(db, stars, seen, out, "artist", library.ArtistStarNames(env.Env), likedOnly, library.PathsForArtist); err != nil {
+		return err
+	}
+	return appendNamedPlaylists(db, stars, seen, out, "album", library.AlbumStarNames(env.Env), likedOnly, library.PathsForAlbum)
+}
+
+func appendNamedPlaylists(db *sql.DB, stars []string, seen map[string]struct{}, out *[]IndexItem, kind string, names []string, likedOnly bool, pathsFor func(*sql.DB, string, bool) ([]string, error)) error {
+	for _, name := range names {
+		if nameTaken(seen, name) || reservedPlaylist(name) {
+			continue
+		}
+		paths, err := pathsFor(db, name, likedOnly)
+		if err != nil {
+			return err
+		}
+		if len(paths) == 0 {
+			continue
+		}
+		seen[name] = struct{}{}
+		*out = append(*out, IndexItem{
+			Name:    name,
+			Count:   len(paths),
+			Kind:    kind,
+			Starred: isStarred(stars, name),
+		})
+	}
+	return nil
+}
+
+func nameTaken(seen map[string]struct{}, name string) bool {
+	if _, ok := seen[name]; ok {
+		return true
+	}
+	low := strings.ToLower(name)
+	for have := range seen {
+		if strings.ToLower(have) == low {
+			return true
+		}
+	}
+	return false
+}
+
+func reservedPlaylist(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "all", "current", "mixes", "favorites":
+		return true
+	default:
+		return false
+	}
 }
 
 func TracksPageFor(env Env, name string, offset, limit int) (TracksPage, error) {
@@ -396,10 +452,28 @@ SELECT path FROM tracks WHERE liked=1 ORDER BY path LIMIT ? OFFSET ?`, limit, of
 		} else if len(paths) > 0 {
 			return paginatePaths(env, paths, name, offset, limit), true, nil
 		}
-		if paths, err := library.PathsForTag(db, name); err != nil {
+		if paths, err := library.PathsForTag(db, name, LikedOnly(env)); err != nil {
 			return TracksPage{}, true, err
 		} else if len(paths) > 0 {
 			return paginatePaths(env, paths, name, offset, limit), true, nil
+		}
+		if library.ArtistStarred(env.Env, name) {
+			paths, err := library.PathsForArtist(db, name, LikedOnly(env))
+			if err != nil {
+				return TracksPage{}, true, err
+			}
+			if len(paths) > 0 {
+				return paginatePaths(env, paths, name, offset, limit), true, nil
+			}
+		}
+		if library.AlbumStarred(env.Env, name) {
+			paths, err := library.PathsForAlbum(db, name, LikedOnly(env))
+			if err != nil {
+				return TracksPage{}, true, err
+			}
+			if len(paths) > 0 {
+				return paginatePaths(env, paths, name, offset, limit), true, nil
+			}
 		}
 	}
 	return TracksPage{}, false, nil
