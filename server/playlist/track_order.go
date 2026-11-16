@@ -97,6 +97,42 @@ func applyPathOrder(paths, saved []string) []string {
 	return out
 }
 
+// forgetTrackPath drops a deleted file from every saved playlist order.
+func forgetTrackPath(env Env, path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" || env.StateDir == "" {
+		return nil
+	}
+	orders, err := loadTrackOrders(env)
+	if err != nil || len(orders) == 0 {
+		return err
+	}
+	changed := false
+	for name, paths := range orders {
+		next := make([]string, 0, len(paths))
+		for _, p := range paths {
+			if p == path {
+				changed = true
+				continue
+			}
+			next = append(next, p)
+		}
+		if len(next) == 0 {
+			delete(orders, name)
+			continue
+		}
+		orders[name] = next
+	}
+	if !changed {
+		return nil
+	}
+	raw, err := json.Marshal(orders)
+	if err != nil {
+		return err
+	}
+	return library.WriteFileAtomic(trackOrderPath(env), append(raw, '\n'), 0o644)
+}
+
 func cleanPaths(paths []string) []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(paths))

@@ -326,6 +326,24 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		status.InvalidateMeta(res.From)
 		status.InvalidateMeta(res.To)
 		return res, nil
+	case "library.track.delete":
+		var p struct {
+			Path string `json:"path"`
+		}
+		if err := ipc.DecodeParams(req.Params, &p); err != nil {
+			return nil, err
+		}
+		deleted, err := library.DeleteTrack(libEnv, p.Path)
+		if err := wrapJobErr(err); err != nil {
+			return nil, err
+		}
+		_ = playlist.OnTrackDeleted(playlist.EnvFrom(d.env()), deleted)
+		if err := d.Actor.DropPath(deleted); err != nil {
+			return nil, err
+		}
+		_ = d.saveCurrentQueue()
+		status.InvalidateMeta(deleted)
+		return map[string]any{"path": deleted}, nil
 	case "library.track.tags.get":
 		var p struct {
 			Path string `json:"path"`

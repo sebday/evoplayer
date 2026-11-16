@@ -48,3 +48,31 @@ func TestSetTrackOrderRoundTrip(t *testing.T) {
 		t.Fatalf("paths = %v, want %v", got, want)
 	}
 }
+
+func TestForgetTrackPathDropsSavedOrder(t *testing.T) {
+	env := Env{}
+	env.StateDir = filepath.Join(t.TempDir(), "state")
+	if err := SetTrackOrder(env, "Drum & Bass", []string{"/music/b.mp3", "/music/a.mp3"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetTrackOrder(env, "House", []string{"/music/a.mp3", "/music/gone.mp3"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := forgetTrackPath(env, "/music/gone.mp3"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := orderedPaths(env, "Drum & Bass", []string{"/music/b.mp3", "/music/a.mp3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []string{"/music/b.mp3", "/music/a.mp3"}) {
+		t.Fatalf("kept order = %v", got)
+	}
+	house, err := orderedPaths(env, "House", []string{"/music/a.mp3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(house, []string{"/music/a.mp3"}) {
+		t.Fatalf("house order = %v", house)
+	}
+}

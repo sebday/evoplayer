@@ -6,6 +6,7 @@ Item {
     id: editor
 
     required property var view
+    property bool confirmDelete: false
 
     function fileName(path) {
         var s = String(path || "")
@@ -172,6 +173,72 @@ Item {
             Row {
                 width: parent.width
                 spacing: 8
+                visible: editor.showArt
+
+                Rectangle {
+                    width: folderText.implicitWidth + 28
+                    height: 32
+                    radius: 8
+                    color: folderArea.containsMouse ? Theme.foregroundSubtle : Theme.foregroundFaint
+
+                    Text {
+                        id: folderText
+                        anchors.centerIn: parent
+                        textFormat: Text.PlainText
+                        text: "Open folder"
+                        color: Theme.foreground
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeS
+                    }
+
+                    MouseArea {
+                        id: folderArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: editor.view.openTrackFolder()
+                    }
+                }
+
+                Rectangle {
+                    width: deleteText.implicitWidth + 28
+                    height: 32
+                    radius: 8
+                    color: editor.confirmDelete
+                        ? (deleteArea.containsMouse ? Theme.mixColors(Theme.liked, Theme.foreground, 0.18) : Theme.liked)
+                        : (deleteArea.containsMouse ? Theme.foregroundSubtle : Theme.fillUrgentSubtle)
+
+                    Text {
+                        id: deleteText
+                        anchors.centerIn: parent
+                        textFormat: Text.PlainText
+                        text: editor.confirmDelete ? "Delete?" : "Delete"
+                        color: editor.confirmDelete ? Theme.background : Theme.liked
+                        font.family: Theme.fontFamily
+                        font.bold: editor.confirmDelete
+                        font.pixelSize: Theme.fontSizeS
+                    }
+
+                    MouseArea {
+                        id: deleteArea
+                        anchors.fill: parent
+                        enabled: !editor.view.tagBusy
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: {
+                            if (!editor.confirmDelete) {
+                                editor.confirmDelete = true
+                                return
+                            }
+                            editor.confirmDelete = false
+                            editor.view.deleteTrack()
+                        }
+                    }
+                }
+            }
+            Row {
+                width: parent.width
+                spacing: 8
                 layoutDirection: Qt.RightToLeft
 
                 Rectangle {
@@ -320,13 +387,15 @@ Item {
 
     Connections {
         target: view
-        function onTagFocusChanged() {
-            if (view.mode === "tags")
-                editor.focusIndex(view.tagFocus)
-        }
         function onModeChanged() {
+            editor.confirmDelete = false
             if (view.mode === "tags")
                 Qt.callLater(function() { editor.focusIndex(view.tagFocus) })
+        }
+        function onTagFocusChanged() {
+            editor.confirmDelete = false
+            if (view.mode === "tags")
+                editor.focusIndex(view.tagFocus)
         }
     }
 }

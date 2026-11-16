@@ -1,12 +1,20 @@
 # Evoplayer
 
-Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. The panel is Quickshell with a Go backend.
+Inspired by Bjarne's terminal music player, I made a local player with just the features I want and use. I used Soundcloud for years and ignored my mp3 collection. This is so I enjoy my local library again.
 
-The top of the panel is transport, a like, settings, then Now Playing, Playlists, and Genres, with search on the right. Now Playing is the queue under a hero: title, label, year, the waveform, and the cover. Liked tracks, genre, year, and length line up on each row. Related SoundCloud tracks sit under the queue. Playlists are genres, tags, and favorited artists and albums. Search finds artists, albums, and tracks.
+The panel is Quickshell with a Go backend.
 
-I used Soundcloud for years and ignored my mp3 collection. This is so I listen to my local library again, update the album art and download new music from Youtube and Soundcloud into my library.
+Related tracks are pulled from Soundcloud and can be added to the local library.
 
-![Evoplayer](preview.png)
+Genres, Artists, Albums, Labels and Years are all linked into their own pages.
+
+Playlists are generated automatically from tags and likes. You can tag artists and albums as well as individual tracks.
+
+
+
+![Now Playing](preview.png)
+
+![Artist](preview-artist.png)
 
 ## Layout
 

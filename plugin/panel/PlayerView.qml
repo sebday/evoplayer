@@ -3397,6 +3397,36 @@ Item {
         })
     }
 
+    function openTrackFolder() {
+        var path = String(tagPath || "")
+        var slash = path.lastIndexOf("/")
+        if (slash <= 0)
+            return
+        var script = pluginFile("bin/open-files")
+        if (!script)
+            return
+        Quickshell.execDetached(["/usr/bin/bash", script, path.slice(0, slash)])
+    }
+
+    function deleteTrack() {
+        var path = String(tagPath || "")
+        if (!path || tagBusy || tagMany || tagField !== "")
+            return
+        tagBusy = true
+        ipc("library.track.delete", { path: path }, function() {
+            root.tagBusy = false
+            root.err = ""
+            root.closeMode()
+            root.loadQueue()
+            root.refreshPlaylistCounts()
+            root.reloadPage()
+            if (root.searchActive())
+                root.runSearch()
+        }, function() {
+            root.tagBusy = false
+        })
+    }
+
     function openTags() {
         if ((pane !== "playlist" && pane !== "search") || mode !== "queue")
             return

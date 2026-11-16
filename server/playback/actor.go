@@ -357,6 +357,54 @@ func (a *Actor) QueuePaths() []string {
 	return out
 }
 
+// DropPath removes path from the queue. If it is the loaded track, playback
+// moves to the next queue item and keeps the current pause state.
+func (a *Actor) DropPath(path string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	return a.dispatchErr(func() error {
+		a.mu.Lock()
+		next := make([]string, 0, len(a.queue))
+		removedBefore := 0
+		for i, p := range a.queue {
+			if p == path {
+				if i < a.index {
+					removedBefore++
+				}
+				continue
+			}
+			next = append(next, p)
+		}
+		removed := len(a.queue) - len(next)
+		current := a.path == path
+		if removed == 0 && !current {
+			a.mu.Unlock()
+			return nil
+		}
+		if removed > 0 {
+			a.queue = next
+			a.shuffleOrd = nil
+			a.index -= removedBefore
+			if a.index >= len(a.queue) {
+				a.index = len(a.queue) - 1
+			}
+			if a.index < 0 {
+				a.index = 0
+			}
+			a.bumpQueueRevLocked()
+		}
+		paused := a.paused
+		a.mu.Unlock()
+		if current {
+			return a.loadCurrentAt(0, paused)
+		}
+		a.emit()
+		return nil
+	})
+}
+
 func (a *Actor) RelocatePath(from, to string) error {
 	if from == "" || to == "" || from == to {
 		return nil
