@@ -65,6 +65,72 @@ Item {
         return Theme.muted
     }
 
+    function jobRunning() {
+        return !!(view.libraryJob && view.libraryJob.status === "running")
+    }
+
+    component LibraryRow: Item {
+        id: row
+
+        property string title: ""
+        property string detail: ""
+        property string action: ""
+        property bool toggle: false
+        property bool on: false
+        property bool ready: true
+        signal activated()
+
+        height: 52
+
+        Column {
+            anchors.left: parent.left
+            anchors.right: chip.left
+            anchors.rightMargin: 12
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: 2
+
+            Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: row.title
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeM
+                font.bold: true
+                elide: Text.ElideRight
+            }
+
+            Text {
+                width: parent.width
+                textFormat: Text.PlainText
+                text: row.detail
+                color: Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeS
+                elide: Text.ElideRight
+            }
+        }
+
+        Chip {
+            id: chip
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: row.action
+            enabled: row.ready
+            toggle: row.toggle
+            on: row.on
+            onActivated: row.activated()
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 1
+            color: Theme.foregroundFaint
+        }
+    }
+
     Rectangle {
         anchors.fill: parent
         color: Theme.background
@@ -104,49 +170,52 @@ Item {
         anchors.left: parent.left
         anchors.right: helpCol.left
         anchors.top: parent.top
+        anchors.topMargin: 8
         anchors.leftMargin: 8
         anchors.rightMargin: 16
-        spacing: 8
+        spacing: 0
 
-        Row {
+        LibraryRow {
             width: parent.width
-            height: 22
-            spacing: 8
+            title: "Rebuild"
+            detail: "Rescan the library"
+            action: "Rebuild"
+            ready: !pane.jobRunning()
+            onActivated: view.startLibraryJob("library.cache", { force: true })
+        }
 
-            Repeater {
-                model: [
-                    { title: "Rebuild", method: "library.cache", params: { force: true } },
-                    { title: "Import", method: "library.import", params: {} },
-                    { title: "Sync Likes", method: "library.soundcloud.download", params: { import: false } }
-                ]
+        LibraryRow {
+            width: parent.width
+            title: "Import"
+            detail: "Bring in files from incoming"
+            action: "Import"
+            ready: !pane.jobRunning() && (view.incomingFiles || []).length > 0
+            onActivated: view.startLibraryJob("library.import", {})
+        }
 
-                Chip {
-                    required property var modelData
-                    text: modelData.title
-                    enabled: modelData.method !== "library.import" || (view.incomingFiles || []).length > 0
-                    onActivated: {
-                        if (!enabled)
-                            return
-                        if (view.libraryJob && view.libraryJob.status === "running")
-                            return
-                        view.startLibraryJob(modelData.method, modelData.params)
-                    }
-                }
-            }
+        LibraryRow {
+            width: parent.width
+            title: "Sync Likes"
+            detail: "Download liked SoundCloud tracks"
+            action: "Sync Likes"
+            ready: !pane.jobRunning()
+            onActivated: view.startLibraryJob("library.soundcloud.download", { import: false })
+        }
 
-            Chip {
-                text: "All Tracks"
-                toggle: true
-                on: !view.playlistLikedOnly
-                onActivated: view.togglePlaylistFilter()
-            }
+        LibraryRow {
+            width: parent.width
+            title: "All Tracks"
+            detail: "Include every track in playlists"
+            action: "All Tracks"
+            toggle: true
+            on: !view.playlistLikedOnly
+            onActivated: view.togglePlaylistFilter()
+        }
 
-            Chip {
-                visible: view.libraryJob && view.libraryJob.status === "running"
-                text: "stop"
-                danger: true
-                onActivated: view.cancelLibraryJob()
-            }
+        Item {
+            width: parent.width
+            visible: pane.jobActive()
+            height: visible ? 10 : 0
         }
 
         Rectangle {
@@ -178,13 +247,21 @@ Item {
                     }
 
                     Text {
-                        width: Math.max(0, parent.width - jobName.implicitWidth - parent.spacing)
+                        width: Math.max(0, parent.width - jobName.implicitWidth - (stopChip.visible ? stopChip.width + parent.spacing : 0) - parent.spacing)
                         textFormat: Text.PlainText
                         text: pane.jobDetail()
                         color: view.libraryJob && view.libraryJob.status === "error" ? Theme.liked : Theme.muted
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontSizeS
                         elide: Text.ElideRight
+                    }
+
+                    Chip {
+                        id: stopChip
+                        visible: pane.jobRunning()
+                        text: "stop"
+                        danger: true
+                        onActivated: view.cancelLibraryJob()
                     }
                 }
 
@@ -211,25 +288,20 @@ Item {
         anchors.left: parent.left
         anchors.right: helpCol.left
         anchors.bottom: parent.bottom
-        height: {
-            var rows = (view.incomingFiles || []).length
-            var listH = rows * 60
-            var foldersH = view.incomingGenrePath !== "" ? 40 : 0
-            var room = parent.height - tools.height - 10 - foldersH
-            var listCap = Math.min(listH, Math.max(0, room - 180))
-            return Math.max(180, room - listCap) / 2
-        }
+        height: 168
         view: pane.view
     }
 
     ListView {
         id: files
+        readonly property bool open: (view.incomingFiles || []).length > 0
+        visible: open
         anchors.top: tools.bottom
-        anchors.topMargin: 10
+        anchors.topMargin: open ? 10 : 0
         anchors.left: parent.left
         anchors.right: helpCol.left
         anchors.rightMargin: 8
-        anchors.bottom: folders.top
+        anchors.bottom: open ? folders.top : tools.bottom
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         model: view.incomingFiles || []
@@ -271,7 +343,7 @@ Item {
         anchors.left: parent.left
         anchors.right: helpCol.left
         anchors.bottom: eqPanel.top
-        anchors.bottomMargin: 16
+        anchors.bottomMargin: visible ? 8 : 0
         anchors.leftMargin: 8
         anchors.rightMargin: 16
         height: visible ? 40 : 0
