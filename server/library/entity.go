@@ -206,6 +206,9 @@ FROM tracks WHERE `
 	if kind == "album" {
 		page.Starred = albumStarred(env, page.Name)
 	}
+	if kind == "label" {
+		page.Starred = labelStarred(env, page.Name)
+	}
 	sortEntityTracks(matched)
 	summarizeEntity(env, &page, matched)
 	return page, nil
@@ -489,10 +492,13 @@ WHERE trim(COALESCE(` + col + `,'')) != '' ORDER BY path`)
 		sort.SliceStable(out, func(i, j int) bool {
 			return out[i].Name > out[j].Name
 		})
-	} else if kind == "artist" || kind == "album" {
+	} else if kind == "artist" || kind == "album" || kind == "label" {
 		stars := artistStarSet(env)
 		if kind == "album" {
 			stars = albumStarSet(env)
+		}
+		if kind == "label" {
+			stars = labelStarSet(env)
 		}
 		for i := range out {
 			out[i].Starred = stars[strings.ToLower(out[i].Name)]

@@ -16,7 +16,6 @@ func CmdArt(env paths.Env, args []string) error {
 	}
 	libEnv := library.EnvFrom(env)
 	jsonOut := false
-	scope := "track"
 	switch args[0] {
 	case "search":
 		path := ""
@@ -67,19 +66,17 @@ func CmdArt(env paths.Env, args []string) error {
 		}
 		return nil
 	case "set":
-		path, image, err := parseArtPathImage(args[1:])
+		clean, extra, scope, jsonOut := splitArtFlags(args[1:])
+		path, image, err := parseArtPathImage(clean)
 		if err != nil {
 			return err
 		}
-		for _, a := range args[1:] {
-			if a == "--album" {
-				scope = "album"
-			}
-			if a == "--json" {
-				jsonOut = true
-			}
+		var out library.InstallResult
+		if len(extra) > 0 {
+			out, err = library.InstallImageList(libEnv, image, append([]string{path}, extra...))
+		} else {
+			out, err = library.InstallImage(libEnv, path, image, scope)
 		}
-		out, err := library.InstallImage(libEnv, path, image, scope)
 		if err != nil {
 			return err
 		}
@@ -89,19 +86,17 @@ func CmdArt(env paths.Env, args []string) error {
 		fmt.Println(out.Art)
 		return nil
 	case "apply":
-		path, url, err := parseArtPathURL(args[1:])
+		clean, extra, scope, jsonOut := splitArtFlags(args[1:])
+		path, url, err := parseArtPathURL(clean)
 		if err != nil {
 			return err
 		}
-		for _, a := range args[1:] {
-			if a == "--album" {
-				scope = "album"
-			}
-			if a == "--json" {
-				jsonOut = true
-			}
+		var out library.InstallResult
+		if len(extra) > 0 {
+			out, err = library.ApplyImageURLList(libEnv, url, append([]string{path}, extra...))
+		} else {
+			out, err = library.ApplyImageURL(libEnv, path, url, scope)
 		}
-		out, err := library.ApplyImageURL(libEnv, path, url, scope)
 		if err != nil {
 			return err
 		}
@@ -144,6 +139,26 @@ func CmdArt(env paths.Env, args []string) error {
 	default:
 		return fmt.Errorf("unknown art command: %s", args[0])
 	}
+}
+
+func splitArtFlags(args []string) (clean, extra []string, scope string, jsonOut bool) {
+	scope = "track"
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--json":
+			jsonOut = true
+		case "--album":
+			scope = "album"
+		case "--with":
+			if i+1 < len(args) {
+				extra = append(extra, args[i+1])
+				i++
+			}
+		default:
+			clean = append(clean, args[i])
+		}
+	}
+	return clean, extra, scope, jsonOut
 }
 
 func parseArtPath(args []string) (string, error) {

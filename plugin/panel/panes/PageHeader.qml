@@ -57,6 +57,13 @@ Column {
             source: hero.liveTrack ? (hero.liveArt || hero.info.blur || "") : (hero.info.blur || "")
         }
 
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.RightButton
+            enabled: hero.pageKind === "album"
+            onClicked: hero.view.openAlbumEdit()
+        }
+
         Column {
             id: textCol
             anchors.left: parent.left
@@ -176,7 +183,7 @@ Column {
 
                 Text {
                     id: artistFav
-                    visible: hero.pageKind === "artist" || hero.pageKind === "album"
+                    visible: hero.pageKind === "artist" || hero.pageKind === "album" || hero.pageKind === "label"
                     topPadding: 8
                     textFormat: Text.PlainText
                     text: "♥"
@@ -196,7 +203,7 @@ Column {
             Row {
                 width: parent.width
                 spacing: 6
-                visible: hero.info.artist !== "" || hero.info.album !== ""
+                visible: hero.info.artist !== "" || hero.info.album !== "" || hero.info.label !== "" || hero.info.year !== ""
                 clip: true
 
                 LinkText {
@@ -206,13 +213,13 @@ Column {
                     hoverColor: Theme.border
                     font.pixelSize: Theme.fontSizeM
                     font.bold: true
-                    width: Math.min(implicitWidth, parent.width * 0.5)
+                    width: Math.min(implicitWidth, parent.width * 0.4)
                     onActivated: hero.view.openArtist(text)
                     onContextActivated: hero.view.openFieldTags("artist", text)
                 }
 
                 Text {
-                    visible: hero.info.artist !== "" && hero.info.album !== ""
+                    visible: hero.info.artist !== "" && (hero.info.album !== "" || hero.info.label !== "")
                     textFormat: Text.PlainText
                     text: "·"
                     color: Theme.muted
@@ -224,8 +231,26 @@ Column {
                     visible: text !== ""
                     text: hero.info.album
                     font.pixelSize: Theme.fontSizeM
-                    width: Math.min(implicitWidth, parent.width * 0.3)
+                    width: Math.min(implicitWidth, parent.width * 0.25)
                     onActivated: hero.view.openAlbum(text, hero.info.path)
+                }
+
+                Text {
+                    visible: hero.info.album !== "" && hero.info.label !== ""
+                    textFormat: Text.PlainText
+                    text: "·"
+                    color: Theme.muted
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeM
+                }
+
+                LinkText {
+                    visible: text !== ""
+                    text: hero.info.label
+                    font.pixelSize: Theme.fontSizeM
+                    width: Math.min(implicitWidth, parent.width * 0.25)
+                    onActivated: hero.view.openLabel(text)
+                    onContextActivated: hero.view.openFieldTags("label", text)
                 }
 
                 Text {
@@ -302,14 +327,18 @@ Column {
             anchors.right: parent.right
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            anchors.rightMargin: hero.queueHeader ? 0 : 18
             width: banner.width > 520 ? height : 0
             visible: width > 0
 
             Cover {
                 anchors.fill: parent
                 visible: hero.liveTrack || hero.info.mosaic.length === 0
-                source: hero.liveTrack ? (hero.liveArt || hero.info.art || "") : (hero.info.art || "")
+                source: {
+                    var url = hero.liveTrack ? (hero.liveArt || hero.info.art || "") : (hero.info.art || "")
+                    if (url && hero.view.artEpoch)
+                        url += "#" + hero.view.artEpoch
+                    return url
+                }
                 round: hero.liveTrack ? false : hero.info.round
                 name: hero.liveTrack ? (hero.view.player.title || hero.info.title) : hero.info.title
                 decodeSize: 400
@@ -339,14 +368,15 @@ Column {
             DropArea {
                 id: drop
                 anchors.fill: parent
-                enabled: hero.queueHeader || hero.liveTrack
+                enabled: hero.queueHeader || hero.liveTrack || hero.pageKind === "album"
                 onDropped: function(dropEvent) {
                     var raw = ""
                     if (dropEvent.hasUrls && dropEvent.urls && dropEvent.urls.length)
                         raw = String(dropEvent.urls[0])
                     else if (dropEvent.text)
                         raw = String(dropEvent.text)
-                    if (hero.view.dropArt(raw))
+                    var ok = hero.pageKind === "album" ? hero.view.dropAlbumArt(raw) : hero.view.dropArt(raw)
+                    if (ok)
                         dropEvent.accept(Qt.CopyAction)
                 }
             }
@@ -366,6 +396,14 @@ Column {
                 enabled: (hero.queueHeader || hero.liveTrack) && hero.view.trackPath !== ""
                 cursorShape: Qt.PointingHandCursor
                 onClicked: hero.view.openArt(hero.view.trackPath)
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                z: 2
+                acceptedButtons: Qt.RightButton
+                enabled: hero.pageKind === "album"
+                onClicked: hero.view.openAlbumEdit()
             }
         }
     }

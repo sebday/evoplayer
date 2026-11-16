@@ -47,3 +47,21 @@ func TestToggleAlbumStar(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestToggleLabelStar(t *testing.T) {
+	env := Env{StateDir: t.TempDir()}
+	on, err := ToggleLabelStar(env, "Metalheadz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !on || !labelStarred(env, "metalheadz") {
+		t.Fatalf("expected favorite, on=%v", on)
+	}
+	on, err = ToggleLabelStar(env, "Metalheadz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if on || labelStarred(env, "Metalheadz") {
+		t.Fatal("expected unfavorite")
+	}
+}

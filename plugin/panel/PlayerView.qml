@@ -113,6 +113,7 @@ Item {
     property var searchHits: []
     property var searchArtists: []
     property var searchAlbums: []
+    property var searchLabels: []
     property int searchGen: 0
 
     // An open artist, album, genre, or year page, or the artists / genres directory.
@@ -170,6 +171,7 @@ Item {
     property bool artRestart: false
     property string artNextQuery: ""
     property bool artFromDrop: false
+    property bool artDropAlbum: false
     property string artPreview: ""
 
     property var moveFolders: []
@@ -188,6 +190,11 @@ Item {
     property string tagLabel: ""
     property string tagTags: ""
     property string tagTagsInitial: ""
+    property bool tagAlbumEdit: false
+    property string tagAlbumInitial: ""
+    property string tagYearInitial: ""
+    property string tagGenreInitial: ""
+    property string tagLabelInitial: ""
     property string tagField: ""
     property string tagFieldValue: ""
     property var tagPaths: []
@@ -1820,6 +1827,7 @@ Item {
             searchHits = []
             searchArtists = []
             searchAlbums = []
+            searchLabels = []
             searchGen++
             textCapture = false
         }
@@ -1905,17 +1913,22 @@ Item {
     function openArtist(name) { openPage("artist", name, "") }
 
     function togglePageFav() {
-        if (!page || (page.kind !== "artist" && page.kind !== "album"))
+        if (!page || (page.kind !== "artist" && page.kind !== "album" && page.kind !== "label"))
             return
         var name = String(page.name || "")
         if (!name)
             return
-        var album = page.kind === "album"
-        ipc(album ? "library.album.favorite" : "library.artist.favorite", { name: name }, function(data) {
+        var kind = page.kind
+        var method = "library.artist.favorite"
+        if (kind === "album")
+            method = "library.album.favorite"
+        else if (kind === "label")
+            method = "library.label.favorite"
+        ipc(method, { name: name }, function(data) {
             var starred = !!(data && data.starred)
-            if (root.page && root.page.kind === (album ? "album" : "artist") && String(root.page.name || "") === name && root.pageData)
+            if (root.page && root.page.kind === kind && String(root.page.name || "") === name && root.pageData)
                 root.pageData = Object.assign({}, root.pageData, { starred: starred })
-            root.placeIndexStar(album ? "album" : "artist", album ? "albums" : "artists", name, starred)
+            root.placeIndexStar(kind, kind, name, starred)
             root.loadPlaylistIndex()
         })
     }
@@ -1951,6 +1964,8 @@ Item {
         var slash = p.lastIndexOf("/")
         openPage("album", name, slash > 0 ? p.slice(0, slash) : "")
     }
+
+    function openLabel(name) { openPage("label", name, "") }
 
     function gotoSelected(kind) {
         var t = mode === "queue" && pane === "playlist" ? selectedListTrack() : null
@@ -2098,7 +2113,7 @@ Item {
     }
 
     function prefetchIndexes() {
-        var kinds = ["artist", "genre", "album"]
+        var kinds = ["artist", "genre", "album", "label"]
         for (var i = 0; i < kinds.length; i++)
             prefetchIndex(kinds[i])
     }
@@ -2115,6 +2130,8 @@ Item {
                 root.refreshSearchArtists()
             if (kind === "album" && root.searchActive())
                 root.refreshSearchAlbums()
+            if (kind === "label" && root.searchActive())
+                root.refreshSearchLabels()
             if (root.indexPage() && root.indexKind() === kind)
                 root.applyIndexFilter()
         })
@@ -2422,6 +2439,12 @@ Item {
             }
             var first = (d.releases || [])[0] || {}
             var album = page.kind === "album"
+            var labelName = ""
+            if (album) {
+                labelName = String(first.label || "")
+                if (!labelName && (d.labels || []).length === 1)
+                    labelName = String(d.labels[0].name || "")
+            }
             return {
                 kind: page.kind,
                 caption: page.kind,
@@ -2432,7 +2455,7 @@ Item {
                 mosaic: [],
                 artist: album ? String(first.artist || "") : "",
                 album: "",
-                label: album ? String(first.label || "") : "",
+                label: labelName,
                 year: album ? String(first.year || "") : "",
                 stats: stats.join("  ·  "),
                 path: "",
@@ -2495,9 +2518,7 @@ Item {
             togglePlay()
             return
         }
-        var rows = playlistRows()
-        showNowPlaying(false)
-        playTrackList(rows, "")
+        playTrackList(playlistRows(), "")
     }
 
     function headerAdd() {
@@ -3254,6 +3275,7 @@ Item {
         artQueryFocus = false
         artPicking = false
         tagMany = false
+        tagAlbumEdit = false
         tagField = ""
         tagPaths = []
         tagScope = ""
@@ -3280,6 +3302,7 @@ Item {
         searchHits = []
         searchArtists = []
         searchAlbums = []
+        searchLabels = []
         searchGen++
         pane = "playlist"
         textCapture = false
@@ -3303,12 +3326,15 @@ Item {
             searchHits = []
             searchArtists = []
             searchAlbums = []
+            searchLabels = []
             return
         }
         refreshSearchArtists()
         refreshSearchAlbums()
+        refreshSearchLabels()
         prefetchIndex("artist")
         prefetchIndex("album")
+        prefetchIndex("label")
         ipc("library.search", { mode: "search", query: q }, function(data) {
             if (gen !== root.searchGen)
                 return
@@ -3320,13 +3346,11 @@ Item {
         })
     }
 
-    function refreshSearchArtists() {
+    function indexMatches(kind) {
         var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "").toLowerCase()
-        if (!q) {
-            searchArtists = []
-            return
-        }
-        var all = (indexCache && indexCache.artist) || []
+        if (!q)
+            return []
+        var all = (indexCache && indexCache[kind]) || []
         var out = []
         for (var i = 0; i < all.length; i++) {
             var name = String(all[i] && all[i].name || "")
@@ -3345,35 +3369,19 @@ Item {
         })
         if (out.length > 8)
             out = out.slice(0, 8)
-        searchArtists = out
+        return out
+    }
+
+    function refreshSearchArtists() {
+        searchArtists = indexMatches("artist")
     }
 
     function refreshSearchAlbums() {
-        var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "").toLowerCase()
-        if (!q) {
-            searchAlbums = []
-            return
-        }
-        var all = (indexCache && indexCache.album) || []
-        var out = []
-        for (var i = 0; i < all.length; i++) {
-            var name = String(all[i] && all[i].name || "")
-            if (name.toLowerCase().indexOf(q) < 0)
-                continue
-            out.push(all[i])
-        }
-        out.sort(function(a, b) {
-            var an = String(a && a.name || "").toLowerCase()
-            var bn = String(b && b.name || "").toLowerCase()
-            var as = an.indexOf(q) === 0 ? 0 : 1
-            var bs = bn.indexOf(q) === 0 ? 0 : 1
-            if (as !== bs)
-                return as - bs
-            return (Number(b && b.count) || 0) - (Number(a && a.count) || 0)
-        })
-        if (out.length > 8)
-            out = out.slice(0, 8)
-        searchAlbums = out
+        searchAlbums = indexMatches("album")
+    }
+
+    function refreshSearchLabels() {
+        searchLabels = indexMatches("label")
     }
 
     function openMove() {
@@ -3470,6 +3478,7 @@ Item {
         tagField = ""
         tagFieldValue = ""
         tagScope = ""
+        tagAlbumEdit = false
         tagMany = paths.length > 1
         tagPaths = paths
         tagPath = path
@@ -3513,6 +3522,77 @@ Item {
         })
     }
 
+    function pageTrackPaths() {
+        var rows = pageTracks || []
+        var paths = []
+        for (var i = 0; i < rows.length; i++) {
+            var path = String(rows[i] && rows[i].path || "")
+            if (path)
+                paths.push(path)
+        }
+        return paths
+    }
+
+    function sharedTrackValue(rows, key) {
+        var value = ""
+        var seen = false
+        var list = rows || []
+        for (var i = 0; i < list.length; i++) {
+            if (!list[i] || !String(list[i].path || ""))
+                continue
+            var next = String(list[i][key] || "").replace(/^\s+|\s+$/g, "")
+            if (!seen) {
+                value = next
+                seen = true
+                continue
+            }
+            if (next !== value)
+                return ""
+        }
+        return seen ? value : ""
+    }
+
+    function openAlbumEdit() {
+        if (!page || String(page.kind) !== "album" || mode !== "queue")
+            return
+        var rows = pageTracks || []
+        var paths = pageTrackPaths()
+        if (!paths.length) {
+            err = "no tracks"
+            return
+        }
+        var name = String((pageData && pageData.name) || page.name || "").replace(/^\s+|\s+$/g, "")
+        tagAlbumEdit = true
+        tagField = ""
+        tagFieldValue = ""
+        tagMany = false
+        tagPaths = paths
+        tagPath = paths[0]
+        tagScope = name
+        tagAlbum = name
+        tagAlbumInitial = name
+        tagYear = sharedTrackValue(rows, "year")
+        tagYearInitial = tagYear
+        tagGenre = sharedTrackValue(rows, "genre")
+        tagGenreInitial = tagGenre
+        tagLabel = sharedTrackValue(rows, "label")
+        tagLabelInitial = tagLabel
+        tagTags = ""
+        tagTagsInitial = ""
+        tagBusy = false
+        tagFocus = 0
+        pushOverlay("tags")
+        ipc("library.track.tags.shared", { paths: paths }, function(data) {
+            if (!root.tagAlbumEdit || root.mode !== "tags")
+                return
+            data = data || {}
+            if (!data.tags_uniform || root.tagTags !== root.tagTagsInitial)
+                return
+            root.tagTags = String(data.tags || "")
+            root.tagTagsInitial = root.tagTags
+        })
+    }
+
     function openFieldTags(field, value) {
         field = String(field || "")
         value = String(value || "").replace(/^\s+|\s+$/g, "")
@@ -3526,6 +3606,7 @@ Item {
             }
             root.tagField = field
             root.tagFieldValue = value
+            root.tagAlbumEdit = false
             root.tagMany = false
             root.tagPaths = paths
             root.tagScope = paths.length + " tracks · " + value
@@ -3541,6 +3622,8 @@ Item {
     }
 
     function tagLimit() {
+        if (tagAlbumEdit)
+            return 5
         if (tagField === "artist" || tagField === "album")
             return 2
         if (tagField)
@@ -3563,6 +3646,50 @@ Item {
     function saveTags() {
         if (tagBusy)
             return
+        if (tagAlbumEdit) {
+            var albumPaths = tagPaths || []
+            if (!albumPaths.length)
+                return
+            var params = { paths: albumPaths }
+            var changed = false
+            if (tagAlbum !== tagAlbumInitial) {
+                params.album = tagAlbum
+                changed = true
+            }
+            if (tagYear !== tagYearInitial) {
+                params.year = tagYear
+                changed = true
+            }
+            if (tagGenre !== tagGenreInitial) {
+                params.genre = tagGenre
+                changed = true
+            }
+            if (tagLabel !== tagLabelInitial) {
+                params.label = tagLabel
+                changed = true
+            }
+            if (tagTags !== tagTagsInitial) {
+                params.tags = tagTags
+                changed = true
+            }
+            if (!changed) {
+                closeMode()
+                return
+            }
+            var nextAlbum = String(tagAlbum || "")
+            tagBusy = true
+            ipc("library.track.tags.set_album", params, function() {
+                root.tagBusy = false
+                root.err = ""
+                if (nextAlbum && root.page && String(root.page.kind) === "album" && nextAlbum !== String(root.page.name || ""))
+                    root.page = Object.assign({}, root.page, { name: nextAlbum })
+                root.closeMode()
+                root.afterLibraryEdit()
+            }, function() {
+                root.tagBusy = false
+            })
+            return
+        }
         if (tagField) {
             var fieldPaths = tagPaths || []
             if (!fieldPaths.length)
@@ -3705,7 +3832,24 @@ Item {
     }
 
     function dropArt(raw) {
-        var target = artEditPath()
+        return applyDroppedArt(raw, "", false, null)
+    }
+
+    function dropArtOnTrack(raw, path) {
+        return applyDroppedArt(raw, String(path || ""), false, null)
+    }
+
+    function dropAlbumArt(raw) {
+        var paths = pageTrackPaths()
+        if (!paths.length) {
+            err = "no tracks"
+            return false
+        }
+        return applyDroppedArt(raw, paths[0], true, paths)
+    }
+
+    function applyDroppedArt(raw, path, album, paths) {
+        var target = String(path || "") || artEditPath()
         if (!target) {
             err = "nothing playing"
             return false
@@ -3735,6 +3879,13 @@ Item {
             err = "not an image"
             return false
         }
+        var list = paths || []
+        for (var i = 0; i < list.length; i++) {
+            var extra = String(list[i] || "")
+            if (extra && extra !== target)
+                cmd.splice(cmd.length - 1, 0, "--with", extra)
+        }
+        artDropAlbum = !!album
         artFromDrop = true
         artBusy = true
         err = ""
@@ -3746,6 +3897,8 @@ Item {
     }
 
     function finishArt(ok, artPath, paths) {
+        var albumDrop = artDropAlbum
+        artDropAlbum = false
         artFromDrop = false
         artBusy = false
         if (!ok) {
@@ -3768,6 +3921,8 @@ Item {
             shownTracks = patchListArtPaths(shownTracks, targets, artPath)
             searchHits = patchListArtPaths(searchHits, targets, artPath)
             pageTracks = patchListArtPaths(pageTracks, targets, artPath)
+            if (albumDrop && page && String(page.kind) === "album")
+                pageData = Object.assign({}, pageData || {}, { art: artPath, thumb: artPath })
         }
         err = ""
         if (service && service.requestEnrich)

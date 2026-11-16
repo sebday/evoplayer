@@ -16,6 +16,8 @@ Item {
     }
 
     function heading() {
+        if (editor.view.tagAlbumEdit)
+            return editor.view.tagScope || editor.view.tagAlbum || "album"
         if (editor.view.tagField)
             return editor.view.tagScope
         if (editor.view.tagMany)
@@ -28,6 +30,8 @@ Item {
             return [fieldOnly, tagsField]
         if (editor.view.tagField)
             return [fieldOnly]
+        if (editor.view.tagAlbumEdit)
+            return [albumField, yearField, genreField, labelField, tagsField]
         if (editor.view.tagMany)
             return [albumField, yearField]
         return [titleField, artistField, albumField, yearField, genreField, labelField, tagsField]
@@ -43,7 +47,7 @@ Item {
         list[n].grab()
     }
 
-    readonly property bool showArt: view.tagField === "" && !view.tagMany
+    readonly property bool showArt: view.tagField === "" && !view.tagMany && !view.tagAlbumEdit
 
     Rectangle {
         anchors.fill: parent
@@ -87,7 +91,7 @@ Item {
 
             Text {
                 width: parent.width - 28
-                visible: editor.view.tagField !== "" || editor.view.tagMany
+                visible: editor.view.tagField !== "" || editor.view.tagMany || editor.view.tagAlbumEdit
                 textFormat: Text.PlainText
                 text: editor.heading()
                 color: Theme.foreground
@@ -110,7 +114,7 @@ Item {
             }
             TagField {
                 id: titleField
-                visible: editor.view.tagField === "" && !editor.view.tagMany
+                visible: editor.view.tagField === "" && !editor.view.tagMany && !editor.view.tagAlbumEdit
                 label: "title"
                 index: 0
                 view: editor.view
@@ -119,7 +123,7 @@ Item {
             }
             TagField {
                 id: artistField
-                visible: editor.view.tagField === "" && !editor.view.tagMany
+                visible: editor.view.tagField === "" && !editor.view.tagMany && !editor.view.tagAlbumEdit
                 label: "artist"
                 index: 1
                 view: editor.view
@@ -130,7 +134,7 @@ Item {
                 id: albumField
                 visible: editor.view.tagField === ""
                 label: "album"
-                index: editor.view.tagMany ? 0 : 2
+                index: editor.view.tagAlbumEdit ? 0 : (editor.view.tagMany ? 0 : 2)
                 view: editor.view
                 value: editor.view.tagAlbum
                 onEdited: function(text) { if (editor.view.tagAlbum !== text) editor.view.tagAlbum = text }
@@ -139,7 +143,7 @@ Item {
                 id: yearField
                 visible: editor.view.tagField === ""
                 label: "year"
-                index: editor.view.tagMany ? 1 : 3
+                index: editor.view.tagAlbumEdit ? 1 : (editor.view.tagMany ? 1 : 3)
                 view: editor.view
                 value: editor.view.tagYear
                 onEdited: function(text) { if (editor.view.tagYear !== text) editor.view.tagYear = text }
@@ -148,7 +152,7 @@ Item {
                 id: genreField
                 visible: editor.view.tagField === "" && !editor.view.tagMany
                 label: "genre"
-                index: 4
+                index: editor.view.tagAlbumEdit ? 2 : 4
                 view: editor.view
                 value: editor.view.tagGenre
                 onEdited: function(text) { if (editor.view.tagGenre !== text) editor.view.tagGenre = text }
@@ -157,7 +161,7 @@ Item {
                 id: labelField
                 visible: editor.view.tagField === "" && !editor.view.tagMany
                 label: "label"
-                index: 5
+                index: editor.view.tagAlbumEdit ? 3 : 5
                 view: editor.view
                 value: editor.view.tagLabel
                 onEdited: function(text) { if (editor.view.tagLabel !== text) editor.view.tagLabel = text }
@@ -167,7 +171,7 @@ Item {
                 visible: editor.view.tagField === "artist" || editor.view.tagField === "album" || (editor.view.tagField === "" && !editor.view.tagMany)
                 label: "tags"
                 suggest: true
-                index: (editor.view.tagField === "artist" || editor.view.tagField === "album") ? 1 : 6
+                index: editor.view.tagAlbumEdit ? 4 : ((editor.view.tagField === "artist" || editor.view.tagField === "album") ? 1 : 6)
                 view: editor.view
                 value: editor.view.tagTags
                 onEdited: function(text) { if (editor.view.tagTags !== text) editor.view.tagTags = text }

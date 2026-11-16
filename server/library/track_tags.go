@@ -101,12 +101,48 @@ func UpdateFieldTags(env Env, field, value, tagList string, paths []string) (int
 	return n, nil
 }
 
+// AlbumTagPatch writes only the fields that are set. A nil field is left alone.
+type AlbumTagPatch struct {
+	Album *string
+	Year  *string
+	Genre *string
+	Label *string
+	Tags  *string
+}
+
+// UpdateAlbumTags writes the set album fields on each path in one pass.
+func UpdateAlbumTags(env Env, paths []string, patch AlbumTagPatch) (int, error) {
+	fields := map[string]string{}
+	if patch.Album != nil {
+		fields["album"] = strings.TrimSpace(*patch.Album)
+	}
+	if patch.Year != nil {
+		fields["year"] = strings.TrimSpace(*patch.Year)
+	}
+	if patch.Genre != nil {
+		fields["genre"] = strings.TrimSpace(*patch.Genre)
+	}
+	if patch.Label != nil {
+		fields["publisher"] = strings.TrimSpace(*patch.Label)
+	}
+	if patch.Tags != nil {
+		fields["tags"] = strings.TrimSpace(*patch.Tags)
+	}
+	if len(fields) == 0 {
+		return 0, fmt.Errorf("no fields")
+	}
+	return writeFieldsOn(env, paths, fields)
+}
+
 // UpdateSharedTags writes album and year on each path and leaves the other tags alone.
 func UpdateSharedTags(env Env, paths []string, album, year string) (int, error) {
-	fields := map[string]string{
+	return writeFieldsOn(env, paths, map[string]string{
 		"album": strings.TrimSpace(album),
 		"year":  strings.TrimSpace(year),
-	}
+	})
+}
+
+func writeFieldsOn(env Env, paths []string, fields map[string]string) (int, error) {
 	n := 0
 	seen := map[string]struct{}{}
 	for _, path := range paths {

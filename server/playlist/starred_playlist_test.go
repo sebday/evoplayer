@@ -71,3 +71,78 @@ func TestStarredArtistAndAlbumPlaylists(t *testing.T) {
 		t.Fatalf("fabric tracks = %d", page.Total)
 	}
 }
+
+func TestStarredLabelPlaylist(t *testing.T) {
+	dir := t.TempDir()
+	music := filepath.Join(dir, "music")
+	dbPath := filepath.Join(dir, "library.sqlite3")
+	db, err := library.OpenDB(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	parent := filepath.Join(music, "Drum & Bass")
+	insert := `INSERT INTO tracks(path, genre, parent_dir, title, artist, album, label, liked) VALUES(?,?,?,?,?,?,?,?)`
+	rows := []struct {
+		path, artist, label string
+		liked               int
+	}{
+		{filepath.Join(parent, "a.mp3"), "Metalheadz", "Other", 1},
+		{filepath.Join(parent, "b.mp3"), "Goldie", "Metalheadz", 1},
+		{filepath.Join(parent, "c.mp3"), "Doc Scott", "Metalheadz", 0},
+	}
+	for _, row := range rows {
+		if _, err := db.Exec(insert, row.path, "Drum & Bass", parent, "t", row.artist, "Mdz", row.label, row.liked); err != nil {
+			t.Fatal(err)
+		}
+	}
+	env := Env{
+		Env: library.Env{
+			MusicRoot: music,
+			StateDir:  filepath.Join(dir, "state"),
+			LibraryDB: dbPath,
+		},
+		PlaylistDir: filepath.Join(dir, "playlists"),
+	}
+	if _, err := library.ToggleArtistStar(env.Env, "Metalheadz"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := library.ToggleLabelStar(env.Env, "Metalheadz"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := ListIndex(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := indexNamed(items, "Metalheadz")
+	if found == nil || found.Kind != "artist" || found.Count != 1 {
+		t.Fatalf("artist keeps the shared name: %+v", found)
+	}
+	if _, err := library.ToggleArtistStar(env.Env, "Metalheadz"); err != nil {
+		t.Fatal(err)
+	}
+	items, err = ListIndex(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found = indexNamed(items, "Metalheadz")
+	if found == nil || found.Kind != "label" || found.Count != 2 {
+		t.Fatalf("label playlist = %+v", found)
+	}
+	page, err := TracksPageFor(env, "Metalheadz", 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 {
+		t.Fatalf("label tracks = %d", page.Total)
+	}
+}
+
+func indexNamed(items []IndexItem, name string) *IndexItem {
+	for i := range items {
+		if items[i].Name == name {
+			return &items[i]
+		}
+	}
+	return nil
+}

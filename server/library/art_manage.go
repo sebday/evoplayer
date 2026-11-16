@@ -40,8 +40,41 @@ type InstallResult struct {
 }
 
 func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, error) {
-	if scope != "album" && scope != "track" {
+	return installImage(env, trackPath, imagePath, scope, nil)
+}
+
+// InstallImageList embeds one image in each path. The list is the album page,
+// including tracks that do not share a folder.
+func InstallImageList(env Env, imagePath string, paths []string) (InstallResult, error) {
+	if len(paths) == 0 {
+		return InstallResult{}, fmt.Errorf("path required")
+	}
+	return installImage(env, paths[0], imagePath, "tracks", paths)
+}
+
+func installImage(env Env, trackPath, imagePath, scope string, explicit []string) (InstallResult, error) {
+	if scope != "album" && scope != "track" && scope != "tracks" {
 		scope = "track"
+	}
+	paths := make([]string, 0, len(explicit))
+	if len(explicit) > 0 {
+		seen := map[string]struct{}{}
+		for _, p := range explicit {
+			p = filepath.Clean(strings.TrimSpace(p))
+			if p == "" || !audio.IsAudio(p) {
+				continue
+			}
+			if _, ok := seen[p]; ok {
+				continue
+			}
+			seen[p] = struct{}{}
+			paths = append(paths, p)
+		}
+		if len(paths) == 0 {
+			return InstallResult{}, fmt.Errorf("not an audio file")
+		}
+		trackPath = paths[0]
+		scope = "tracks"
 	}
 	if !audio.IsAudio(trackPath) {
 		return InstallResult{}, fmt.Errorf("not an audio file")
@@ -55,9 +88,11 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 	}
 	dir := filepath.Dir(trackPath)
 	dirFiles := dirAudioPaths(dir)
-	paths := []string{trackPath}
-	if scope == "album" {
-		paths = albumAudioPaths(env, trackPath, dirFiles)
+	if len(paths) == 0 {
+		paths = []string{trackPath}
+		if scope == "album" {
+			paths = albumAudioPaths(env, trackPath, dirFiles)
+		}
 	}
 	album := ""
 	if info, err := tags.ReadTags(trackPath); err == nil {
@@ -67,7 +102,7 @@ func InstallImage(env Env, trackPath, imagePath, scope string) (InstallResult, e
 	// album tag is set and every audio file in the directory shares it.
 	// Dump directories such as "soundcloud" are never albums.
 	forgetFolderArt(dir)
-	folderWide := scope == "album" && album != "" && !isDumpFolder(dir) && coversPaths(paths, dirFiles)
+	folderWide := (scope == "album" || scope == "tracks") && album != "" && !isDumpFolder(dir) && coversPaths(paths, dirFiles)
 	destArt := artPathTrack(env, trackPath)
 	if folderWide {
 		destArt = artPathFolder(env, trackPath)
@@ -224,11 +259,26 @@ func rememberTrackArt(env Env, path, art string) {
 }
 
 func ApplyImageURL(env Env, trackPath, imageURL, scope string) (InstallResult, error) {
+	return applyImageURL(env, imageURL, func(tmp string) (InstallResult, error) {
+		return InstallImage(env, trackPath, tmp, scope)
+	})
+}
+
+func ApplyImageURLList(env Env, imageURL string, paths []string) (InstallResult, error) {
+	return applyImageURL(env, imageURL, func(tmp string) (InstallResult, error) {
+		return InstallImageList(env, tmp, paths)
+	})
+}
+
+func applyImageURL(env Env, imageURL string, install func(tmp string) (InstallResult, error)) (InstallResult, error) {
+	if err := os.MkdirAll(env.ArtDir, 0o755); err != nil {
+		return InstallResult{}, err
+	}
 	tmp := filepath.Join(env.ArtDir, fmt.Sprintf(".fetch.%d.jpg", time.Now().UnixNano()))
 	if err := downloadArtURL(imageURL, tmp); err != nil {
 		return InstallResult{}, err
 	}
-	res, err := InstallImage(env, trackPath, tmp, scope)
+	res, err := install(tmp)
 	os.Remove(tmp)
 	return res, err
 }

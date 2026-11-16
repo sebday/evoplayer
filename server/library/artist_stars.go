@@ -154,3 +154,26 @@ func AlbumStarred(env Env, name string) bool {
 func ToggleAlbumStar(env Env, name string) (bool, error) {
 	return toggleNamedStar(env, "album-stars.json", name)
 }
+
+func labelStarSet(env Env) map[string]bool {
+	return namedStarSet(env, "label-stars.json")
+}
+
+func labelStarred(env Env, name string) bool {
+	return namedStarred(env, "label-stars.json", name)
+}
+
+// LabelStarNames is the saved spelling of each favorited label.
+func LabelStarNames(env Env) []string {
+	return starNames(env, "label-stars.json")
+}
+
+// LabelStarred reports whether the label is favorited.
+func LabelStarred(env Env, name string) bool {
+	return labelStarred(env, name)
+}
+
+// ToggleLabelStar favorites or unfavorites a label by name.
+func ToggleLabelStar(env Env, name string) (bool, error) {
+	return toggleNamedStar(env, "label-stars.json", name)
+}

@@ -119,7 +119,10 @@ func appendStarredPlaylists(env Env, db *sql.DB, stars []string, seen map[string
 	if err := appendNamedPlaylists(db, stars, seen, out, "artist", library.ArtistStarNames(env.Env), likedOnly, library.PathsForArtist); err != nil {
 		return err
 	}
-	return appendNamedPlaylists(db, stars, seen, out, "album", library.AlbumStarNames(env.Env), likedOnly, library.PathsForAlbum)
+	if err := appendNamedPlaylists(db, stars, seen, out, "album", library.AlbumStarNames(env.Env), likedOnly, library.PathsForAlbum); err != nil {
+		return err
+	}
+	return appendNamedPlaylists(db, stars, seen, out, "label", library.LabelStarNames(env.Env), likedOnly, library.PathsForLabel)
 }
 
 func appendNamedPlaylists(db *sql.DB, stars []string, seen map[string]struct{}, out *[]IndexItem, kind string, names []string, likedOnly bool, pathsFor func(*sql.DB, string, bool) ([]string, error)) error {
@@ -471,6 +474,19 @@ func tracksPageFromDB(env Env, db *sql.DB, name string, offset, limit int) (Trac
 		}
 		if library.AlbumStarred(env.Env, name) {
 			paths, err := library.PathsForAlbum(db, name, LikedOnly(env))
+			if err != nil {
+				return TracksPage{}, true, err
+			}
+			if len(paths) > 0 {
+				paths, err = orderedPaths(env, name, paths)
+				if err != nil {
+					return TracksPage{}, true, err
+				}
+				return paginatePaths(env, paths, name, offset, limit), true, nil
+			}
+		}
+		if library.LabelStarred(env.Env, name) {
+			paths, err := library.PathsForLabel(db, name, LikedOnly(env))
 			if err != nil {
 				return TracksPage{}, true, err
 			}

@@ -25,6 +25,43 @@ plugin/            quickshell panel
 scripts/           install (binary, desktop entry, plugin link)
 ```
 
+## Architecture
+
+The panel and the CLI share one daemon. Requests are newline-delimited JSON on `$XDG_RUNTIME_DIR/evoplayer.sock`. The daemon pushes `state`, `viz`, `job`, and `warm` events back on the same connection.
+
+```mermaid
+flowchart TB
+  cli["CLI"]
+  panel["Quickshell panel"]
+
+  subgraph daemon ["Daemon"]
+    ipc["Unix socket"]
+    play["Playback"]
+    lib["Library"]
+    jobs["Workers"]
+    side["Scrobble and art"]
+  end
+
+  cli --> ipc
+  panel --> ipc
+  ipc --> play
+  ipc --> lib
+  ipc --> jobs
+  ipc --> side
+
+  play --> audio["ffmpeg decode, oto output"]
+  play --> mpris["MPRIS"]
+  lib --> folders["Music folders"]
+  lib --> db[("library.sqlite3")]
+  jobs --> fetch["yt-dlp"]
+  fetch --> sc["SoundCloud"]
+  fetch --> yt["YouTube"]
+  side --> lfm["Last.fm"]
+  side --> discogs["Discogs"]
+```
+
+Playback keeps the queue, EQ, and spectrum in-process and publishes MPRIS on the session bus. Library browse, tags, and playlists read the music tree and the SQLite cache under `~/.cache/evoplayer`. Downloads, likes import, and cache rebuilds run as worker processes. Secrets come from `pass` at daemon startup.
+
 ## Install
 
 ```bash

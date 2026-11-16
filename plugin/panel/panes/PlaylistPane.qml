@@ -387,8 +387,9 @@ Card {
                 spacing: 0
                 readonly property bool showArtists: view.listSource() === "search" && (view.searchArtists || []).length > 0
                 readonly property bool showAlbums: view.listSource() === "search" && (view.searchAlbums || []).length > 0
+                readonly property bool showLabels: view.listSource() === "search" && (view.searchLabels || []).length > 0
                 readonly property bool showTracks: view.listSource() === "search" && list.count > 0
-                visible: showArtists || showAlbums || showTracks
+                visible: showArtists || showAlbums || showLabels || showTracks
                 height: visible ? implicitHeight : 0
 
                 Text {
@@ -504,6 +505,61 @@ Card {
 
                 Text {
                     width: parent.width
+                    visible: searchHead.showLabels
+                    topPadding: 8
+                    bottomPadding: 6
+                    leftPadding: 8
+                    textFormat: Text.PlainText
+                    text: "Labels"
+                    color: Theme.withOpacity(Theme.foreground, 0.38)
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeS
+                    font.bold: true
+                    font.capitalization: Font.AllUppercase
+                    font.letterSpacing: 1
+                }
+
+                Item {
+                    id: labelWrap
+                    width: parent.width
+                    visible: searchHead.showLabels
+                    readonly property int columns: Math.max(1, Math.floor(width / 150))
+                    readonly property int cellW: Math.max(1, Math.floor(width / columns))
+                    readonly property int cellH: cellW + 34
+                    readonly property int count: (view.searchLabels || []).length
+                    height: visible ? Math.ceil(count / columns) * cellH : 0
+
+                    GridView {
+                        anchors.fill: parent
+                        interactive: false
+                        clip: true
+                        boundsBehavior: Flickable.StopAtBounds
+                        highlightFollowsCurrentItem: false
+                        model: view.searchLabels || []
+                        cellWidth: labelWrap.cellW
+                        cellHeight: labelWrap.cellH
+
+                        delegate: IndexTile {
+                            required property var modelData
+                            width: labelWrap.cellW
+                            height: labelWrap.cellH
+                            view: pane.view
+                            row: modelData
+                            starred: !!modelData.starred
+                            onActivated: pane.view.openLabel(String(modelData.name || ""))
+                            onContextActivated: pane.view.openFieldTags("label", String(modelData.name || ""))
+                        }
+                    }
+                }
+
+                Item {
+                    width: parent.width
+                    visible: searchHead.showLabels
+                    height: visible ? 8 : 0
+                }
+
+                Text {
+                    width: parent.width
                     visible: searchHead.showTracks
                     topPadding: 8
                     bottomPadding: 6
@@ -531,7 +587,7 @@ Card {
                 spacing: 0
 
                 Item {
-                    readonly property bool searchSections: view.listSource() === "search" && ((view.searchArtists || []).length > 0 || (view.searchAlbums || []).length > 0)
+                    readonly property bool searchSections: view.listSource() === "search" && ((view.searchArtists || []).length > 0 || (view.searchAlbums || []).length > 0 || (view.searchLabels || []).length > 0)
                     width: parent.width
                     height: list.count === 0 && !searchSections ? 48 : 12
 
@@ -751,6 +807,33 @@ Card {
                 width: list.width
                 height: pane.rowH
                 z: list.dragFrom === index ? 2 : 0
+
+                DropArea {
+                    id: rowDrop
+                    anchors.fill: parent
+                    z: 4
+                    enabled: !row.folder && !row.listPick && String(modelData.path || "") !== ""
+                    onDropped: function(dropEvent) {
+                        var raw = ""
+                        if (dropEvent.hasUrls && dropEvent.urls && dropEvent.urls.length)
+                            raw = String(dropEvent.urls[0])
+                        else if (dropEvent.text)
+                            raw = String(dropEvent.text)
+                        if (view.dropArtOnTrack(raw, String(modelData.path || "")))
+                            dropEvent.accept(Qt.CopyAction)
+                    }
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.margins: 2
+                    z: 5
+                    visible: rowDrop.containsDrag
+                    color: "transparent"
+                    radius: 6
+                    border.width: 2
+                    border.color: Theme.good
+                }
 
                 readonly property bool folder: String(modelData.type || "") === "dir"
                 readonly property bool listPick: String(modelData.type || "") === "playlist"

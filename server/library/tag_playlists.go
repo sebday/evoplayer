@@ -162,6 +162,39 @@ ORDER BY path`, likeEscape(lname))
 	return out, rows.Err()
 }
 
+// PathsForLabel returns tracks released on the label.
+// likedOnly drops tracks that are not liked.
+func PathsForLabel(db *sql.DB, name string, likedOnly bool) ([]string, error) {
+	if db == nil || !Ready(db) {
+		return nil, nil
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, nil
+	}
+	liked := ""
+	if likedOnly {
+		liked = " AND liked=1"
+	}
+	rows, err := db.Query(`
+SELECT path FROM tracks
+WHERE lower(trim(COALESCE(label,''))) = lower(?)`+liked+`
+ORDER BY path`, name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var path string
+		if err := rows.Scan(&path); err != nil {
+			return nil, err
+		}
+		out = append(out, path)
+	}
+	return out, rows.Err()
+}
+
 // PathsForAlbum returns tracks on the album.
 // likedOnly drops tracks that are not liked.
 func PathsForAlbum(db *sql.DB, name string, likedOnly bool) ([]string, error) {

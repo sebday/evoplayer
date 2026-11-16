@@ -232,6 +232,21 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			}
 			return map[string]any{"name": strings.TrimSpace(albumFav.Name), "starred": starred}, nil
 		}
+	case "library.label.favorite":
+		var labelFav struct {
+			Name string `json:"name"`
+		}
+		if err := ipc.DecodeParams(req.Params, &labelFav); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(labelFav.Name) == "" {
+			return nil, ipc.ErrInvalidParams("name required")
+		}
+		starred, err := library.ToggleLabelStar(libEnv, labelFav.Name)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"name": strings.TrimSpace(labelFav.Name), "starred": starred}, nil
 	case "library.soundcloud.search":
 		var search struct {
 			Query string `json:"query"`
@@ -404,6 +419,53 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		}
 		playing := d.Actor.Snapshot().Path
 		for _, path := range many.Paths {
+			status.InvalidateMeta(path)
+			if path == playing {
+				d.broadcastStateFull()
+			}
+		}
+		return map[string]any{"updated": n}, nil
+	case "library.track.tags.shared":
+		var shared struct {
+			Paths []string `json:"paths"`
+		}
+		if err := ipc.DecodeParams(req.Params, &shared); err != nil {
+			return nil, err
+		}
+		db, err := library.EnsureDB(library.EnvFrom(d.env()))
+		if err != nil {
+			return nil, err
+		}
+		list, uniform, err := library.SharedTagList(db, shared.Paths)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"tags": list, "tags_uniform": uniform}, nil
+	case "library.track.tags.set_album":
+		var album struct {
+			Paths []string `json:"paths"`
+			Album *string  `json:"album"`
+			Year  *string  `json:"year"`
+			Genre *string  `json:"genre"`
+			Label *string  `json:"label"`
+			Tags  *string  `json:"tags"`
+		}
+		if err := ipc.DecodeParams(req.Params, &album); err != nil {
+			return nil, err
+		}
+		libEnv := library.EnvFrom(d.env())
+		n, err := library.UpdateAlbumTags(libEnv, album.Paths, library.AlbumTagPatch{
+			Album: album.Album,
+			Year:  album.Year,
+			Genre: album.Genre,
+			Label: album.Label,
+			Tags:  album.Tags,
+		})
+		if err := wrapJobErr(err); err != nil {
+			return nil, err
+		}
+		playing := d.Actor.Snapshot().Path
+		for _, path := range album.Paths {
 			status.InvalidateMeta(path)
 			if path == playing {
 				d.broadcastStateFull()
