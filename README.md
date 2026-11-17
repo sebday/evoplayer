@@ -14,8 +14,6 @@ Playlists are generated automatically from tags and likes. You can tag artists a
 
 ![Now Playing](preview.png)
 
-![Artist](preview-artist.png)
-
 ## Layout
 
 ```
