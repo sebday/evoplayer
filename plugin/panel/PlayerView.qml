@@ -1781,6 +1781,41 @@ Item {
         })
     }
 
+    // From an artist, album, label, year, or genre page: queue the clicked
+    // track and every track below it, then start on the clicked one.
+    function playPageFrom(index) {
+        var rows = pageTracks || []
+        if (index < 0 || index >= rows.length)
+            return
+        var start = String(rows[index] && rows[index].path || "")
+        if (!start)
+            return
+        var queued = {}
+        var existing = queue || []
+        for (var i = 0; i < existing.length; i++) {
+            var have = String(existing[i] && existing[i].path || "")
+            if (have)
+                queued[have] = true
+        }
+        var paths = []
+        for (var j = index; j < rows.length; j++) {
+            var path = String(rows[j] && rows[j].path || "")
+            if (!path || queued[path])
+                continue
+            queued[path] = true
+            paths.push(path)
+        }
+        if (!paths.length) {
+            ipc("queue.play_path", { path: start }, null)
+            return
+        }
+        ipc("queue.append", { paths: paths }, function() {
+            root.err = ""
+            root.loadQueue()
+            root.ipc("queue.play_path", { path: start }, null)
+        })
+    }
+
     function playPaths(paths, start) {
         var list = []
         for (var i = 0; i < paths.length; i++) {
@@ -2521,8 +2556,7 @@ Item {
         playTrackList(playlistRows(), "")
     }
 
-    function headerAdd() {
-        var items = playlistRows()
+    function appendTracks(items) {
         var paths = []
         var queued = {}
         var existing = queue || []
@@ -2531,8 +2565,9 @@ Item {
             if (have)
                 queued[have] = true
         }
-        for (var j = 0; j < items.length; j++) {
-            var path = String(items[j] && items[j].path || "")
+        var list = items || []
+        for (var j = 0; j < list.length; j++) {
+            var path = String(list[j] && list[j].path || "")
             if (!path || queued[path])
                 continue
             queued[path] = true
@@ -2544,6 +2579,46 @@ Item {
             root.err = ""
             root.loadQueue()
             root.loadPlaylistIndex()
+        })
+    }
+
+    function headerAdd() {
+        appendTracks(playlistRows())
+    }
+
+    function loadEntityTracks(kind, name, dir, done) {
+        name = String(name || "").replace(/^\s+|\s+$/g, "")
+        if (!name)
+            return
+        ipc("library.entity", { kind: kind, name: name, dir: String(dir || "") }, function(data) {
+            done((data && data.tracks) || [])
+        })
+    }
+
+    function playGridRow(kind, row) {
+        row = row || {}
+        if (kind === "playlist") {
+            playPlaylist(String(row.id || ""))
+            return
+        }
+        loadEntityTracks(kind, row.name, row.dir, function(items) {
+            root.playTrackList(items, "")
+        })
+    }
+
+    function addGridRow(kind, row) {
+        row = row || {}
+        if (kind === "playlist") {
+            var name = String(row.id || "")
+            if (!name)
+                return
+            loadPlaylistItems(name, function(items) {
+                root.appendTracks(items)
+            })
+            return
+        }
+        loadEntityTracks(kind, row.name, row.dir, function(items) {
+            root.appendTracks(items)
         })
     }
 
@@ -2720,9 +2795,7 @@ Item {
             return
         }
         if (pane === "playlist" && entityPage()) {
-            var pageRow = selectedListTrack()
-            if (pageRow && pageRow.path)
-                playTrack(pageRow.path)
+            playPageFrom(playlistIdx)
             return
         }
         var q = String(searchQuery || "").replace(/^\s+|\s+$/g, "")

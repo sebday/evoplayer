@@ -10,17 +10,18 @@ Item {
     property bool round: false
     property bool starred: false
     property bool selected: false
+    property string playKind: ""
 
     signal activated()
     signal contextActivated()
 
-    readonly property bool hot: cellArea.containsMouse || selected
+    readonly property bool hot: tileHover.hovered || selected
 
     Rectangle {
         anchors.fill: parent
         anchors.margins: 4
         radius: 8
-        color: tile.selected ? Theme.withOpacity(Theme.border, 0.16) : (cellArea.containsMouse ? Theme.foregroundWash : "transparent")
+        color: tile.selected ? Theme.withOpacity(Theme.border, 0.16) : (tileHover.hovered ? Theme.foregroundWash : "transparent")
         border.width: tile.selected ? 1 : 0
         border.color: Theme.border
     }
@@ -84,6 +85,10 @@ Item {
         font.pixelSize: Theme.fontSizeXs
     }
 
+    HoverHandler {
+        id: tileHover
+    }
+
     MouseArea {
         id: cellArea
         anchors.fill: parent
@@ -95,6 +100,37 @@ Item {
                 tile.contextActivated()
             else
                 tile.activated()
+        }
+    }
+
+    Rectangle {
+        visible: gridActions.visible
+        z: 2
+        anchors.fill: gridActions
+        anchors.margins: -5
+        radius: height / 2
+        color: Theme.withOpacity(Theme.background, 0.72)
+    }
+
+    Row {
+        id: gridActions
+        visible: tile.playKind !== "" && tileHover.hovered
+        z: 3
+        anchors.horizontalCenter: face.horizontalCenter
+        anchors.bottom: face.bottom
+        anchors.bottomMargin: 8
+        spacing: 6
+
+        Chip {
+            text: "▶"
+            color: hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1)
+            onActivated: tile.view.playGridRow(tile.playKind, tile.row)
+        }
+
+        Chip {
+            text: "+"
+            color: hovered ? Theme.foregroundSubtle : Theme.withOpacity(Theme.foreground, 0.1)
+            onActivated: tile.view.addGridRow(tile.playKind, tile.row)
         }
     }
 }

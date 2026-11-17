@@ -84,6 +84,7 @@ Item {
             height: grid.cellHeight
             view: root.view
             row: modelData
+            playKind: root.view.indexKind()
             round: root.artists
             starred: (root.artists || root.albums) && !!modelData.starred
             selected: root.view.pane === "playlist" && !root.view.textCapture && index === root.view.indexIdx

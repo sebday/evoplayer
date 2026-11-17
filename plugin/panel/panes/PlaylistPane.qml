@@ -194,6 +194,7 @@ Card {
                 height: playlistGrid.cellHeight
                 view: pane.view
                 row: modelData
+                playKind: "playlist"
                 selected: view.pane === "playlist" && index === view.playlistIdx
                 onActivated: {
                     view.playlistIdx = index
@@ -434,6 +435,7 @@ Card {
                             height: artistWrap.cellH
                             view: pane.view
                             row: modelData
+                            playKind: "artist"
                             round: true
                             starred: !!modelData.starred
                             onActivated: pane.view.openArtist(String(modelData.name || ""))
@@ -490,6 +492,7 @@ Card {
                             height: albumWrap.cellH
                             view: pane.view
                             row: modelData
+                            playKind: "album"
                             starred: !!modelData.starred
                             onActivated: pane.view.openAlbum(String(modelData.name || ""), "")
                             onContextActivated: pane.view.openFieldTags("album", String(modelData.name || ""))
@@ -545,6 +548,7 @@ Card {
                             height: labelWrap.cellH
                             view: pane.view
                             row: modelData
+                            playKind: "label"
                             starred: !!modelData.starred
                             onActivated: pane.view.openLabel(String(modelData.name || ""))
                             onContextActivated: pane.view.openFieldTags("label", String(modelData.name || ""))

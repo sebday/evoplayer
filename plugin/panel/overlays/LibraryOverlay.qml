@@ -205,8 +205,8 @@ Item {
         LibraryRow {
             width: parent.width
             title: "All Tracks"
-            detail: "Include every track in playlists"
-            action: "All Tracks"
+            detail: "Include all tracks or only likes in autogen playlists"
+            action: view.playlistLikedOnly ? "Only Likes" : "All Tracks"
             toggle: true
             on: !view.playlistLikedOnly
             onActivated: view.togglePlaylistFilter()
