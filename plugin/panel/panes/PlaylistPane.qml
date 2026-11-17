@@ -867,7 +867,7 @@ Card {
 
                 MouseArea {
                     anchors.fill: parent
-                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                     preventStealing: list.canReorder
                     onWheel: function(wheel) {
                         var dy = wheel.pixelDelta.y
@@ -884,7 +884,7 @@ Card {
                     property bool suppressClick: false
                     property real grabY: 0
                     onPressed: function(mouse) {
-                        if (mouse.button === Qt.RightButton) {
+                        if (mouse.button === Qt.MiddleButton || mouse.button === Qt.RightButton) {
                             dragged = false
                             return
                         }
@@ -936,6 +936,11 @@ Card {
                         list.dragOffset = 0
                     }
                     onClicked: function(mouse) {
+                        if (mouse.button === Qt.MiddleButton) {
+                            if (!row.folder && !row.listPick && modelData.path)
+                                view.lookupRelated(modelData)
+                            return
+                        }
                         if (mouse.button === Qt.RightButton) {
                             if (!row.folder && !row.listPick)
                                 view.editTrack(String(modelData.path || ""))
@@ -1048,9 +1053,14 @@ Card {
 
                             MouseArea {
                                 anchors.fill: parent
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: function(mouse) {
+                                    if (mouse.button === Qt.MiddleButton) {
+                                        if (!row.folder && !row.listPick && modelData.path)
+                                            view.lookupRelated(modelData)
+                                        return
+                                    }
                                     if (mouse.button === Qt.RightButton) {
                                         if (!row.folder && !row.listPick)
                                             view.editTrack(String(modelData.path || ""))

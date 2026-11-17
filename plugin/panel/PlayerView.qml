@@ -884,13 +884,16 @@ Item {
         textCapture = false
     }
 
-    function loadDiscover(id) {
+    function loadDiscover(id, path) {
+        path = String(path || "")
         mode = "discover"
         discoverNote = "finding similar…"
         err = ""
         var params = {}
         if (id)
             params.id = Number(id)
+        else if (path)
+            params.path = path
         else if (trackPath)
             params.path = trackPath
         else {
@@ -901,12 +904,16 @@ Item {
             err = "nothing playing"
             return
         }
+        if (path) {
+            discoverTracks = []
+            discoverIdx = 0
+        }
         var seedArt = ""
         if (id) {
             var from = currentDiscover() || selectedDownloadHit()
             if (from && Number(from.id) === Number(id))
                 seedArt = soundcloudArtURL(from.artwork)
-        } else {
+        } else if (!path) {
             seedArt = artSource()
         }
         discoverCall("discover.similar", params, function(data) {
@@ -916,11 +923,30 @@ Item {
             root.discoverTracks = data.tracks || []
             var artist = String(data.seed_artist || "").replace(/^\s+|\s+$/g, "")
             var title = String(data.seed_title || "").replace(/^\s+|\s+$/g, "")
+            if (!artist && !title && path) {
+                artist = String(root.discoverSeed && root.discoverSeed.artist || "")
+                title = String(root.discoverSeed && root.discoverSeed.title || "")
+            }
+            var art = seedArt
+            if (!art && path)
+                art = String(root.discoverSeed && root.discoverSeed.art || "")
             root.discoverSeedTitle = artist && title ? artist + " — " + title : (artist || title)
-            root.discoverSeed = { artist: artist, title: title, art: seedArt }
+            root.discoverSeed = { artist: artist, title: title, art: art }
             root.discoverIdx = 0
             root.showDiscoverSeed()
         })
+    }
+
+    function lookupRelated(row) {
+        var path = String(row && row.path || "")
+        if (!path)
+            return
+        var title = String(row.title || "").replace(/^\s+|\s+$/g, "")
+        var artist = String(row.artist || "").replace(/^\s+|\s+$/g, "")
+        focusPane("playlist")
+        discoverSeedTitle = artist && title ? artist + " — " + title : (artist || title)
+        discoverSeed = { artist: artist, title: title, art: rowArtUrl(row) }
+        loadDiscover(0, path)
     }
 
     function showDiscoverSeed() {
