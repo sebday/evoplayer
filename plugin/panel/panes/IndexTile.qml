@@ -103,15 +103,6 @@ Item {
         }
     }
 
-    Rectangle {
-        visible: gridActions.visible
-        z: 2
-        anchors.fill: gridActions
-        anchors.margins: -5
-        radius: height / 2
-        color: Theme.withOpacity(Theme.background, 0.72)
-    }
-
     Row {
         id: gridActions
         visible: tile.playKind !== "" && tileHover.hovered

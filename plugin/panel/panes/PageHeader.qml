@@ -143,6 +143,8 @@ Column {
                             spare -= pageActions.width + titleRow.spacing
                         if (artistFav.visible)
                             spare -= artistFav.width + titleRow.spacing
+                        if (trackLike.visible)
+                            spare -= trackLike.width + titleRow.spacing
                         return Math.min(implicitWidth, Math.max(0, spare))
                     }
                     textFormat: Text.PlainText
@@ -196,6 +198,24 @@ Column {
                         anchors.margins: -8
                         cursorShape: Qt.PointingHandCursor
                         onClicked: hero.view.togglePageFav()
+                    }
+                }
+
+                Text {
+                    id: trackLike
+                    visible: hero.queueHeader && String(hero.view.trackPath || "") !== ""
+                    topPadding: 8
+                    textFormat: Text.PlainText
+                    text: "♥"
+                    color: hero.view.liked ? Theme.liked : Theme.withOpacity(hero.onBanner, 0.45)
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeL
+
+                    MouseArea {
+                        anchors.fill: parent
+                        anchors.margins: -8
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: hero.view.likePlaying()
                     }
                 }
             }
