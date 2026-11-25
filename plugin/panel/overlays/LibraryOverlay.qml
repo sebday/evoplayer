@@ -288,7 +288,7 @@ Item {
         anchors.left: parent.left
         anchors.right: helpCol.left
         anchors.bottom: parent.bottom
-        height: 168
+        height: 218
         view: pane.view
     }
 
