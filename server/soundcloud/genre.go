@@ -35,6 +35,9 @@ func parseTagList(raw string) []string {
 	return out
 }
 
+// trackEmbedGenre is the genre string written into the file. A tag that is
+// itself a library folder keeps that folder's spelling. An alias such as
+// Jungle still embeds Jungle; FolderForGenreTag chooses Drum & Bass later.
 func trackEmbedGenre(track *Track, opts DownloadOptions) string {
 	if track == nil {
 		return ""
@@ -60,20 +63,12 @@ func trackEmbedGenre(track *Track, opts DownloadOptions) string {
 }
 
 // FolderFromLikedTrack returns a library folder for a liked SoundCloud track.
+// The track's own genre tag is left for the file; this only picks the folder.
 func FolderFromLikedTrack(env library.Env, track *Track) string {
 	if track == nil {
 		return ""
 	}
-	opts := DownloadOptions{MusicRoot: env.MusicRoot, MusicConfig: env.MusicConfig}
-	if g := strings.TrimSpace(trackEmbedGenre(track, opts)); g != "" {
-		if folder := library.MatchLibraryGenre(env, g); folder != "" {
-			return folder
-		}
-		if folder := library.GuessFolderFromCandidates(env, g); folder != "" {
-			return folder
-		}
-	}
 	candidates := []string{strings.TrimSpace(track.Genre)}
 	candidates = append(candidates, parseTagList(track.TagList)...)
-	return library.GuessFolderFromCandidates(env, candidates...)
+	return library.FolderForGenreTag(env, candidates...)
 }

@@ -30,9 +30,15 @@ func SetIncomingGenre(env Env, path, genre string) (map[string]any, error) {
 	if err := writeIncomingOverlayGenre(env, src, folder); err != nil {
 		return nil, err
 	}
+	embed := folder
+	if probed, err := tags.Probe(src); err == nil {
+		if existing := strings.TrimSpace(probed.Tag.Genre); existing != "" && FolderForGenreTag(env, existing) == folder {
+			embed = ""
+		}
+	}
 	ext := strings.ToLower(filepath.Ext(src))
-	if ext == ".mp3" || ext == ".mp2" {
-		if err := tags.EmbedMP3(src, map[string]string{"genre": folder}, nil, ""); err != nil {
+	if embed != "" && (ext == ".mp3" || ext == ".mp2") {
+		if err := tags.EmbedMP3(src, map[string]string{"genre": embed}, nil, ""); err != nil {
 			fmt.Fprintf(os.Stderr, "evoplayer: warn: incoming genre embed: %v\n", err)
 		}
 	}

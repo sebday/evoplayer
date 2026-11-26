@@ -55,6 +55,33 @@ func GenreFolders(path string) (map[string]string, error) {
 	return out, nil
 }
 
+// GenreAliases loads [genre_aliases] from music.toml.
+// Keys and values are normalized genre keys. A value is a canonical genre
+// key from [genres] (drumandbass), not a folder name (Drum & Bass).
+func GenreAliases(path string) (map[string]string, error) {
+	out := map[string]string{}
+	if path == "" {
+		return out, nil
+	}
+	data, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+	sec := data["genre_aliases"]
+	if sec == nil {
+		return out, nil
+	}
+	for name, val := range sec {
+		key := NormalizeGenreKey(name)
+		canon := NormalizeGenreKey(strings.TrimSpace(fmt.Sprint(val)))
+		if key == "" || canon == "" {
+			continue
+		}
+		out[key] = canon
+	}
+	return out, nil
+}
+
 // PlaylistFolders loads [playlist_folders] from music.toml (soundcloud playlist title -> disk folder).
 func PlaylistFolders(path string) (map[string]string, error) {
 	out := map[string]string{}

@@ -49,8 +49,6 @@ Item {
             if (line)
                 out.push(line)
         }
-        if (out.length > 4)
-            out = out.slice(out.length - 4)
         return out
     }
 
@@ -155,122 +153,167 @@ Item {
             color: Theme.foregroundFaint
         }
 
-        HelpOverlay {
-            anchors.fill: parent
+        Column {
+            id: tools
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
             anchors.leftMargin: 18
             anchors.rightMargin: 16
             anchors.topMargin: 8
+            spacing: 0
+
+            LibraryRow {
+                width: parent.width
+                title: "Rebuild"
+                detail: "Rescan the library"
+                action: "Rebuild"
+                ready: !pane.jobRunning()
+                onActivated: view.startLibraryJob("library.cache", { force: true })
+            }
+
+            LibraryRow {
+                width: parent.width
+                title: "Import"
+                detail: "Bring in files from incoming"
+                action: "Import"
+                ready: !pane.jobRunning() && (view.incomingFiles || []).length > 0
+                onActivated: view.startLibraryJob("library.import", {})
+            }
+
+            LibraryRow {
+                width: parent.width
+                title: "Sync Likes"
+                detail: "Download liked SoundCloud tracks"
+                action: "Sync Likes"
+                ready: !pane.jobRunning()
+                onActivated: view.startLibraryJob("library.soundcloud.download", { import: false })
+            }
+
+            LibraryRow {
+                width: parent.width
+                title: "All Tracks"
+                detail: "Include all tracks or only likes in autogen playlists"
+                action: view.playlistLikedOnly ? "Only Likes" : "All Tracks"
+                toggle: true
+                on: !view.playlistLikedOnly
+                onActivated: view.togglePlaylistFilter()
+            }
+        }
+
+        HelpOverlay {
+            anchors.top: tools.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 18
+            anchors.rightMargin: 16
+            anchors.topMargin: 14
             anchors.bottomMargin: 8
             view: pane.view
         }
     }
 
-    Column {
-        id: tools
+    Item {
+        id: logPane
+        anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: helpCol.left
-        anchors.top: parent.top
-        anchors.topMargin: 8
+        anchors.bottom: files.open ? files.top : eqPanel.top
         anchors.leftMargin: 8
-        anchors.rightMargin: 16
-        spacing: 0
-
-        LibraryRow {
-            width: parent.width
-            title: "Rebuild"
-            detail: "Rescan the library"
-            action: "Rebuild"
-            ready: !pane.jobRunning()
-            onActivated: view.startLibraryJob("library.cache", { force: true })
-        }
-
-        LibraryRow {
-            width: parent.width
-            title: "Import"
-            detail: "Bring in files from incoming"
-            action: "Import"
-            ready: !pane.jobRunning() && (view.incomingFiles || []).length > 0
-            onActivated: view.startLibraryJob("library.import", {})
-        }
-
-        LibraryRow {
-            width: parent.width
-            title: "Sync Likes"
-            detail: "Download liked SoundCloud tracks"
-            action: "Sync Likes"
-            ready: !pane.jobRunning()
-            onActivated: view.startLibraryJob("library.soundcloud.download", { import: false })
-        }
-
-        LibraryRow {
-            width: parent.width
-            title: "All Tracks"
-            detail: "Include all tracks or only likes in autogen playlists"
-            action: view.playlistLikedOnly ? "Only Likes" : "All Tracks"
-            toggle: true
-            on: !view.playlistLikedOnly
-            onActivated: view.togglePlaylistFilter()
-        }
-
-        Item {
-            width: parent.width
-            visible: pane.jobActive()
-            height: visible ? 10 : 0
-        }
+        anchors.rightMargin: 8
+        anchors.topMargin: 8
+        anchors.bottomMargin: 8
 
         Rectangle {
-            width: parent.width
-            visible: pane.jobActive()
+            anchors.fill: parent
             radius: 8
             color: Theme.foregroundFaint
-            height: jobCol.implicitHeight + 16
+        }
+
+        Row {
+            id: logHead
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            anchors.topMargin: 10
+            spacing: 10
+            visible: pane.jobActive()
+
+            Text {
+                id: jobName
+                textFormat: Text.PlainText
+                text: pane.jobTitle()
+                color: Theme.foreground
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeS
+                font.bold: true
+            }
+
+            Text {
+                width: Math.max(0, logHead.width - jobName.implicitWidth - (stopChip.visible ? stopChip.width + logHead.spacing : 0) - logHead.spacing)
+                textFormat: Text.PlainText
+                text: pane.jobDetail()
+                color: view.libraryJob && view.libraryJob.status === "error" ? Theme.liked : Theme.muted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeS
+                elide: Text.ElideRight
+            }
+
+            Chip {
+                id: stopChip
+                visible: pane.jobRunning()
+                text: "stop"
+                danger: true
+                onActivated: view.cancelLibraryJob()
+            }
+        }
+
+        Text {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            anchors.topMargin: 10
+            visible: !pane.jobActive()
+            textFormat: Text.PlainText
+            text: "Nothing running."
+            color: Theme.muted
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSizeS
+        }
+
+        Flickable {
+            id: logFlick
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: logHead.bottom
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            anchors.topMargin: 6
+            anchors.bottomMargin: 10
+            visible: pane.jobActive()
+            contentWidth: width
+            contentHeight: logCol.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            onContentHeightChanged: contentY = Math.max(0, contentHeight - height)
 
             Column {
-                id: jobCol
-                x: 12
-                y: 8
-                width: parent.width - 24
+                id: logCol
+                width: logFlick.width
                 spacing: 2
-
-                Row {
-                    width: parent.width
-                    spacing: 10
-
-                    Text {
-                        id: jobName
-                        textFormat: Text.PlainText
-                        text: pane.jobTitle()
-                        color: Theme.foreground
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeS
-                        font.bold: true
-                    }
-
-                    Text {
-                        width: Math.max(0, parent.width - jobName.implicitWidth - (stopChip.visible ? stopChip.width + parent.spacing : 0) - parent.spacing)
-                        textFormat: Text.PlainText
-                        text: pane.jobDetail()
-                        color: view.libraryJob && view.libraryJob.status === "error" ? Theme.liked : Theme.muted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSizeS
-                        elide: Text.ElideRight
-                    }
-
-                    Chip {
-                        id: stopChip
-                        visible: pane.jobRunning()
-                        text: "stop"
-                        danger: true
-                        onActivated: view.cancelLibraryJob()
-                    }
-                }
 
                 Repeater {
                     model: pane.jobLines()
 
                     Text {
                         required property string modelData
-                        width: jobCol.width
+                        width: logCol.width
                         textFormat: Text.PlainText
                         text: modelData
                         color: pane.logColor(modelData)
@@ -296,12 +339,11 @@ Item {
         id: files
         readonly property bool open: (view.incomingFiles || []).length > 0
         visible: open
-        anchors.top: tools.bottom
-        anchors.topMargin: open ? 10 : 0
         anchors.left: parent.left
         anchors.right: helpCol.left
         anchors.rightMargin: 8
-        anchors.bottom: open ? folders.top : tools.bottom
+        anchors.bottom: folders.top
+        height: open ? Math.min(Math.max(contentHeight, 1), Math.max(52, (parent.height - eqPanel.height) * 0.4)) : 0
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         model: view.incomingFiles || []

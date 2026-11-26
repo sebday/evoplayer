@@ -33,3 +33,42 @@ func matchLibraryFolder(env Env, name string) string {
 	}
 	return ""
 }
+
+// FolderForGenreTag returns the on-disk library folder for a genre tag.
+// A tag that names a folder uses that folder. Otherwise [genre_aliases] maps
+// the tag onto a canonical genre, and [genres] names the folder. The tag
+// string itself is not rewritten.
+func FolderForGenreTag(env Env, names ...string) string {
+	if folder := MatchLibraryGenre(env, names...); folder != "" {
+		return folder
+	}
+	if env.MusicConfig == "" {
+		return ""
+	}
+	aliases, err := config.GenreAliases(env.MusicConfig)
+	if err != nil || len(aliases) == 0 {
+		return ""
+	}
+	folders, err := config.GenreFolders(env.MusicConfig)
+	if err != nil {
+		return ""
+	}
+	for _, name := range names {
+		key := genreTagKey(name)
+		if key == "" {
+			continue
+		}
+		canon := aliases[key]
+		if canon == "" {
+			continue
+		}
+		folderName := strings.TrimSpace(folders[canon])
+		if folderName == "" {
+			continue
+		}
+		if folder := MatchLibraryGenre(env, folderName); folder != "" {
+			return folder
+		}
+	}
+	return ""
+}

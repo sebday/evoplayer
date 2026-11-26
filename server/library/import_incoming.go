@@ -278,7 +278,7 @@ func incomingDest(env Env, path string, probed tags.ProbeResult) (string, error)
 	tag := probed.Tag
 	genre := overlayGenre(env, path)
 	if genre == "" {
-		genre = MatchLibraryGenre(env, tag.Genre)
+		genre = FolderForGenreTag(env, tag.Genre)
 	}
 	if genre == "" && strings.TrimSpace(tag.Genre) != "" {
 		return "", fmt.Errorf("unknown genre for %s: %s", path, tag.Genre)

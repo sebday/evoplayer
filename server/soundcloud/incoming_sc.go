@@ -272,7 +272,7 @@ func resolveIncomingFolder(env library.Env, liked bool, meta incomingSCMeta, pro
 		}
 	}
 	tag := probed.Tag
-	if f := library.MatchLibraryGenre(env, tag.Genre); f != "" {
+	if f := library.FolderForGenreTag(env, tag.Genre); f != "" {
 		return f
 	}
 	if f := library.GuessFolderFromCandidates(env, tag.Genre, tag.Title, tag.Comment); f != "" {
