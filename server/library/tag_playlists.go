@@ -165,6 +165,15 @@ ORDER BY path`, likeEscape(lname))
 // PathsForLabel returns tracks released on the label.
 // likedOnly drops tracks that are not liked.
 func PathsForLabel(db *sql.DB, name string, likedOnly bool) ([]string, error) {
+	return pathsForColumn(db, "label", name, likedOnly)
+}
+
+func pathsForColumn(db *sql.DB, column, name string, likedOnly bool) ([]string, error) {
+	switch column {
+	case "label", "album":
+	default:
+		return nil, fmt.Errorf("unsupported column: %s", column)
+	}
 	if db == nil || !Ready(db) {
 		return nil, nil
 	}
@@ -178,7 +187,7 @@ func PathsForLabel(db *sql.DB, name string, likedOnly bool) ([]string, error) {
 	}
 	rows, err := db.Query(`
 SELECT path FROM tracks
-WHERE lower(trim(COALESCE(label,''))) = lower(?)`+liked+`
+WHERE lower(trim(COALESCE(`+column+`,''))) = lower(?)`+liked+`
 ORDER BY path`, name)
 	if err != nil {
 		return nil, err
@@ -198,34 +207,7 @@ ORDER BY path`, name)
 // PathsForAlbum returns tracks on the album.
 // likedOnly drops tracks that are not liked.
 func PathsForAlbum(db *sql.DB, name string, likedOnly bool) ([]string, error) {
-	if db == nil || !Ready(db) {
-		return nil, nil
-	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil, nil
-	}
-	liked := ""
-	if likedOnly {
-		liked = " AND liked=1"
-	}
-	rows, err := db.Query(`
-SELECT path FROM tracks
-WHERE lower(trim(COALESCE(album,''))) = lower(?)`+liked+`
-ORDER BY path`, name)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var path string
-		if err := rows.Scan(&path); err != nil {
-			return nil, err
-		}
-		out = append(out, path)
-	}
-	return out, rows.Err()
+	return pathsForColumn(db, "album", name, likedOnly)
 }
 
 func likedPathsForColumn(db *sql.DB, col, name string) ([]string, error) {
@@ -345,7 +327,7 @@ func PathsForField(db *sql.DB, field, value string) ([]string, error) {
 	}
 	match := `lower(` + col + `)=lower(?)`
 	if field == "genre" {
-		match = `trim(` + col + `)=?`
+		match = `trim(replace(` + col + `, char(0), ''))=?`
 	}
 	rows, err := db.Query(`SELECT path FROM tracks WHERE `+match+` ORDER BY path`, value)
 	if err != nil {
@@ -401,27 +383,7 @@ func UpdateField(env Env, field, value string, paths []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	value = strings.TrimSpace(value)
-	n := 0
-	seen := map[string]struct{}{}
-	for _, path := range paths {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			continue
-		}
-		if _, ok := seen[path]; ok {
-			continue
-		}
-		seen[path] = struct{}{}
-		if _, err := writeTagFields(env, path, map[string]string{key: value}); err != nil {
-			return n, err
-		}
-		n++
-	}
-	if n == 0 {
-		return 0, fmt.Errorf("path required")
-	}
-	return n, nil
+	return writeFieldsOn(env, paths, map[string]string{key: strings.TrimSpace(value)})
 }
 
 func fieldWriteKey(field string) (string, error) {

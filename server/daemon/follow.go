@@ -22,14 +22,23 @@ func (d *Daemon) setPlaybackFollow(ids []int64) {
 	}
 	d.followMu.Lock()
 	d.followGen++
+	if d.followCancel != nil {
+		d.followCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	d.followCtx = ctx
+	d.followCancel = cancel
 	gen := d.followGen
 	d.followMu.Unlock()
 	d.Actor.SetFollow(paths)
-	go d.prefetchFollow(gen, paths)
+	go d.prefetchFollow(ctx, gen, paths)
 }
 
-func (d *Daemon) prefetchFollow(gen int, paths []string) {
-	for i, path := range paths {
+func (d *Daemon) prefetchFollow(ctx context.Context, gen int, paths []string) {
+	for _, path := range paths {
+		if ctx.Err() != nil {
+			return
+		}
 		d.followMu.Lock()
 		if gen != d.followGen {
 			d.followMu.Unlock()
@@ -39,11 +48,11 @@ func (d *Daemon) prefetchFollow(gen int, paths []string) {
 		if d.followFileReady(path) {
 			continue
 		}
-		d.ensureFollowFile(gen, i, path)
+		d.ensureFollowFile(ctx, gen, path)
 	}
 }
 
-func (d *Daemon) ensureFollowFile(gen int, index int, path string) {
+func (d *Daemon) ensureFollowFile(ctx context.Context, gen int, path string) {
 	d.followMu.Lock()
 	if gen != d.followGen {
 		d.followMu.Unlock()
@@ -65,7 +74,7 @@ func (d *Daemon) ensureFollowFile(gen int, index int, path string) {
 		current := gen == d.followGen
 		d.followMu.Unlock()
 		if current && d.followFileReady(path) {
-			_ = d.Actor.ContinueFollow(index)
+			_ = d.Actor.ContinueFollow(path)
 		}
 	}()
 
@@ -73,7 +82,7 @@ func (d *Daemon) ensureFollowFile(gen int, index int, path string) {
 	if id == 0 {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	_, _ = soundcloud.DownloadPreview(ctx, d.env(), id, jobs.NopReporter)
 }

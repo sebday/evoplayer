@@ -90,7 +90,6 @@ func writeGenreM3U(env Env, genre string) error {
 	out := filepath.Join(env.PlaylistDir, genre+".m3u")
 	if len(paths) == 0 {
 		_ = os.Remove(out)
-		_ = os.Remove(filepath.Join(env.PlaylistDir, genre+"-fav.m3u"))
 		return nil
 	}
 	return writeM3U(out, paths)

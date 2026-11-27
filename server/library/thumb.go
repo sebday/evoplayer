@@ -100,7 +100,13 @@ func ensureThumb(env Env, artPath string, size int) (string, error) {
 	if nonEmptyFile(dest) {
 		return dest, nil
 	}
-	tmp := dest + ".tmp"
+	tmpFile, err := os.CreateTemp(dir, "thumb-*.jpg")
+	if err != nil {
+		return "", err
+	}
+	tmp := tmpFile.Name()
+	_ = tmpFile.Close()
+	defer os.Remove(tmp)
 	filter := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=increase,crop=%d:%d", size, size, size, size)
 	args := []string{"-y", "-loglevel", "error", "-i", artPath, "-vf", filter, "-q:v", "4", tmp}
 	cmd := exec.Command("ffmpeg", args...)
@@ -113,11 +119,9 @@ func ensureThumb(env Env, artPath string, size int) (string, error) {
 		}
 	}
 	if !nonEmptyFile(tmp) {
-		os.Remove(tmp)
 		return "", fmt.Errorf("thumb generation failed")
 	}
 	if err := os.Rename(tmp, dest); err != nil {
-		os.Remove(tmp)
 		return "", err
 	}
 	return dest, nil

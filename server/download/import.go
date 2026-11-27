@@ -9,7 +9,7 @@ import (
 	"github.com/sebday/evoplayer/server/soundcloud"
 )
 
-// ImportLibraryIncoming normalizes audio in .incoming and moves files into the library.
+// ImportLibraryIncoming normalizes audio in .evoplayer/incoming and moves files into the library.
 func ImportLibraryIncoming(ctx context.Context, env paths.Env, rep jobs.Reporter) error {
 	if rep == nil {
 		rep = jobs.NopReporter

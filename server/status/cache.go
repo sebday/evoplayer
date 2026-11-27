@@ -23,8 +23,6 @@ type cachedMeta struct {
 
 var metaMu sync.RWMutex
 var metaByPath = map[string]cachedMeta{}
-var savedPlaylist string
-var savedPlaylistOK bool
 
 func cacheMeta(st playback.Status) {
 	if st.Path == "" {
@@ -66,7 +64,7 @@ func applyCached(st playback.Status, m cachedMeta) playback.Status {
 // EnrichLight reuses cached metadata for the current path and only updates transport fields.
 func EnrichLight(env paths.Env, st playback.Status) playback.Status {
 	if st.Path == "" {
-		return mergeSavedPlaylist(env, st)
+		return st
 	}
 	metaMu.RLock()
 	m, ok := metaByPath[st.Path]
@@ -84,7 +82,7 @@ func EnrichLight(env paths.Env, st playback.Status) playback.Status {
 				metaMu.Unlock()
 			}
 		}
-		return mergeSavedPlaylist(env, st)
+		return st
 	}
 	return EnrichFull(env, st)
 }
@@ -110,7 +108,5 @@ func InvalidateMeta(path string) {
 func InvalidateAllMeta() {
 	metaMu.Lock()
 	metaByPath = map[string]cachedMeta{}
-	savedPlaylist = ""
-	savedPlaylistOK = false
 	metaMu.Unlock()
 }

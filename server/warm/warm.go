@@ -17,10 +17,6 @@ type Result struct {
 	ArtBuilt bool   `json:"art_built"`
 }
 
-func Track(env paths.Env, trackPath string) (Result, error) {
-	return TrackAssets(env, trackPath)
-}
-
 // TrackAssets warms album art and thumbs for list rows.
 func TrackAssets(env paths.Env, trackPath string) (Result, error) {
 	if trackPath == "" {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type Request struct {
@@ -33,13 +34,14 @@ type Event struct {
 type Handler func(req Request) (interface{}, error)
 
 type Server struct {
-	path    string
-	handler Handler
-	ln      net.Listener
-	wg      sync.WaitGroup
-	mu      sync.Mutex
-	conns   map[*clientConn]struct{}
-	closed  bool
+	path      string
+	handler   Handler
+	ln        net.Listener
+	wg        sync.WaitGroup
+	handlerWG sync.WaitGroup
+	mu        sync.Mutex
+	conns     map[*clientConn]struct{}
+	closed    bool
 
 	closeOnce sync.Once
 	closeErr  error
@@ -52,6 +54,7 @@ type Server struct {
 	coalesceMu      sync.Mutex
 	coalescePending map[string]Event
 	coalesceArmed   bool
+	coalesceTimer   *time.Timer
 }
 
 func NewServer(path string, handler Handler) *Server {
@@ -105,6 +108,15 @@ func (s *Server) Close() error {
 		}
 		s.mu.Unlock()
 		s.wg.Wait()
+		s.handlerWG.Wait()
+		s.coalesceMu.Lock()
+		if s.coalesceTimer != nil {
+			s.coalesceTimer.Stop()
+			s.coalesceTimer = nil
+		}
+		s.coalescePending = nil
+		s.coalesceArmed = false
+		s.coalesceMu.Unlock()
 		_ = os.Remove(s.path)
 	})
 	return s.closeErr
@@ -225,13 +237,19 @@ func (s *Server) handleConn(cc *clientConn) {
 			s.setViz(cc, false)
 		}
 		if req.ID == 0 {
+			s.handlerWG.Add(1)
 			go func(r Request) {
+				defer s.handlerWG.Done()
 				_, _ = s.handler(r)
 			}(req)
 			continue
 		}
 		if isSlowMethod(req.Method) {
-			go s.respond(cc, req)
+			s.handlerWG.Add(1)
+			go func() {
+				defer s.handlerWG.Done()
+				s.respond(cc, req)
+			}()
 			continue
 		}
 		s.respond(cc, req)
@@ -282,5 +300,8 @@ func DecodeParams[T any](raw json.RawMessage, out *T) error {
 	if len(raw) == 0 {
 		return nil
 	}
-	return json.Unmarshal(raw, out)
+	if err := json.Unmarshal(raw, out); err != nil {
+		return ErrInvalidParams("%v", err)
+	}
+	return nil
 }

@@ -3,7 +3,6 @@ import Quickshell
 import Quickshell.Io
 import "compat"
 import "compat/PluginIds.js" as PluginIds
-import "../media/Model.js" as Model
 
 Item {
     id: root
@@ -22,21 +21,6 @@ Item {
         })
     }
 
-    Loader {
-        id: mediaLoader
-        source: Qt.resolvedUrl("../media/Service.qml")
-        onLoaded: item.shell = Qt.binding(function() { return root.shell })
-    }
-
-    readonly property var media: mediaLoader.item
-    readonly property var activePlayer: media ? media.activePlayer : null
-    readonly property bool bravePlaying: !!(media && media.bravePlaying)
-
-    function runAction(action, showFeedback, targetKey) {
-        if (!media || typeof media.runAction !== "function")
-            return false
-        return media.runAction(action, showFeedback, targetKey)
-    }
     property var vizLevels: []
     property int vizSequence: 0
     property int vizGeneration: 0
@@ -67,7 +51,6 @@ Item {
     property bool scanNoticeShown: false
     readonly property int scanNotifyId: 42421
     readonly property int notifyNormalMs: 5000
-    readonly property int notifyLowMs: 3000
 
     function notify(opts) {
         var o = opts || {}
@@ -79,8 +62,8 @@ Item {
         var image = String(o.image || "").trim()
         if (image)
             args.push("--image", image)
-        args.push(Model.plain(o.summary || "Evoplayer", 180))
-        var body = Model.plain(o.body || "", 180)
+        args.push(Util.plain(o.summary || "Evoplayer", 180))
+        var body = Util.plain(o.body || "", 180)
         if (body)
             args.push(body)
         if (o.replaceId !== undefined)
@@ -91,18 +74,10 @@ Item {
     signal daemonJobUpdated(var data)
 
     readonly property bool ipcReady: playerSocket.connected
-    property bool ipcSynced: false
     property string enrichPath: ""
     property string enrichQueuedPath: ""
     property bool enrichBusy: false
     property string enrichCurrentPath: ""
-
-    function formatTime(sec) {
-        var total = Math.max(0, Math.floor(Number(sec) || 0))
-        var min = Math.floor(total / 60)
-        var s = total % 60
-        return min + ":" + (s < 10 ? "0" : "") + s
-    }
 
     function ipcWrite(method, params) {
         if (!playerSocket.connected)
@@ -119,12 +94,7 @@ Item {
     function applyStatePayload(data) {
         if (!data || typeof data !== "object")
             return
-        ipcSynced = true
         var patch = Object.assign({}, data)
-        if (patch.position !== undefined)
-            patch.position_label = formatTime(patch.position)
-        if (patch.duration !== undefined)
-            patch.duration_label = formatTime(patch.duration)
         var path = String(patch.path || "")
         if (path && path !== enrichPath) {
             enrichPath = path
@@ -464,12 +434,10 @@ Item {
                 connectRetryTimer.stop()
                 connectRetryTimer.interval = root.connectRetryMinMs
                 root.ipcSubscribed = false
-                root.ipcSynced = false
                 Qt.callLater(root.subscribePlayer)
                 Qt.callLater(root.flushIpcWaitQueue)
             } else {
                 root.ipcSubscribed = false
-                root.ipcSynced = false
                 root.player = { state: "stopped", volume: 100 }
                 root.failPendingIPC()
                 Qt.callLater(root.ensurePlayer)

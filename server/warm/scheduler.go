@@ -3,7 +3,6 @@ package warm
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/sebday/evoplayer/server/paths"
 )
@@ -24,6 +23,7 @@ type job struct {
 // Scheduler deduplicates and prioritizes background asset warming.
 type Scheduler struct {
 	mu         sync.Mutex
+	wake       *sync.Cond
 	inflight   map[string]struct{}
 	pending    []job
 	env        paths.Env
@@ -45,6 +45,7 @@ func NewScheduler(env paths.Env, workers int) *Scheduler {
 		workers:  workers,
 		cancel:   cancel,
 	}
+	s.wake = sync.NewCond(&s.mu)
 	go s.loop(ctx)
 	return s
 }
@@ -84,7 +85,10 @@ func (s *Scheduler) Close() {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	s.ClearPending()
+	s.mu.Lock()
+	s.pending = nil
+	s.wake.Broadcast()
+	s.mu.Unlock()
 }
 
 func (s *Scheduler) Enqueue(path string, priority Priority) {
@@ -105,89 +109,126 @@ func (s *Scheduler) Enqueue(path string, priority Priority) {
 		}
 	}
 	s.pending = append(s.pending, job{path: path, priority: priority})
+	s.wake.Broadcast()
 }
 
 func (s *Scheduler) EnqueueMany(paths []string, priority Priority) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index := make(map[string]int, len(s.pending))
+	for i, j := range s.pending {
+		index[j.path] = i
+	}
+	added := false
 	for _, p := range paths {
-		s.Enqueue(p, priority)
+		if p == "" {
+			continue
+		}
+		if _, ok := s.inflight[p]; ok {
+			continue
+		}
+		if i, ok := index[p]; ok {
+			if priority > s.pending[i].priority {
+				s.pending[i].priority = priority
+			}
+			continue
+		}
+		s.pending = append(s.pending, job{path: p, priority: priority})
+		index[p] = len(s.pending) - 1
+		added = true
+	}
+	if added {
+		s.wake.Broadcast()
 	}
 }
 
 func (s *Scheduler) ClearPending() {
 	s.mu.Lock()
 	s.pending = nil
+	s.wake.Broadcast()
 	s.mu.Unlock()
 }
 
 func (s *Scheduler) Pause() {
 	s.mu.Lock()
 	s.paused = true
+	s.wake.Broadcast()
 	s.mu.Unlock()
 }
 
 func (s *Scheduler) Resume() {
 	s.mu.Lock()
 	s.paused = false
+	s.wake.Broadcast()
 	s.mu.Unlock()
 }
 
 func (s *Scheduler) WaitIdleCtx(ctx context.Context) error {
-	for {
+	stop := make(chan struct{})
+	go func() {
 		select {
 		case <-ctx.Done():
-			s.ClearPending()
-			return ctx.Err()
-		default:
-		}
-		s.mu.Lock()
-		idle := len(s.pending) == 0 && len(s.inflight) == 0
-		if idle {
+			s.mu.Lock()
+			s.wake.Broadcast()
 			s.mu.Unlock()
-			return nil
+		case <-stop:
 		}
-		s.mu.Unlock()
-		time.Sleep(50 * time.Millisecond)
+	}()
+	defer close(stop)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for len(s.pending) > 0 || len(s.inflight) > 0 {
+		if err := ctx.Err(); err != nil {
+			s.pending = nil
+			return err
+		}
+		s.wake.Wait()
 	}
+	return nil
 }
 
 func (s *Scheduler) loop(ctx context.Context) {
 	sem := make(chan struct{}, s.workers)
+	s.mu.Lock()
 	for {
-		select {
-		case <-ctx.Done():
+		for ctx.Err() == nil && (s.paused || len(s.pending) == 0) {
+			s.wake.Wait()
+		}
+		if ctx.Err() != nil {
+			s.mu.Unlock()
 			return
-		default:
 		}
-		s.mu.Lock()
-		paused := s.paused
-		s.mu.Unlock()
-		if paused {
-			time.Sleep(50 * time.Millisecond)
-			continue
-		}
-		j, env, ok := s.pop()
+		j, env, ok := s.popLocked()
 		if !ok {
-			time.Sleep(50 * time.Millisecond)
 			continue
 		}
+		s.mu.Unlock()
 		sem <- struct{}{}
 		go func(j job) {
 			defer func() { <-sem }()
-			defer func() {
-				_ = recover()
-				s.mu.Lock()
-				delete(s.inflight, j.path)
-				s.mu.Unlock()
-				s.complete(j.path, true)
+			var res Result
+			var err error
+			func() {
+				defer func() { _ = recover() }()
+				res, err = TrackAssets(env, j.path)
 			}()
-			_, _ = TrackAssets(env, j.path)
+			s.mu.Lock()
+			delete(s.inflight, j.path)
+			s.wake.Broadcast()
+			s.mu.Unlock()
+			s.complete(j.path, err == nil && res.ArtBuilt)
 		}(j)
+		s.mu.Lock()
 	}
 }
 
 func (s *Scheduler) pop() (job, paths.Env, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.popLocked()
+}
+
+func (s *Scheduler) popLocked() (job, paths.Env, bool) {
 	if len(s.pending) == 0 {
 		return job{}, paths.Env{}, false
 	}

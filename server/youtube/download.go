@@ -194,6 +194,9 @@ func (info ytdlpInfo) artist() string {
 func ytdlpDump(ctx context.Context, bin, pageURL string) (ytdlpInfo, string, error) {
 	var last error
 	for _, browser := range ytdlp.Browsers() {
+		if ctx.Err() != nil {
+			return ytdlpInfo{}, "", ctx.Err()
+		}
 		info, err := ytdlpDumpOnce(ctx, bin, pageURL, browser)
 		if err == nil {
 			return info, browser, nil
@@ -346,12 +349,13 @@ func fetchThumbnail(info ytdlpInfo) ([]byte, string) {
 		if err != nil {
 			continue
 		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			resp.Body.Close()
+			continue
+		}
 		body, err := io.ReadAll(io.LimitReader(resp.Body, 20<<20))
 		resp.Body.Close()
 		if err != nil || len(body) < 1024 {
-			continue
-		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			continue
 		}
 		mime := resp.Header.Get("Content-Type")

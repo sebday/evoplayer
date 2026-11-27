@@ -75,30 +75,10 @@ func UpdateFieldTags(env Env, field, value, tagList string, paths []string) (int
 	if err != nil {
 		return 0, err
 	}
-	fields := map[string]string{
+	return writeFieldsOn(env, paths, map[string]string{
 		key:    strings.TrimSpace(value),
 		"tags": strings.TrimSpace(tagList),
-	}
-	n := 0
-	seen := map[string]struct{}{}
-	for _, path := range paths {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			continue
-		}
-		if _, ok := seen[path]; ok {
-			continue
-		}
-		seen[path] = struct{}{}
-		if _, err := writeTagFields(env, path, fields); err != nil {
-			return n, err
-		}
-		n++
-	}
-	if n == 0 {
-		return 0, fmt.Errorf("path required")
-	}
-	return n, nil
+	})
 }
 
 // AlbumTagPatch writes only the fields that are set. A nil field is left alone.
@@ -179,6 +159,9 @@ func writeTagFields(env Env, path string, targets map[string]string) (Track, err
 	}
 	if err := tags.Write(path, targets); err != nil {
 		return Track{}, err
+	}
+	if _, ok := targets["album"]; ok {
+		forgetFolderArt(filepath.Dir(path))
 	}
 	probed, _ := tags.Probe(path)
 	genre := tags.TrimFrame(probed.Tag.Genre)

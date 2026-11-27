@@ -76,6 +76,7 @@ type Analyzer struct {
 
 	tickStop chan struct{}
 	tickDone chan struct{}
+	startMu  sync.Mutex
 }
 
 func NewAnalyzer(sampleRate float64) *Analyzer {
@@ -177,6 +178,8 @@ func (a *Analyzer) resetProcessingLocked() {
 }
 
 func (a *Analyzer) stopTicker() {
+	a.startMu.Lock()
+	defer a.startMu.Unlock()
 	a.mu.Lock()
 	stop, done := a.tickStop, a.tickDone
 	a.tickStop, a.tickDone = nil, nil
@@ -187,20 +190,30 @@ func (a *Analyzer) stopTicker() {
 // startTicker swaps in a fresh ticker under one lock so concurrent callers
 // never orphan a running loop.
 func (a *Analyzer) startTicker() {
+	a.startMu.Lock()
+	defer a.startMu.Unlock()
 	a.mu.Lock()
 	oldStop, oldDone := a.tickStop, a.tickDone
 	a.tickStop, a.tickDone = nil, nil
-	if a.wanted {
-		stop, done := make(chan struct{}), make(chan struct{})
-		a.tickStop, a.tickDone = stop, done
-		interval := a.emitMin
-		go func() {
-			defer close(done)
-			a.tickLoop(stop, interval)
-		}()
-	}
+	wanted := a.wanted
+	interval := a.emitMin
 	a.mu.Unlock()
 	haltTicker(oldStop, oldDone)
+	if !wanted {
+		return
+	}
+	a.mu.Lock()
+	if !a.wanted {
+		a.mu.Unlock()
+		return
+	}
+	stop, done := make(chan struct{}), make(chan struct{})
+	a.tickStop, a.tickDone = stop, done
+	a.mu.Unlock()
+	go func() {
+		defer close(done)
+		a.tickLoop(stop, interval)
+	}()
 }
 
 func haltTicker(stop, done chan struct{}) {
@@ -333,12 +346,9 @@ func (a *Analyzer) emitLocked() ([]float32, func([]float32)) {
 	if a.onUpdate == nil {
 		return nil, nil
 	}
-	if cap(a.emit) < BarCount {
-		a.emit = make([]float32, BarCount)
-	}
-	a.emit = a.emit[:BarCount]
-	copy(a.emit, a.display)
-	return a.emit, a.onUpdate
+	out := make([]float32, BarCount)
+	copy(out, a.display)
+	return out, a.onUpdate
 }
 
 func ringIndex(idx, size int) int {

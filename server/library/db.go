@@ -5,10 +5,16 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/sebday/evoplayer/server/tags"
 
 	_ "modernc.org/sqlite"
+)
+
+var (
+	dbMu    sync.Mutex
+	dbCache = map[string]*sql.DB{}
 )
 
 const schemaSQL = `

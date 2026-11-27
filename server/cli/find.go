@@ -63,7 +63,7 @@ func CmdFind(env paths.Env, args []string) error {
 		return err
 	}
 	if jsonOut {
-		return printJSONRows(items)
+		return printJSON(items)
 	}
 	for _, item := range items {
 		path, _ := item["path"].(string)

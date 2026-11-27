@@ -58,10 +58,14 @@ func OnTracksMoved(env Env, moved map[string]string) error {
 		entries, err := os.ReadDir(env.PlaylistDir)
 		if err == nil {
 			for _, e := range entries {
-				if e.IsDir() || !strings.HasSuffix(e.Name(), ".m3u") {
+				name := e.Name()
+				if e.IsDir() || !strings.HasSuffix(name, ".m3u") {
 					continue
 				}
-				_ = library.RewriteM3U(filepath.Join(env.PlaylistDir, e.Name()), func(p string) string {
+				if name == "all.m3u" || name == "mixes.m3u" || name == "current.m3u" {
+					continue
+				}
+				_ = library.RewriteM3U(filepath.Join(env.PlaylistDir, name), func(p string) string {
 					if to, ok := moves[p]; ok {
 						return to
 					}
@@ -82,5 +86,5 @@ func OnTracksMoved(env Env, moved map[string]string) error {
 			_ = writeGenreM3U(env, genre)
 		}
 	}
-	return nil
+	return remapTrackPaths(env, moves)
 }

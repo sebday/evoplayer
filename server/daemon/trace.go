@@ -52,7 +52,7 @@ func traceIPCParams(method string, params json.RawMessage) string {
 		return ""
 	}
 	switch method {
-	case "queue.replace", "queue.load", "queue.play_current":
+	case "queue.replace":
 		var p struct {
 			Paths     []string `json:"paths"`
 			StartPath string   `json:"start_path"`

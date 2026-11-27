@@ -6,7 +6,6 @@ import (
 	"github.com/sebday/evoplayer/server/config"
 	"github.com/sebday/evoplayer/server/ipc"
 	"github.com/sebday/evoplayer/server/paths"
-	"github.com/sebday/evoplayer/server/secrets"
 	"github.com/sebday/evoplayer/server/status"
 )
 
@@ -27,12 +26,7 @@ func (d *Daemon) setMusicRoot(root string) {
 
 func (d *Daemon) configJSONView() (config.JSONView, error) {
 	env := d.env()
-	view, err := config.JSON(env.MusicConfig, env.MusicRoot)
-	if err != nil {
-		return view, err
-	}
-	view.Soundcloud.OAuthSource = secrets.SoundcloudOAuth().Source
-	return view, nil
+	return config.JSONForClient(env.MusicConfig, env.MusicRoot)
 }
 
 func (d *Daemon) handleConfigSet(req ipc.Request) (interface{}, error) {

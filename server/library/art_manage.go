@@ -333,6 +333,7 @@ func ClearArt(env Env, trackPath string) error {
 		_ = os.Remove(folder)
 	}
 	rememberTrackArt(env, trackPath, "")
+	forgetFolderArt(filepath.Dir(trackPath))
 	return nil
 }
 
@@ -373,22 +374,25 @@ func Maintain(env Env) error {
 		return err
 	}
 	for dir := range snap.Dirs {
-		_ = embedFolder(env, dir)
+		if err := embedFolder(env, dir); err != nil {
+			continue
+		}
+		delete(snap.Dirs, dir)
 	}
 	for track := range snap.Tracks {
 		art := artCacheFind(env, track)
 		if art == "" {
 			continue
 		}
-		_ = embedAudio(track, art)
+		if err := embedAudio(track, art); err != nil {
+			continue
+		}
+		delete(snap.Tracks, track)
 	}
 	if env.CacheDir == "" {
 		return nil
 	}
-	return writeDirty(env, dirtySnapshot{
-		Dirs:   map[string]dirtyEntry{},
-		Tracks: map[string]dirtyEntry{},
-	})
+	return writeDirty(env, snap)
 }
 
 type dirtySnapshot struct {

@@ -11,11 +11,11 @@ import (
 
 func enrichOnce(env paths.Env, st playback.Status) playback.Status {
 	if st.Path == "" {
-		return mergeSavedPlaylist(env, st)
+		return st
 	}
 	meta, err := library.Meta(library.EnvFrom(env), st.Path, "")
 	if err != nil {
-		return mergeSavedPlaylist(env, st)
+		return st
 	}
 	st.Title = pick(meta.Title, st.Title)
 	st.Artist = meta.Artist
@@ -30,7 +30,7 @@ func enrichOnce(env paths.Env, st playback.Status) playback.Status {
 		st.Duration = meta.Duration
 		st = st.WithLabels()
 	}
-	return mergeSavedPlaylist(env, st)
+	return st
 }
 
 func Saved(env paths.Env) playback.Status {
@@ -41,7 +41,6 @@ func Saved(env paths.Env) playback.Status {
 	var saved struct {
 		Path     string  `json:"path"`
 		Genre    string  `json:"genre"`
-		Playlist string  `json:"playlist"`
 		Position float64 `json:"position"`
 		Title    string  `json:"title"`
 		Artist   string  `json:"artist"`
@@ -54,7 +53,6 @@ func Saved(env paths.Env) playback.Status {
 		State:    "stopped",
 		Path:     saved.Path,
 		Genre:    saved.Genre,
-		Playlist: saved.Playlist,
 		Position: saved.Position,
 		Title:    saved.Title,
 		Artist:   saved.Artist,
@@ -63,34 +61,6 @@ func Saved(env paths.Env) playback.Status {
 		st.Volume = clampVolume(*saved.Volume)
 	}
 	return EnrichFull(env, st.WithLabels())
-}
-
-func mergeSavedPlaylist(env paths.Env, st playback.Status) playback.Status {
-	if st.Playlist != "" {
-		return st
-	}
-	metaMu.RLock()
-	if savedPlaylistOK {
-		st.Playlist = savedPlaylist
-		metaMu.RUnlock()
-		return st
-	}
-	metaMu.RUnlock()
-	b, err := os.ReadFile(env.PlayerState)
-	if err != nil {
-		return st
-	}
-	var saved struct {
-		Playlist string `json:"playlist"`
-	}
-	if json.Unmarshal(b, &saved) == nil && saved.Playlist != "" {
-		st.Playlist = saved.Playlist
-		metaMu.Lock()
-		savedPlaylist = saved.Playlist
-		savedPlaylistOK = true
-		metaMu.Unlock()
-	}
-	return st
 }
 
 func pick(a, b string) string {

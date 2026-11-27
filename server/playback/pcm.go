@@ -5,9 +5,7 @@ type SampleRate int
 
 // Format describes decoded PCM layout.
 type Format struct {
-	SampleRate  SampleRate
-	NumChannels int
-	Precision   int
+	SampleRate SampleRate
 }
 
 // Streamer pulls stereo float64 PCM samples.
@@ -16,15 +14,10 @@ type Streamer interface {
 	Err() error
 }
 
-// StreamSeekCloser is a readable PCM source that must be closed.
-type StreamSeekCloser interface {
-	Streamer
-	Close() error
-}
-
 // StreamSeeker supports sample-index seeking on the underlying decoder.
 type StreamSeeker interface {
-	StreamSeekCloser
+	Streamer
+	Close() error
 	Len() int
 	Seek(p int) error
 }

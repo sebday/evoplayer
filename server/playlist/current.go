@@ -178,8 +178,7 @@ func nextSiblingFolder(env Env, curDir string) (string, error) {
 	}
 	skip, _ := config.SkipDirs(env.MusicConfig)
 	skipSet := map[string]struct{}{
-		".incoming": {},
-		"incoming":  {},
+		"incoming": {},
 	}
 	for _, name := range skip {
 		skipSet[name] = struct{}{}

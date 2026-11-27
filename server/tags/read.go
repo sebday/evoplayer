@@ -51,7 +51,7 @@ func Probe(path string) (ProbeResult, error) {
 	return probe(path, true)
 }
 
-// ProbeImport reads tags for bulk .incoming import. MP3 duration comes from
+// ProbeImport reads tags for bulk .evoplayer/incoming import. MP3 duration comes from
 // ID3 TLEN only (no per-file ffprobe); mix routing still uses path heuristics.
 func ProbeImport(path string) (ProbeResult, error) {
 	return probe(path, false)

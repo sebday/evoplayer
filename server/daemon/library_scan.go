@@ -23,24 +23,22 @@ func (d *Daemon) scheduleLibraryScan(ctx context.Context) {
 	}()
 }
 
-func (d *Daemon) startBootstrapScan() bool {
+func (d *Daemon) startBootstrapScan() {
 	env := library.EnvFrom(d.env())
 	need, err := library.NeedsBootstrap(env)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "evoplayer: warn: library scan check: %v\n", err)
-		return false
+		return
 	}
 	if !need {
-		return false
+		return
 	}
 	_, err = d.jobs.Start("scan", func(ctx context.Context) error {
 		return d.runLibraryScan(ctx, env)
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "evoplayer: warn: library scan: %v\n", err)
-		return false
 	}
-	return true
 }
 
 func (d *Daemon) loopLibrarySync(ctx context.Context) {
@@ -58,16 +56,10 @@ func (d *Daemon) loopLibrarySync(ctx context.Context) {
 }
 
 func (d *Daemon) librarySyncDelay() time.Duration {
-	if d.syncDelay > 0 {
-		return d.syncDelay
-	}
 	return defaultLibrarySyncDelay
 }
 
 func (d *Daemon) librarySyncInterval() time.Duration {
-	if d.syncInterval > 0 {
-		return d.syncInterval
-	}
 	return defaultLibrarySyncInterval
 }
 

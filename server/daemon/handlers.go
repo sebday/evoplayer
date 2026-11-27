@@ -2,7 +2,6 @@ package daemon
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -14,9 +13,7 @@ import (
 	"github.com/sebday/evoplayer/server/mpris"
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
-	"github.com/sebday/evoplayer/server/soundcloud"
 	"github.com/sebday/evoplayer/server/status"
-	"github.com/sebday/evoplayer/server/viz"
 	"github.com/sebday/evoplayer/server/warm"
 )
 
@@ -32,9 +29,6 @@ func (d *Daemon) mprisToggle() error {
 	} else {
 		err = d.Actor.Toggle()
 	}
-	after := d.Actor.Snapshot()
-	fmt.Fprintf(os.Stderr, "evoplayer: mpris toggle done %s -> %s\n",
-		tracePlaybackSnap(before), tracePlaybackSnap(after))
 	return err
 }
 
@@ -85,11 +79,6 @@ func (d *Daemon) broadcastStateFull() {
 }
 
 func (d *Daemon) broadcastViz(levels []float32) {
-	if d.vizFrame != nil {
-		_ = d.vizFrame.Write(levels)
-	} else {
-		_ = viz.WriteFrame(viz.FramePath(d.env().SocketPath), levels)
-	}
 	if !d.Server.HasVizClients() || !d.Server.HasEventClients() {
 		return
 	}
@@ -115,8 +104,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, err
 		}
-		playlist := readPlaylist(d.env().PlayerState)
-		row, err := library.Meta(libEnv, p.Path, playlist)
+		row, err := library.Meta(libEnv, p.Path, "")
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				return nil, ipc.ErrNotFound("track not found: %s", p.Path)
@@ -124,23 +112,6 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		return row, nil
-	case "library.browse":
-		var p struct {
-			Path           string `json:"path"`
-			Queue          bool   `json:"queue"`
-			QueuePathsOnly bool   `json:"queue_paths_only"`
-			Offset         int    `json:"offset"`
-			Limit          int    `json:"limit"`
-		}
-		if err := ipc.DecodeParams(req.Params, &p); err != nil {
-			return nil, err
-		}
-		return library.Browse(libEnv, library.BrowseOptions{
-			Rel: p.Path, Queue: p.Queue, QueuePathsOnly: p.QueuePathsOnly,
-			Offset: p.Offset, Limit: p.Limit,
-		})
-	case "library.genres":
-		return library.Genres(libEnv)
 	case "library.incoming.list":
 		folders := library.GenreChoices(libEnv)
 		return map[string]any{
@@ -162,14 +133,6 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			folder = strings.TrimSpace(p.Genre)
 		}
 		return library.SetIncomingGenre(libEnv, p.Path, folder)
-	case "library.tracks":
-		var p struct {
-			Genre string `json:"genre"`
-		}
-		if err := ipc.DecodeParams(req.Params, &p); err != nil {
-			return nil, err
-		}
-		return library.TracksForGenre(libEnv, p.Genre)
 	case "library.search":
 		var p struct {
 			Mode  string `json:"mode"`
@@ -201,68 +164,17 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		}
 		return library.Index(libEnv, p.Kind)
 	case "library.artist.favorite":
-		var fav struct {
-			Name string `json:"name"`
-		}
-		if err := ipc.DecodeParams(req.Params, &fav); err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(fav.Name) == "" {
-			return nil, ipc.ErrInvalidParams("name required")
-		}
-		starred, err := library.ToggleArtistStar(libEnv, fav.Name)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"name": strings.TrimSpace(fav.Name), "starred": starred}, nil
+		return toggleNamedStar(req, func(name string) (bool, error) {
+			return library.ToggleArtistStar(libEnv, name)
+		})
 	case "library.album.favorite":
-		{
-			var albumFav struct {
-				Name string `json:"name"`
-			}
-			if err := ipc.DecodeParams(req.Params, &albumFav); err != nil {
-				return nil, err
-			}
-			if strings.TrimSpace(albumFav.Name) == "" {
-				return nil, ipc.ErrInvalidParams("name required")
-			}
-			starred, err := library.ToggleAlbumStar(libEnv, albumFav.Name)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]any{"name": strings.TrimSpace(albumFav.Name), "starred": starred}, nil
-		}
+		return toggleNamedStar(req, func(name string) (bool, error) {
+			return library.ToggleAlbumStar(libEnv, name)
+		})
 	case "library.label.favorite":
-		var labelFav struct {
-			Name string `json:"name"`
-		}
-		if err := ipc.DecodeParams(req.Params, &labelFav); err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(labelFav.Name) == "" {
-			return nil, ipc.ErrInvalidParams("name required")
-		}
-		starred, err := library.ToggleLabelStar(libEnv, labelFav.Name)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"name": strings.TrimSpace(labelFav.Name), "starred": starred}, nil
-	case "library.soundcloud.search":
-		var search struct {
-			Query string `json:"query"`
-			Limit int    `json:"limit"`
-		}
-		if err := ipc.DecodeParams(req.Params, &search); err != nil {
-			return nil, err
-		}
-		if strings.TrimSpace(search.Query) == "" {
-			return nil, ipc.ErrInvalidParams("query required")
-		}
-		tracks, err := soundcloud.Search(d.env(), search.Query, search.Limit)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"tracks": tracks}, nil
+		return toggleNamedStar(req, func(name string) (bool, error) {
+			return library.ToggleLabelStar(libEnv, name)
+		})
 	case "library.playlist.list":
 		return playlist.ListIndex(playlist.EnvFrom(d.env()))
 	case "library.playlist.tracks.order":
@@ -302,14 +214,6 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		return playlist.TracksPageFor(playlist.EnvFrom(d.env()), p.Name, p.Offset, p.Limit)
-	case "library.playlist.star":
-		var p struct {
-			Name string `json:"name"`
-		}
-		if err := ipc.DecodeParams(req.Params, &p); err != nil {
-			return nil, err
-		}
-		return playlist.StarToggle(playlist.EnvFrom(d.env()), p.Name)
 	case "library.favorite.toggle":
 		var p struct {
 			Path string `json:"path"`
@@ -318,29 +222,11 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		row, err := playlist.FavoriteToggle(playlist.EnvFrom(d.env()), p.Path)
-		if err := wrapJobErr(err); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		status.InvalidateMeta(p.Path)
 		return row, nil
-	case "library.track.move":
-		var p struct {
-			Path   string `json:"path"`
-			Folder string `json:"folder"`
-		}
-		if err := ipc.DecodeParams(req.Params, &p); err != nil {
-			return nil, err
-		}
-		libEnv := library.EnvFrom(d.env())
-		res, err := library.MoveTrackToFolder(libEnv, p.Path, p.Folder)
-		if err := wrapJobErr(err); err != nil {
-			return nil, err
-		}
-		_ = playlist.OnTrackMoved(playlist.EnvFrom(d.env()), res.From, res.To)
-		_ = d.Actor.RelocatePath(res.From, res.To)
-		status.InvalidateMeta(res.From)
-		status.InvalidateMeta(res.To)
-		return res, nil
 	case "library.track.delete":
 		var p struct {
 			Path string `json:"path"`
@@ -349,7 +235,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		deleted, err := library.DeleteTrack(libEnv, p.Path)
-		if err := wrapJobErr(err); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		_ = playlist.OnTrackDeleted(playlist.EnvFrom(d.env()), deleted)
@@ -367,7 +253,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		tags, err := library.ReadTrackTags(p.Path)
-		if err := wrapJobErr(err); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		return tags, nil
@@ -395,7 +281,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			Label:  p.Label,
 			Tags:   p.Tags,
 		})
-		if err := wrapJobErr(err); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		status.InvalidateMeta(p.Path)
@@ -414,16 +300,10 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		}
 		libEnv := library.EnvFrom(d.env())
 		n, err := library.UpdateSharedTags(libEnv, many.Paths, many.Album, many.Year)
-		if err := wrapJobErr(err); err != nil {
+		if err != nil {
 			return nil, err
 		}
-		playing := d.Actor.Snapshot().Path
-		for _, path := range many.Paths {
-			status.InvalidateMeta(path)
-			if path == playing {
-				d.broadcastStateFull()
-			}
-		}
+		d.invalidatePaths(many.Paths)
 		return map[string]any{"updated": n}, nil
 	case "library.track.tags.shared":
 		var shared struct {
@@ -461,16 +341,10 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			Label: album.Label,
 			Tags:  album.Tags,
 		})
-		if err := wrapJobErr(err); err != nil {
+		if err != nil {
 			return nil, err
 		}
-		playing := d.Actor.Snapshot().Path
-		for _, path := range album.Paths {
-			status.InvalidateMeta(path)
-			if path == playing {
-				d.broadcastStateFull()
-			}
-		}
+		d.invalidatePaths(album.Paths)
 		return map[string]any{"updated": n}, nil
 	case "library.track.tags.paths":
 		var q struct {
@@ -519,37 +393,11 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		} else {
 			n, err = library.UpdateField(libEnv, one.Field, one.Value, one.Paths)
 		}
-		if err := wrapJobErr(err); err != nil {
+		if err != nil {
 			return nil, err
 		}
-		playing := d.Actor.Snapshot().Path
-		for _, path := range one.Paths {
-			status.InvalidateMeta(path)
-			if path == playing {
-				d.broadcastStateFull()
-			}
-		}
+		d.invalidatePaths(one.Paths)
 		return map[string]any{"updated": n}, nil
-	case "library.current.load":
-		return playlist.LoadCurrent(playlist.EnvFrom(d.env()))
-	case "library.current.save":
-		var p struct {
-			Paths []string `json:"paths"`
-		}
-		if err := ipc.DecodeParams(req.Params, &p); err != nil {
-			return nil, err
-		}
-		if len(p.Paths) == 0 {
-			return nil, fmt.Errorf("current save: no paths")
-		}
-		env := playlist.EnvFrom(d.env())
-		paths := append([]string(nil), p.Paths...)
-		changed, err := playlist.SaveCurrentFast(env, paths)
-		if err := wrapJobErr(err); err != nil {
-			return nil, err
-		}
-		_ = playlist.EnrichCurrentTracksJSON(env, paths)
-		return map[string]any{"saved": len(paths), "changed": changed}, nil
 	case "library.warm":
 		var p struct {
 			Path string `json:"path"`
@@ -559,7 +407,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		}
 		libEnv := library.EnvFrom(d.env())
 		row, err := library.Meta(libEnv, p.Path, "")
-		if err := wrapJobErr(err); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		path := p.Path
@@ -569,18 +417,6 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			Art:   row.Art,
 			Thumb: row.Thumb,
 		}, nil
-	case "library.warm.batch":
-		var p struct {
-			Paths   []string `json:"paths"`
-			Workers int      `json:"workers"`
-			Art     bool     `json:"art"`
-		}
-		if err := ipc.DecodeParams(req.Params, &p); err != nil {
-			return nil, err
-		}
-		paths := append([]string(nil), p.Paths...)
-		d.warm.EnqueueMany(paths, warm.PriorityNormal)
-		return []warm.Result{}, nil
 	case "library.warm.waveform":
 		var p struct {
 			Path string `json:"path"`
@@ -589,7 +425,7 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 			return nil, err
 		}
 		file, err := warm.WaveformForTrack(d.env(), p.Path)
-		if err := wrapJobErr(err); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		status.InvalidateMeta(p.Path)
@@ -611,6 +447,34 @@ func (d *Daemon) handleLibrary(req ipc.Request) (interface{}, error) {
 		return d.likeSoundCloud(likeParams.ID, likeParams.Artist, likeParams.Title, want)
 	default:
 		return nil, ipc.ErrUnknownMethod(req.Method)
+	}
+}
+
+func toggleNamedStar(req ipc.Request, toggle func(string) (bool, error)) (interface{}, error) {
+	var p struct {
+		Name string `json:"name"`
+	}
+	if err := ipc.DecodeParams(req.Params, &p); err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(p.Name)
+	if name == "" {
+		return nil, ipc.ErrInvalidParams("name required")
+	}
+	starred, err := toggle(name)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"name": name, "starred": starred}, nil
+}
+
+func (d *Daemon) invalidatePaths(paths []string) {
+	playing := d.Actor.Snapshot().Path
+	for _, path := range paths {
+		status.InvalidateMeta(path)
+		if path == playing {
+			d.broadcastStateFull()
+		}
 	}
 }
 
@@ -742,20 +606,6 @@ func (d *Daemon) handleJob(req ipc.Request) (interface{}, error) {
 	default:
 		return nil, ipc.ErrUnknownMethod(req.Method)
 	}
-}
-
-func readPlaylist(playerState string) string {
-	b, err := os.ReadFile(playerState)
-	if err != nil {
-		return ""
-	}
-	var saved struct {
-		Playlist string `json:"playlist"`
-	}
-	if json.Unmarshal(b, &saved) != nil {
-		return ""
-	}
-	return saved.Playlist
 }
 
 func (d *Daemon) broadcastJob() {

@@ -8,7 +8,7 @@ import (
 	"github.com/sebday/evoplayer/server/paths"
 )
 
-// RunImportIncoming runs .incoming import in the current process.
+// RunImportIncoming runs .evoplayer/incoming import in the current process.
 func RunImportIncoming(ctx context.Context, env paths.Env) int {
 	DeprioritizeProcess()
 	rep := NewNDJSONReporter(os.Stdout)

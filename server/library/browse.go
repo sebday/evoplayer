@@ -248,6 +248,9 @@ func scanTrack(rows *sql.Rows, env Env) (Track, error) {
 		return Track{}, err
 	}
 	t.Liked = liked == 1
+	if !t.Liked && isLiked(env, t.Path) {
+		t.Liked = true
+	}
 	cleanTrackText(&t)
 	enrichTrackAssets(env, &t)
 	applyTagGenre(&t)

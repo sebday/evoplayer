@@ -15,24 +15,18 @@ func CmdJob(env paths.Env, args []string) error {
 		if !DaemonUp(env) {
 			return printJSON(map[string]any{"status": "idle"})
 		}
-		resp, err := IPC(env, "job.status", nil)
+		resp, err := ipcOK(env, "job.status", nil)
 		if err != nil {
 			return err
-		}
-		if !resp.OK {
-			return fmt.Errorf("%s", resp.Error)
 		}
 		return printJSON(resp.Data)
 	case "stop", "cancel":
-		if err := EnsureDaemon(env, findExe(env)); err != nil {
+		if err := EnsureDaemon(env, findExe()); err != nil {
 			return err
 		}
-		resp, err := IPC(env, "job.cancel", nil)
+		resp, err := ipcOK(env, "job.cancel", nil)
 		if err != nil {
 			return err
-		}
-		if !resp.OK {
-			return fmt.Errorf("%s", resp.Error)
 		}
 		return printJSON(resp.Data)
 	default:

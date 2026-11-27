@@ -5,19 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
-)
 
-type File struct {
-	Paths      map[string]any `toml:"paths"`
-	Soundcloud map[string]any `toml:"soundcloud"`
-	Skip       []string       `toml:"skip"`
-	Extra      map[string]map[string]any
-}
+	"github.com/sebday/evoplayer/server/secrets"
+)
 
 type VizView struct {
 	Sensitivity    int     `json:"sensitivity"`
@@ -157,6 +151,15 @@ func PruneDerived(path string) error {
 	return write(path, doc)
 }
 
+func JSONForClient(path, musicRoot string) (JSONView, error) {
+	view, err := JSON(path, musicRoot)
+	if err != nil {
+		return view, err
+	}
+	view.Soundcloud.OAuthSource = secrets.SoundcloudOAuth().Source
+	return view, nil
+}
+
 func JSON(path, musicRoot string) (JSONView, error) {
 	_ = PruneDerived(path)
 	data, err := Load(path)
@@ -209,32 +212,25 @@ func ReadRoot(paths ...string) string {
 	return ""
 }
 
-var skipListRe = regexp.MustCompile(`(?ms)^\s*skip\s*=\s*\[(.*?)\]`)
-var skipItemRe = regexp.MustCompile(`"([^"]+)"`)
-
 func SkipDirs(path string) ([]string, error) {
-	if path == "" {
-		return nil, nil
-	}
-	text, err := os.ReadFile(path)
+	doc, err := loadDoc(path)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
 		return nil, err
 	}
-	match := skipListRe.FindSubmatch(text)
-	if match == nil {
+	switch raw := doc["skip"].(type) {
+	case []string:
+		return append([]string(nil), raw...), nil
+	case []any:
+		out := make([]string, 0, len(raw))
+		for _, item := range raw {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out, nil
+	default:
 		return nil, nil
 	}
-	items := skipItemRe.FindAllStringSubmatch(string(match[1]), -1)
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if len(item) > 1 {
-			out = append(out, item[1])
-		}
-	}
-	return out, nil
 }
 
 var sectionOrder = []string{"paths", "soundcloud", "genres", "genre_aliases", "playlist_folders"}

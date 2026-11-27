@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -24,7 +23,7 @@ func CmdJSONLog(env paths.Env, args []string) error {
 		if err != nil {
 			return err
 		}
-		return printJSONRows(rows)
+		return printJSON(rows)
 	case "queue-up-next":
 		if len(args) < 4 {
 			return fmt.Errorf("usage: evoplayer jsonlog queue-up-next <tracks.json> <current> <limit>")
@@ -34,23 +33,10 @@ func CmdJSONLog(env paths.Env, args []string) error {
 		if err != nil {
 			return err
 		}
-		return printJSONRows(rows)
+		return printJSON(rows)
 	default:
 		return fmt.Errorf("unknown jsonlog command: %s", args[0])
 	}
-}
-
-func printJSONRows(rows any) error {
-	b, err := json.Marshal(rows)
-	if err != nil {
-		return err
-	}
-	fmt.Println(string(b))
-	return nil
-}
-
-func tracksCacheDir(env paths.Env) string {
-	return filepath.Join(env.CacheDir, "tracks")
 }
 
 func placementLogPath(env paths.Env) string {

@@ -37,7 +37,7 @@ type incomingSCRow struct {
 
 var scTrackIDRe = regexp.MustCompile(`/tracks/(\d+)`)
 
-// IncomingSCReview writes import-review.txt for .incoming using soundcloud playlists.
+// IncomingSCReview writes import-review.txt for .evoplayer/incoming using soundcloud playlists.
 func IncomingSCReview(env library.Env, setsURL, oauth string) (string, error) {
 	playlistFolder, byKey, err := buildIncomingSCIndex(env, oauth, setsURL)
 	if err != nil {
@@ -51,7 +51,7 @@ func IncomingSCReview(env library.Env, setsURL, oauth string) (string, error) {
 	return outPath, nil
 }
 
-// IncomingSCApply tags .incoming files from soundcloud playlist folders.
+// IncomingSCApply tags .evoplayer/incoming files from soundcloud playlist folders.
 func IncomingSCApply(env library.Env, setsURL, oauth string, dryRun bool) (tagged, skipped, failed int, err error) {
 	_, byKey, err := buildIncomingSCIndex(env, oauth, setsURL)
 	if err != nil {
@@ -157,9 +157,6 @@ func buildIncomingSCIndex(env library.Env, oauth, setsURL string) (map[string]st
 		if folder == "" {
 			folder = library.MatchLibraryGenre(env, title)
 		}
-		if folder == "" {
-			folder = guessIncomingSCFolder(env, title)
-		}
 		playlistFolder[title] = folder
 
 		tracks, err := ytdlpFlatEntries(context.Background(), plURL, oauth, "")
@@ -255,13 +252,6 @@ func normIncomingSCMatch(s string) string {
 	return strings.Join(strings.Fields(b.String()), " ")
 }
 
-func guessIncomingSCFolder(env library.Env, playlistTitle string) string {
-	if folder := library.GuessFolderFromCandidates(env, playlistTitle); folder != "" {
-		return folder
-	}
-	return library.GuessFolderName(playlistTitle)
-}
-
 func resolveIncomingFolder(env library.Env, liked bool, meta incomingSCMeta, probed tags.ProbeResult) string {
 	if f := strings.TrimSpace(meta.folder); f != "" {
 		return f
@@ -275,7 +265,7 @@ func resolveIncomingFolder(env library.Env, liked bool, meta incomingSCMeta, pro
 	if f := library.FolderForGenreTag(env, tag.Genre); f != "" {
 		return f
 	}
-	if f := library.GuessFolderFromCandidates(env, tag.Genre, tag.Title, tag.Comment); f != "" {
+	if f := library.MatchLibraryGenre(env, tag.Genre, tag.Title, tag.Comment); f != "" {
 		return f
 	}
 	if strings.Contains(strings.ToLower(tag.Comment), "source:youtube") {
@@ -369,7 +359,7 @@ func collectIncomingSCRows(env library.Env, byKey map[string]incomingSCMeta) []i
 
 func writeIncomingSCReview(outPath, musicRoot, setsURL string, playlistFolder map[string]string, rows []incomingSCRow) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "evoplayer .incoming import review (soundcloud playlists)\n")
+	fmt.Fprintf(&b, "evoplayer .evoplayer/incoming import review (soundcloud playlists)\n")
 	fmt.Fprintf(&b, "generated: %s\n", time.Now().Format(time.RFC3339))
 	fmt.Fprintf(&b, "profile: %s\n", setsURL)
 	fmt.Fprintf(&b, "music root: %s\n", musicRoot)

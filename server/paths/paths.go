@@ -20,7 +20,6 @@ type Env struct {
 	RepoRoot        string
 	DisplayArtDir   string
 	LikesFile       string
-	TracksCacheDir  string
 	WaveformDir     string
 	ArtDir          string
 	LibraryDB       string
@@ -70,7 +69,6 @@ func Load(repoRoot string) Env {
 		RepoRoot:        repo,
 		DisplayArtDir:   filepath.Join(cache, "display-art"),
 		LikesFile:       filepath.Join(state, "likes.json"),
-		TracksCacheDir:  filepath.Join(cache, "tracks"),
 		WaveformDir:     filepath.Join(cache, "waveforms"),
 		ArtDir:          filepath.Join(cache, "art"),
 		LibraryDB:       filepath.Join(cache, "library.sqlite3"),
@@ -103,7 +101,6 @@ func (e Env) EnsureDirs() error {
 		e.PlaylistDir,
 		e.ArtDir,
 		e.WaveformDir,
-		e.TracksCacheDir,
 	} {
 		if dir == "" {
 			continue
@@ -129,7 +126,7 @@ func IncomingDir(musicRoot string) string {
 // folder does not. Files already in the music folder are left alone.
 func migrateLegacyState(stateDir string) error {
 	legacy := legacyStateDir()
-	if stateDir == "" || samePath(legacy, stateDir) {
+	if stateDir == "" || SamePath(legacy, stateDir) {
 		return nil
 	}
 	info, err := os.Stat(legacy)
@@ -152,7 +149,7 @@ func migrateLegacyState(stateDir string) error {
 	return copyDirFilesIfDestEmpty(filepath.Join(legacy, "playlists"), filepath.Join(stateDir, "playlists"))
 }
 
-func samePath(a, b string) bool {
+func SamePath(a, b string) bool {
 	aa, errA := filepath.Abs(a)
 	bb, errB := filepath.Abs(b)
 	if errA != nil || errB != nil {

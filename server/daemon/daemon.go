@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -21,7 +20,6 @@ import (
 	"github.com/sebday/evoplayer/server/playlist"
 	"github.com/sebday/evoplayer/server/soundcloud"
 	"github.com/sebday/evoplayer/server/status"
-	"github.com/sebday/evoplayer/server/viz"
 	"github.com/sebday/evoplayer/server/warm"
 )
 
@@ -34,7 +32,6 @@ type Daemon struct {
 	mpris             mprisCloser
 	lock              *os.File
 	vizSeq            atomic.Uint64
-	vizFrame          *viz.FrameWriter
 	warm              *warm.Scheduler
 	scrobbleMu        sync.Mutex
 	scrobbleDedupeKey string
@@ -49,8 +46,6 @@ type Daemon struct {
 	artMaintainMu     sync.Mutex
 	syncMu            sync.Mutex
 	syncing           bool
-	syncDelay         time.Duration
-	syncInterval      time.Duration
 	persistMu         sync.Mutex
 	persistTimer      *time.Timer
 	persistPath       string
@@ -62,6 +57,8 @@ type Daemon struct {
 	discoverByPath    map[string]int64
 	followMu          sync.Mutex
 	followGen         int
+	followCtx         context.Context
+	followCancel      context.CancelFunc
 	followBusy        map[string]bool
 	eqMu              sync.Mutex
 	eqPresets         [eqPresetCount]*playback.EQConfig
@@ -113,11 +110,15 @@ func New(env paths.Env) *Daemon {
 		d.persistPlayerState(st)
 	})
 	d.Actor.SetFollowReady(d.followFileReady)
-	d.Actor.SetOnFollow(func(index int, path string) {
+	d.Actor.SetOnFollow(func(_ int, path string) {
 		d.followMu.Lock()
 		gen := d.followGen
+		ctx := d.followCtx
 		d.followMu.Unlock()
-		go d.ensureFollowFile(gen, index, path)
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		go d.ensureFollowFile(ctx, gen, path)
 	})
 	if vol, ok := status.SavedVolume(env); ok {
 		d.persistVolume = vol
@@ -125,7 +126,6 @@ func New(env paths.Env) *Daemon {
 	} else {
 		d.persistVolume = -1
 	}
-	d.vizFrame = viz.NewFrameWriter(viz.FramePath(env.SocketPath))
 	d.Actor.SetVizOnUpdate(func(levels []float32) {
 		d.broadcastViz(levels)
 	})
@@ -152,9 +152,20 @@ func (d *Daemon) Run() error {
 	defer d.Server.Close()
 	defer d.flushPlayerState()
 	defer d.Actor.CloseOutput()
-	defer d.vizFrame.Close()
 	defer d.warm.Close()
 	defer d.jobs.CancelAndWait(jobShutdownGrace)
+	defer func() {
+		d.followMu.Lock()
+		cancel := d.followCancel
+		d.followMu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	}()
+	d.initMPRIS()
+	if d.mpris != nil {
+		defer d.mpris.Close()
+	}
 	if err := d.resumePlayback(false); err != nil {
 		fmt.Fprintf(os.Stderr, "evoplayer: restore: %v\n", err)
 	}
@@ -163,10 +174,6 @@ func (d *Daemon) Run() error {
 			fmt.Fprintf(os.Stderr, "evoplayer: audio init: %v\n", err)
 		}
 	}()
-	d.initMPRIS()
-	if d.mpris != nil {
-		defer d.mpris.Close()
-	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	d.scheduleLibraryScan(ctx)
@@ -174,8 +181,11 @@ func (d *Daemon) Run() error {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sig)
 	go func() {
-		<-sig
-		_ = d.Server.Close()
+		select {
+		case <-sig:
+			_ = d.Server.Close()
+		case <-ctx.Done():
+		}
 	}()
 	return d.Server.Serve()
 }
@@ -217,8 +227,6 @@ func (d *Daemon) releaseLock() {
 
 func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 	switch req.Method {
-	case "capabilities":
-		return capabilities(), nil
 	case "state.get":
 		return status.EnrichLight(d.env(), d.Actor.Snapshot()), nil
 	case "subscribe":
@@ -237,7 +245,9 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		}
 		return nil, nil
 	case "playback.next":
-		go func() { _ = d.Actor.Next() }()
+		if err := d.Actor.Next(); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	case "playback.follow":
 		var p struct {
@@ -249,22 +259,20 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		d.setPlaybackFollow(p.IDs)
 		return map[string]any{"tracks": len(p.IDs)}, nil
 	case "playback.prev":
-		go func() { _ = d.Actor.Prev() }()
+		if err := d.Actor.Prev(); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	case "playback.stop":
-		go func() { d.Actor.Stop() }()
+		d.Actor.Stop()
 		return nil, nil
-	case "queue.replace", "queue.load":
+	case "queue.replace":
 		var p struct {
-			Paths      []string `json:"paths"`
-			StartPath  string   `json:"start_path"`
-			IfRevision *uint64  `json:"if_revision"`
+			Paths     []string `json:"paths"`
+			StartPath string   `json:"start_path"`
 		}
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, ipc.ErrInvalidParams("%v", err)
-		}
-		if err := checkQueueRevision(d.Actor.QueueRevision(), p.IfRevision); err != nil {
-			return nil, err
 		}
 		if err := d.Actor.ReplaceQueue(p.Paths, p.StartPath); err != nil {
 			return nil, err
@@ -279,82 +287,22 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		}, nil
 	case "queue.play_path":
 		var p struct {
-			Path       string  `json:"path"`
-			IfRevision *uint64 `json:"if_revision"`
+			Path string `json:"path"`
 		}
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, ipc.ErrInvalidParams("%v", err)
-		}
-		if err := checkQueueRevision(d.Actor.QueueRevision(), p.IfRevision); err != nil {
-			return nil, err
 		}
 		if err := d.Actor.PlayPathInQueue(p.Path); err != nil {
 			return nil, err
 		}
 		d.broadcastStateFull()
 		return map[string]any{"queue_revision": d.Actor.QueueRevision()}, nil
-	case "queue.play_current":
-		var p struct {
-			Paths      []string `json:"paths"`
-			StartPath  string   `json:"start_path"`
-			IfRevision *uint64  `json:"if_revision"`
-		}
-		if err := ipc.DecodeParams(req.Params, &p); err != nil {
-			return nil, ipc.ErrInvalidParams("%v", err)
-		}
-		if err := checkQueueRevision(d.Actor.QueueRevision(), p.IfRevision); err != nil {
-			return nil, err
-		}
-		env := playlist.EnvFrom(d.env())
-		if len(p.Paths) > 0 {
-			paths := append([]string(nil), p.Paths...)
-			if _, err := playlist.SaveCurrentFast(env, paths); err != nil {
-				return nil, err
-			}
-			go func() {
-				_ = playlist.EnrichCurrentTracksJSON(env, paths)
-			}()
-		}
-		paths, err := playlist.ReadCurrentPaths(env)
-		if err != nil {
-			return nil, err
-		}
-		if len(paths) == 0 {
-			return nil, fmt.Errorf("current queue empty")
-		}
-		start := p.StartPath
-		st := d.Actor.Snapshot()
-		if start == "" {
-			if st.Path != "" && pathInList(paths, st.Path) {
-				start = st.Path
-			} else {
-				start = paths[0]
-			}
-		} else if !pathInList(paths, start) {
-			if st.Path != "" && pathInList(paths, st.Path) {
-				start = st.Path
-			} else {
-				start = paths[0]
-			}
-		}
-		if st.Path == start && pathInList(paths, start) {
-			if err := d.Actor.SetQueue(paths, start); err != nil {
-				return nil, err
-			}
-		} else if err := d.Actor.ReplaceQueue(paths, start); err != nil {
-			return nil, err
-		}
-		return map[string]any{"queue_revision": d.Actor.QueueRevision()}, nil
 	case "queue.append":
 		var p struct {
-			Paths      []string `json:"paths"`
-			IfRevision *uint64  `json:"if_revision"`
+			Paths []string `json:"paths"`
 		}
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, ipc.ErrInvalidParams("%v", err)
-		}
-		if err := checkQueueRevision(d.Actor.QueueRevision(), p.IfRevision); err != nil {
-			return nil, err
 		}
 		d.Actor.Append(p.Paths)
 		if err := d.saveCurrentQueue(); err != nil {
@@ -363,15 +311,11 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		return map[string]any{"queue_revision": d.Actor.QueueRevision()}, nil
 	case "queue.move":
 		var p struct {
-			Index      int     `json:"index"`
-			Delta      int     `json:"delta"`
-			IfRevision *uint64 `json:"if_revision"`
+			Index int `json:"index"`
+			Delta int `json:"delta"`
 		}
 		if err := ipc.DecodeParams(req.Params, &p); err != nil {
 			return nil, ipc.ErrInvalidParams("%v", err)
-		}
-		if err := checkQueueRevision(d.Actor.QueueRevision(), p.IfRevision); err != nil {
-			return nil, err
 		}
 		if err := d.Actor.MoveQueueIndex(p.Index, p.Delta); err != nil {
 			return nil, err
@@ -381,67 +325,6 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		}
 		d.broadcastStateFull()
 		return map[string]any{"queue_revision": d.Actor.QueueRevision()}, nil
-	case "queue.append_folder":
-		var p struct {
-			Path       string  `json:"path"`
-			IfRevision *uint64 `json:"if_revision"`
-		}
-		if err := ipc.DecodeParams(req.Params, &p); err != nil {
-			return nil, ipc.ErrInvalidParams("%v", err)
-		}
-		if err := checkQueueRevision(d.Actor.QueueRevision(), p.IfRevision); err != nil {
-			return nil, err
-		}
-		denv := d.env()
-		libEnv := library.EnvFrom(denv)
-		rel := strings.Trim(strings.TrimPrefix(p.Path, "/"), "/")
-		if p.Path == denv.MusicRoot || strings.HasPrefix(p.Path, denv.MusicRoot+"/") {
-			rel = strings.TrimPrefix(p.Path, denv.MusicRoot)
-			rel = strings.Trim(strings.TrimPrefix(rel, "/"), "/")
-		}
-		dir := filepath.Join(denv.MusicRoot, filepath.FromSlash(rel))
-		paths, err := library.CollectQueuePaths(libEnv, rel, dir)
-		if err != nil {
-			return nil, err
-		}
-		if len(paths) == 0 {
-			return map[string]any{"added": 0, "paths": []string{}}, nil
-		}
-		env := playlist.EnvFrom(d.env())
-		current, _ := playlist.ReadCurrentPaths(env)
-		seen := map[string]struct{}{}
-		merged := make([]string, 0, len(current)+len(paths))
-		for _, p := range current {
-			if _, ok := seen[p]; ok {
-				continue
-			}
-			seen[p] = struct{}{}
-			merged = append(merged, p)
-		}
-		added := 0
-		for _, p := range paths {
-			if _, ok := seen[p]; ok {
-				continue
-			}
-			seen[p] = struct{}{}
-			merged = append(merged, p)
-			added++
-		}
-		st := d.Actor.Snapshot()
-		start := st.Path
-		if !pathInList(merged, start) {
-			start = ""
-		}
-		if err := d.Actor.SetQueue(merged, start); err != nil {
-			return nil, err
-		}
-		if _, err := playlist.SaveCurrentFast(env, merged); err != nil {
-			return nil, err
-		}
-		go func(saved []string) {
-			_ = playlist.EnrichCurrentTracksJSON(env, saved)
-		}(append([]string(nil), merged...))
-		return map[string]any{"added": added, "paths": paths, "queue_revision": d.Actor.QueueRevision()}, nil
 	case "queue.up_next":
 		var p struct {
 			Limit int `json:"limit"`
@@ -527,24 +410,8 @@ func (d *Daemon) handle(req ipc.Request) (interface{}, error) {
 		return d.updateEQ(func(cfg playback.EQConfig) playback.EQConfig {
 			return playback.EQConfig{Enabled: cfg.Enabled}
 		})
-	case "viz.config":
-		return d.vizConfigView(), nil
 	case "viz.config.apply":
 		return d.reloadVizFromFile()
-	case "viz.config.set":
-		current := d.Actor.VizAnalyzer().Config()
-		patch := map[string]any{}
-		if len(req.Params) > 0 {
-			if err := json.Unmarshal(req.Params, &patch); err != nil {
-				return nil, err
-			}
-		}
-		merged := mergeVizPatch(current, patch)
-		if err := d.persistVizConfig(merged); err != nil {
-			return nil, err
-		}
-		d.Actor.VizAnalyzer().ApplyConfig(merged)
-		return d.vizConfigView(), nil
 	case "config.set":
 		return d.handleConfigSet(req)
 	case "viz.subscribe":

@@ -55,7 +55,7 @@ func cmdPlacementLog(env paths.Env, args []string) error {
 		return err
 	}
 	if jsonOut {
-		return printJSONRows(rows)
+		return printJSON(rows)
 	}
 	for _, row := range rows {
 		fmt.Printf("%s\t%s\t%s\t->\t%s\n", fmt.Sprint(row["at"]), fmt.Sprint(row["op"]), fmt.Sprint(row["from"]), fmt.Sprint(row["to"]))
@@ -78,5 +78,5 @@ func cmdPlacementUndoPlan(env paths.Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printJSONRows(rows)
+	return printJSON(rows)
 }

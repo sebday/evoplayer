@@ -38,14 +38,19 @@ func (a *Actor) SetOnFollow(fn func(int, string)) {
 }
 
 // ContinueFollow plays a follow track once its file is ready.
-func (a *Actor) ContinueFollow(index int) error {
+// The path is resolved against the current follow list so a download that
+// started at an earlier index still resumes after earlier tracks are consumed.
+func (a *Actor) ContinueFollow(path string) error {
 	return a.dispatchErr(func() error {
 		a.mu.Lock()
-		if a.followWait != index {
-			a.mu.Unlock()
-			return nil
+		index := -1
+		if a.followWait >= 0 && a.followWait < len(a.follow) && a.follow[a.followWait] == path {
+			index = a.followWait
 		}
 		a.mu.Unlock()
+		if index < 0 {
+			return nil
+		}
 		return a.playFollow(index)
 	})
 }

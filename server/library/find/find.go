@@ -13,7 +13,7 @@ import (
 func Tracks(env library.Env, mode, query string) ([]map[string]any, error) {
 	dbPath := env.LibraryDB
 	if dbPath == "" {
-		dbPath = filepath.Join(filepath.Dir(env.TracksCacheDir), "library.sqlite3")
+		dbPath = filepath.Join(env.CacheDir, "library.sqlite3")
 	}
 	return tracksFromSQLite(env, dbPath, mode, query)
 }
@@ -30,7 +30,7 @@ func tracksFromSQLite(env library.Env, dbPath, mode, query string) ([]map[string
 		return nil, err
 	}
 	defer db.Close()
-	rows, err := db.Query(`SELECT path, genre, title, artist, album, year, label, duration, art, liked FROM tracks`)
+	rows, err := db.Query(`SELECT path, COALESCE(genre, ''), COALESCE(title, ''), COALESCE(artist, ''), COALESCE(album, ''), COALESCE(year, ''), COALESCE(label, ''), duration, COALESCE(art, ''), liked FROM tracks`)
 	if err != nil {
 		return nil, err
 	}

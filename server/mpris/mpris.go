@@ -183,11 +183,11 @@ func (b *Bridge) current() playback.Status {
 
 func (b *Bridge) Identity() (string, *dbus.Error)     { return "evoplayer", nil }
 func (b *Bridge) DesktopEntry() (string, *dbus.Error) { return "evoplayer", nil }
-func (b *Bridge) CanQuit() (bool, *dbus.Error)        { return true, nil }
+func (b *Bridge) CanQuit() (bool, *dbus.Error)        { return false, nil }
 func (b *Bridge) CanRaise() (bool, *dbus.Error)       { return false, nil }
 func (b *Bridge) HasTrackList() (bool, *dbus.Error)   { return false, nil }
 func (b *Bridge) SupportedUriSchemes() ([]string, *dbus.Error) {
-	return []string{"file"}, nil
+	return []string{}, nil
 }
 func (b *Bridge) SupportedMimeTypes() ([]string, *dbus.Error) {
 	return []string{"audio/mpeg", "audio/flac", "audio/ogg", "audio/wav"}, nil

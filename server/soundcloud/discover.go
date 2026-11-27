@@ -927,7 +927,7 @@ func prunePreviews(dir string, keep int) {
 	}
 }
 
-// Keep moves a cached preview into .incoming, or downloads the permalink when
+// Keep moves a cached preview into .evoplayer/incoming, or downloads the permalink when
 // there is no preview.
 func Keep(ctx context.Context, env paths.Env, id int64, rep jobs.Reporter) (string, error) {
 	if rep == nil {

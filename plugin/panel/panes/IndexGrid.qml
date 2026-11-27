@@ -7,9 +7,6 @@ Item {
 
     required property var view
 
-    readonly property bool artists: view.page && view.page.kind === "artists"
-    readonly property bool albums: view.page && view.page.kind === "albums"
-
     function readScroll() { return grid.contentY }
     function writeScroll(y) { grid.contentY = y }
     function scrollMax() { return Math.max(0, grid.contentHeight - grid.height) }
@@ -50,7 +47,7 @@ Item {
             anchors.centerIn: parent
             visible: grid.count === 0 && !root.view.pageBusy
             textFormat: Text.PlainText
-            text: root.view.indexFilter ? "no matches" : "nothing here yet"
+            text: "nothing here yet"
             color: Theme.muted
             font.family: Theme.fontFamily
             font.pixelSize: Theme.fontSizeM
@@ -85,8 +82,6 @@ Item {
             view: root.view
             row: modelData
             playKind: root.view.indexKind()
-            round: root.artists
-            starred: (root.artists || root.albums) && !!modelData.starred
             selected: root.view.pane === "playlist" && !root.view.textCapture && index === root.view.indexIdx
             onActivated: {
                 root.view.indexIdx = index

@@ -33,12 +33,6 @@ func cmdVizApply(env paths.Env, exe string) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	resp, err := IPC(env, "viz.config.apply", nil)
-	if err != nil {
-		return err
-	}
-	if !resp.OK {
-		return fmt.Errorf("%s", resp.Error)
-	}
-	return nil
+	_, err := ipcOK(env, "viz.config.apply", nil)
+	return err
 }

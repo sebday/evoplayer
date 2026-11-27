@@ -1,7 +1,6 @@
 module evoPlayer.widgets
 ArtPickerOverlay 1.0 ArtPickerOverlay.qml
 Banner 1.0 Banner.qml
-Card 1.0 Card.qml
 BlurBackdrop 1.0 BlurBackdrop.qml
 Chip 1.0 Chip.qml
 Cover 1.0 Cover.qml

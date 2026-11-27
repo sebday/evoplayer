@@ -38,7 +38,10 @@ func AuthSession(apiKey, secret, token string) (string, error) {
 			return key, nil
 		}
 	}
-	errMsg := fmt.Sprint(payload["error"])
+	errMsg := ""
+	if payload["error"] != nil {
+		errMsg = fmt.Sprint(payload["error"])
+	}
 	if msg, ok := payload["message"].(string); ok && msg != "" {
 		errMsg = msg
 	}

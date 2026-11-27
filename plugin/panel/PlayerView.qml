@@ -23,7 +23,6 @@ Item {
     readonly property bool shuffle: !!player.shuffle
     readonly property bool repeatOn: !!player.repeat
     readonly property bool liked: !!player.liked
-    property int channels: 0
     readonly property int queueRevision: Number(player.queue_revision) || 0
     readonly property string waveFile: String(player.waveform || "")
 
@@ -34,13 +33,9 @@ Item {
     property string mode: "queue"
     property bool textCapture: false
     property string err: ""
-    property bool scanRunning: false
 
-    property string browsePath: ""
     property string libraryView: ""
     property int playlistColumns: 4
-    property string browseParent: ""
-    property var browseEntries: []
     property var playlists: []
     property var playlistCovers: ({})
     property bool coverCacheReady: false
@@ -53,7 +48,6 @@ Item {
         }
         return cache + "/playlist-covers.json"
     }
-    property int playlistCoverRev: 0
     property int playlistCoverGen: 0
     property var sidebar: []
     property int browseIdx: 0
@@ -92,19 +86,6 @@ Item {
     property string discoverNote: ""
     property string discoverSeedTitle: ""
     property var discoverSeed: ({})
-    property string downloadUrl: ""
-    property string downloadQuery: ""
-    property var downloadHits: []
-    property int downloadHit: -1
-    property string downloadPreviewId: ""
-    property string downloadPreviewURL: ""
-    property string downloadPreviewArt: ""
-    property int downloadIdx: 0
-    property string downloadNote: ""
-    property bool downloadBusy: false
-    property string downloadLog: ""
-    property var downloadFiles: []
-    property bool scSearchBusy: false
     property int playlistPage: 16
     property int savedPlaylistIdx: 0
     property string savedFocus: "playlist"
@@ -126,19 +107,16 @@ Item {
     property var indexCache: ({})
     property var indexRows: []
     property string indexShown: ""
-    property string indexFilter: ""
     property int indexIdx: 0
     property int indexColumns: 1
 
     property bool vizOn: true
     property bool vizSubscribed: false
-    property string eqPanel: "eq"
     property var libraryJob: null
     property var incomingFiles: []
     property var incomingFolders: []
     property int incomingIdx: 0
     property string incomingGenrePath: ""
-    property string modeReturn: ""
     property bool eqEnabled: true
     property real eqPreamp: 0
     property var eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -170,14 +148,8 @@ Item {
     property bool artPicking: false
     property bool artRestart: false
     property string artNextQuery: ""
-    property bool artFromDrop: false
     property bool artDropAlbum: false
     property string artPreview: ""
-
-    property var moveFolders: []
-    property int moveIdx: 0
-    property bool moveBusy: false
-    property string movePath: ""
 
     property string tagPath: ""
     property bool tagBusy: false
@@ -200,8 +172,6 @@ Item {
     property var tagPaths: []
     property string tagScope: ""
 
-    property string musicRoot: ""
-
     property string _waveBuf: ""
     property bool _waveOverflow: false
     property string _artBuf: ""
@@ -219,7 +189,6 @@ Item {
         artOverridePath = ""
         seekPreview = -1
         loadWave()
-        loadChannels()
         adoptPlayedRelated()
         revealPlaying()
     }
@@ -230,20 +199,10 @@ Item {
 
     function activate() {
         active = true
-        loadChannels()
         if (!loaded) {
             loaded = true
             ensureLibrary()
             loadQueue()
-            loadRoot()
-            if (service)
-                service.ipcCall("job.status", {}, function(ok, msg) {
-                    if (ok && msg && msg.data)
-                        root.scanRunning = String(msg.data.name || "") === "scan" && String(msg.data.status || "") === "running"
-                        var jobName = String(msg.data.name || "")
-                        if ((jobName === "download" || jobName === "download-url") && String(msg.data.status || "") === "running")
-                            root.noteDownloadJob(msg.data)
-                })
         }
         syncViz()
         loadWave()
@@ -292,16 +251,6 @@ Item {
         return clock(t ? t.duration : 0)
     }
 
-    function trackLabel(t) {
-        var title = String(t && t.title || "").replace(/^\s+|\s+$/g, "")
-        if (!title)
-            title = String(t && t.path || "")
-        var artist = String(t && t.artist || "").replace(/^\s+|\s+$/g, "")
-        if (!artist)
-            return title
-        return artist + " — " + title
-    }
-
     function progressFrac() {
         var dur = Number(player.duration) || 0
         if (dur <= 0)
@@ -323,10 +272,6 @@ Item {
         if (v > 100)
             v = 100
         return v / 100
-    }
-
-    function playerState() {
-        return String(player.state || "")
     }
 
     function soundcloudArtURL(value) {
@@ -353,7 +298,7 @@ Item {
         var id = discoverPreviewId(path)
         if (!id)
             return null
-        var lists = [adoptedRelated, relatedTracks, discoverTracks, downloadHits]
+        var lists = [adoptedRelated, relatedTracks, discoverTracks]
         for (var n = 0; n < lists.length; n++) {
             var rows = lists[n] || []
             for (var i = 0; i < rows.length; i++) {
@@ -368,8 +313,6 @@ Item {
         var id = discoverPreviewId(trackPath)
         if (!id)
             return ""
-        if (String(downloadPreviewId) === id && downloadPreviewArt)
-            return downloadPreviewArt
         var row = previewRowForPath(trackPath)
         return row ? soundcloudArtURL(row.artwork) : ""
     }
@@ -503,7 +446,7 @@ Item {
         var rows = sidebar || []
         var out = []
         for (var i = 0; i < rows.length; i++) {
-            if (rows[i] && rows[i].kind !== "tree" && rows[i].kind !== "rule")
+            if (rows[i])
                 out.push({ index: i, row: rows[i] })
         }
         return out
@@ -540,119 +483,6 @@ Item {
         endViewChange()
     }
 
-    function syncSettingsMode() {
-        var row = sidebar[browseIdx]
-        var tool = row && row.kind === "tool" ? String(row.id || "") : ""
-        if (tool === "discover") {
-            if (mode !== "discover")
-                loadDiscover(0)
-            return
-        }
-        if (tool === "download") {
-            if (mode !== "download")
-                openDownload()
-            return
-        }
-        if (mode === "discover" || mode === "download")
-            mode = "queue"
-    }
-
-    function openDownload() {
-        mode = "download"
-        downloadIdx = 0
-        err = ""
-        loadIncoming()
-    }
-
-    function submitDownload(explicitUrl) {
-        var fromBox = explicitUrl === undefined || explicitUrl === null
-        var url = String(fromBox ? downloadUrl : explicitUrl).replace(/^\s+|\s+$/g, "")
-        if (!url) {
-            err = fromBox ? "paste a url" : "no soundcloud link"
-            return
-        }
-        err = ""
-        downloadNote = "downloading…"
-        downloadBusy = true
-        ipc("library.download", { url: url, import: true }, function() {
-            root.err = ""
-            if (fromBox) {
-                root.downloadUrl = ""
-                root.downloadQuery = ""
-            }
-        }, function() {
-            root.downloadNote = ""
-            root.downloadBusy = false
-        })
-    }
-
-    function stopDownload() {
-        ipc("job.cancel", {}, function() {
-            root.downloadBusy = false
-            root.err = ""
-            root.downloadNote = "stopped"
-        })
-    }
-
-    function isDownloadLink(text) {
-        var t = String(text || "").toLowerCase()
-        return t.indexOf("://") >= 0 || t.indexOf("www.") === 0 || t.indexOf("youtu.be/") >= 0 || t.indexOf("youtube.com/") >= 0 || t.indexOf("soundcloud.com/") >= 0
-    }
-
-    function runDownloadBox() {
-        var text = String(downloadQuery || "").replace(/^\s+|\s+$/g, "")
-        if (!text) {
-            err = "type a search or paste a link"
-            return
-        }
-        if (isDownloadLink(text)) {
-            downloadUrl = text
-            submitDownload()
-            return
-        }
-        searchSoundCloud()
-    }
-
-    function searchSoundCloud() {
-        var q = String(downloadQuery || "").replace(/^\s+|\s+$/g, "")
-        if (!q) {
-            err = "type a search"
-            return
-        }
-        if (scSearchBusy)
-            return
-        err = ""
-        downloadNote = "searching…"
-        scSearchBusy = true
-        ipc("library.soundcloud.search", { query: q, limit: 12 }, function(data) {
-            root.scSearchBusy = false
-            root.applySoundCloudSearch(data)
-        }, function() {
-            root.scSearchBusy = false
-            root.downloadNote = ""
-        })
-    }
-
-    function applySoundCloudSearch(data) {
-        downloadNote = ""
-        err = ""
-        downloadHits = (data && Array.isArray(data.tracks)) ? data.tracks : []
-        if (downloadHits.length) {
-            downloadHit = 0
-            downloadNote = ""
-        } else {
-            downloadHit = -1
-            downloadNote = "nothing on soundcloud"
-        }
-    }
-
-    function selectedDownloadHit() {
-        var rows = downloadHits || []
-        if (downloadHit < 0 || downloadHit >= rows.length)
-            return null
-        return rows[downloadHit]
-    }
-
     function soundcloudPage(url) {
         url = String(url || "").replace(/^\s+|\s+$/g, "")
         if (url.indexOf("\n") >= 0 || url.indexOf("\r") >= 0)
@@ -674,62 +504,16 @@ Item {
     function playDRMInBrave(message) {
         if (String(message || "").toLowerCase().indexOf("drm") < 0)
             return false
-        var url = soundcloudPage(downloadPreviewURL)
-        if (!url && mode === "discover") {
+        var url = ""
+        if (mode === "discover") {
             var row = currentDiscover()
             url = soundcloudPage(row && row.permalink)
         }
         if (!openInBrave(url))
             return false
         err = ""
-        if (mode === "download")
-            downloadNote = "opened in brave"
-        else
-            discoverNote = "opened in brave"
+        discoverNote = "opened in brave"
         return true
-    }
-
-    function playSoundCloudHit() {
-        var row = selectedDownloadHit()
-        if (!row || !row.id) {
-            err = "nothing to play"
-            return
-        }
-        err = ""
-        downloadNote = "playing…"
-        downloadPreviewId = String(row.id)
-        downloadPreviewURL = String(row.permalink || "")
-        downloadPreviewArt = soundcloudArtURL(row.artwork)
-        ipc("discover.preview", { id: Number(downloadPreviewId) }, function(data) {
-            if (data && data.path)
-                root.downloadNote = ""
-        }, function() {
-            root.downloadNote = ""
-        })
-    }
-
-    function downloadSoundCloudHit() {
-        var row = selectedDownloadHit()
-        submitDownload(row && row.permalink ? String(row.permalink) : "")
-    }
-
-    function importPlayingPreview() {
-        if (!downloadPreviewId || !downloadPreviewURL)
-            return false
-        if (trackPath.indexOf("/discover/" + downloadPreviewId + ".mp3") < 0)
-            return false
-        submitDownload(downloadPreviewURL)
-        return true
-    }
-
-    function syncLikes() {
-        err = ""
-        downloadNote = "syncing likes…"
-        downloadBusy = true
-        ipc("library.soundcloud.download", { import: false }, null, function() {
-            root.downloadNote = ""
-            root.downloadBusy = false
-        })
     }
 
     function jobError(data) {
@@ -746,41 +530,9 @@ Item {
         return shown
     }
 
-    function noteDownloadJob(data) {
-        var status = String(data.status || "")
-        downloadLog = tailJobLog(data.log)
-        var phase = data.progress && data.progress.phase ? String(data.progress.phase) : ""
-        if (status === "running") {
-            downloadBusy = true
-            downloadNote = phase || "downloading…"
-            return
-        }
-        downloadBusy = false
-        if (status === "error") {
-            var message = String(data.error || "download failed")
-            if (message.indexOf("cancel") >= 0) {
-                downloadNote = "stopped"
-                err = ""
-                return
-            }
-            downloadNote = ""
-            err = message
-            return
-        }
-        if (status === "done") {
-            downloadNote = "done"
-            err = ""
-            if (data.result && data.result.files)
-                downloadFiles = data.result.files
-            else
-                loadIncoming()
-        }
-    }
-
     function loadIncoming() {
         ipc("library.incoming.list", {}, function(data) {
             data = data || {}
-            root.downloadFiles = data.files || []
             root.incomingFiles = data.files || []
             root.incomingFolders = data.folders || data.genres || []
             if (root.incomingIdx >= root.incomingFiles.length)
@@ -827,61 +579,11 @@ Item {
         })
     }
 
-    function editIncoming(index) {
-        var row = (incomingFiles || [])[index]
-        if (!row || !row.path)
-            return
-        incomingIdx = index
-        modeReturn = "library"
-        beginTagEdit([String(row.path)], String(row.path))
-    }
-
-    function tailJobLog(log) {
-        var lines = String(log || "").split("\n")
-        var out = []
-        for (var i = 0; i < lines.length; i++) {
-            var line = String(lines[i] || "").replace(/^\s+|\s+$/g, "")
-            if (line)
-                out.push(line)
-        }
-        if (out.length > 12)
-            out = out.slice(out.length - 12)
-        return out.join("\n")
-    }
-
-    function stepOffTool() {
-        var rows = sidebar || []
-        if (!(rows[browseIdx] && rows[browseIdx].kind === "tool"))
-            return
-        var n = browseIdx - 1
-        while (n >= 0 && rows[n] && rows[n].kind === "rule")
-            n--
-        if (n >= 0)
-            browseIdx = n
-    }
-
     function closeTool() {
-        stepOffTool()
         mode = "queue"
         pane = "playlist"
         syncShownPlaylist()
         err = ""
-    }
-
-    function dismissDownload() {
-        if (mode !== "download")
-            return
-        stepOffTool()
-        mode = "queue"
-        downloadIdx = 0
-        err = ""
-        syncShownPlaylist()
-    }
-
-    function closeDownload() {
-        closeTool()
-        downloadIdx = 0
-        textCapture = false
     }
 
     function loadDiscover(id, path) {
@@ -910,7 +612,7 @@ Item {
         }
         var seedArt = ""
         if (id) {
-            var from = currentDiscover() || selectedDownloadHit()
+            var from = currentDiscover()
             if (from && Number(from.id) === Number(id))
                 seedArt = soundcloudArtURL(from.artwork)
         } else if (!path) {
@@ -994,16 +696,6 @@ Item {
         discoverIdx = i
     }
 
-    function discoverMark(row) {
-        if (!row)
-            return ""
-        if (row.kept)
-            return "ok"
-        if (isPreviewing(row.id))
-            return ">"
-        return ""
-    }
-
     function isPreviewing(id) {
         id = String(id || "")
         return id !== "" && trackPath.indexOf("/discover/" + id + ".mp3") >= 0
@@ -1042,18 +734,6 @@ Item {
             moreDiscover()
         else if (action === "play")
             discoverPlay()
-    }
-
-    function downloadAction(index, action) {
-        downloadHit = index
-        focusPane("playlist")
-        var row = selectedDownloadHit()
-        if (action === "download")
-            downloadSoundCloudHit()
-        else if (action === "play" && row && isPreviewing(row.id))
-            togglePlay()
-        else if (action === "play")
-            playSoundCloudHit()
     }
 
     function previewDiscover() {
@@ -1465,7 +1145,6 @@ Item {
         if (libraryTries >= 8)
             return
         libraryTries++
-        loadBrowse(browsePath || "")
         loadPlaylistIndex()
         loadPlaylistFilter()
         prefetchIndexes()
@@ -1475,30 +1154,6 @@ Item {
         if (!active || (sidebar || []).length > 0 || libraryTries >= 8)
             return
         libraryRetry.restart()
-    }
-
-    function loadBrowse(rel, stayIfLeaf) {
-        ipc("library.browse", { path: String(rel || ""), offset: 0, limit: 2000 }, function(data) {
-            data = data || {}
-            var entries = data.entries || []
-            if (stayIfLeaf) {
-                var dirs = 0
-                for (var i = 0; i < entries.length; i++) {
-                    if (String(entries[i].type || "") === "dir")
-                        dirs++
-                }
-                if (dirs === 0)
-                    return
-            }
-            browsePath = String(data.path || "")
-            browseParent = data.parent == null ? "" : String(data.parent)
-            browseEntries = entries
-            libraryTries = 0
-            playlistIdx = 0
-            rebuildSidebar()
-        }, function() {
-            root.noteLibraryMiss()
-        })
     }
 
     function loadPlaylistFilter() {
@@ -1601,35 +1256,19 @@ Item {
         var rows = sidebar || []
         if (!rows.length || !delta)
             return
-        var step = delta < 0 ? -1 : 1
-        var left = Math.abs(delta)
-        var i = browseIdx
-        while (left > 0) {
-            var n = i + step
-            if (n < 0 || n >= rows.length)
-                break
-            i = n
-            if (!rows[i] || rows[i].kind !== "rule")
-                left--
-        }
+        var i = browseIdx + delta
+        if (i < 0)
+            i = 0
+        if (i >= rows.length)
+            i = rows.length - 1
         browseIdx = i
         showBrowseTab(sidebar[i], true)
-    }
-
-    function syncPageRow() {
-        var row = sidebar[browseIdx]
-        if (row && row.kind === "page") {
-            openIndex(row.id)
-            return
-        }
-        if (row && row.kind !== "rule")
-            closePages()
     }
 
     function stepIndex(name, len, delta) {
         if (len < 1 || !delta)
             return
-        var cur = name === "playlist" ? playlistIdx : (name === "move" ? moveIdx : artIdx)
+        var cur = name === "playlist" ? playlistIdx : artIdx
         var step = delta < 0 ? -1 : 1
         var left = Math.abs(delta)
         var i = cur
@@ -1642,32 +1281,16 @@ Item {
         }
         if (name === "playlist")
             playlistIdx = i
-        else if (name === "move")
-            moveIdx = i
         else
             artIdx = i
     }
 
     function moveActive(delta) {
-        if (mode === "move")
-            stepIndex("move", (moveFolders || []).length, delta)
-        else if (mode === "art") {
-            if (delta < 0 && artIdx <= 0) {
-                artQueryFocus = true
-                return
-            }
-            stepIndex("art", (artHits || []).length, delta)
-        }
-        else if (pane === "playlist" && mode === "queue") {
+        if (pane === "playlist" && mode === "queue") {
             stepIndex("playlist", playlistRows().length, delta)
             selectOnly(playlistIdx)
-        }
-        else
+        } else
             stepBrowse(delta)
-    }
-
-    function currentRow() {
-        return sidebar[browseIdx] || null
     }
 
     function scrollKey() {
@@ -1740,10 +1363,6 @@ Item {
         libraryView = "lists"
         playlistIdx = -1
         endViewChange()
-    }
-
-    function openBrowsePath(path) {
-        playFolder(String(path || ""))
     }
 
     function openListedPlaylist(name) {
@@ -1859,26 +1478,6 @@ Item {
         })
     }
 
-    function playFolder(rel) {
-        if (!rel)
-            return
-        ipc("library.browse", { path: String(rel), queue: true, queue_paths_only: true }, function(data) {
-            var paths = (data && data.paths) || []
-            root.playPaths(paths, paths[0] || "")
-        })
-    }
-
-    function addFolder(rel) {
-        rel = String(rel || "")
-        if (!rel)
-            return
-        ipc("queue.append_folder", { path: rel }, function() {
-            root.err = ""
-            root.loadQueue()
-            root.loadPlaylistIndex()
-        })
-    }
-
     // Leave whatever list was open and land on the playing row of the current queue.
     function showNowPlaying(reload) {
         beginViewChange()
@@ -1952,8 +1551,6 @@ Item {
     function leaveOverlays() {
         if (mode === "discover")
             closeDiscover()
-        else if (mode === "download")
-            closeDownload()
         else if (mode !== "queue")
             closeMode()
     }
@@ -2014,8 +1611,6 @@ Item {
         next[cacheKind] = fav.concat(rest)
         indexCache = next
         indexShown = ""
-        if (indexPage() && page && page.kind === pageKind)
-            applyIndexFilter()
     }
     function openGenre(name) { openPage("genre", name, "") }
     function openYear(name) { openPage("year", name, "") }
@@ -2028,14 +1623,6 @@ Item {
 
     function openLabel(name) { openPage("label", name, "") }
 
-    function gotoSelected(kind) {
-        var t = mode === "queue" && pane === "playlist" ? selectedListTrack() : null
-        var name = String((t && t[kind]) || "").replace(/^\s+|\s+$/g, "")
-        if (!name)
-            name = String(player[kind] || "")
-        openPage(kind, name, "")
-    }
-
     function pushPage() {
         pageStack = pageStack.concat([{
             page: page,
@@ -2043,8 +1630,7 @@ Item {
             rows: page ? pageTracks : null,
             idx: playlistIdx,
             scroll: playlistScroll,
-            index: indexIdx,
-            filter: indexFilter
+            index: indexIdx
         }])
     }
 
@@ -2058,7 +1644,6 @@ Item {
             pageData = null
             pageTracks = []
             page = spec
-            indexFilter = saved ? String(saved.filter || "") : ""
             indexIdx = saved ? saved.index : -1
             loadIndex(indexKind())
             endViewChange()
@@ -2220,8 +1805,7 @@ Item {
 
     function loadIndex(kind) {
         if (indexCache[kind]) {
-            var key = kind + "\n" + String(indexFilter || "")
-            if (indexShown === key && (indexRows || []).length)
+            if (indexShown === kind && (indexRows || []).length)
                 return
             applyIndexFilter()
             return
@@ -2245,32 +1829,14 @@ Item {
 
     function applyIndexFilter() {
         var all = indexCache[indexKind()] || []
-        var q = String(indexFilter || "").replace(/^\s+|\s+$/g, "").toLowerCase()
-        if (!q) {
-            indexRows = all
-        } else {
-            var out = []
-            for (var i = 0; i < all.length; i++) {
-                if (String(all[i].name || "").toLowerCase().indexOf(q) >= 0)
-                    out.push(all[i])
-            }
-            indexRows = out
-        }
+        indexRows = all
         if (indexIdx >= indexRows.length)
             indexIdx = Math.max(0, indexRows.length - 1)
-        indexShown = indexKind() + "\n" + String(indexFilter || "")
+        indexShown = indexKind()
     }
 
     function rowThumbUrl(row) {
         return Util.fileUrl(String(row && (row.thumb || row.art) || ""))
-    }
-
-    function setIndexFilter(text) {
-        if (indexFilter === text)
-            return
-        indexFilter = String(text || "")
-        indexIdx = -1
-        indexFilterTimer.restart()
     }
 
     function openIndexAt(i) {
@@ -2349,7 +1915,6 @@ Item {
         var next = Object.assign({}, playlistCovers)
         next[name] = { art: art, thumb: thumb }
         playlistCovers = next
-        playlistCoverRev = playlistCoverRev + 1
         scheduleCoverCache()
     }
 
@@ -2381,7 +1946,6 @@ Item {
         if (!changed)
             return
         playlistCovers = cur
-        playlistCoverRev = playlistCoverRev + 1
     }
 
     function scheduleCoverCache() {
@@ -2430,12 +1994,6 @@ Item {
         indexIdx = Math.max(0, Math.min(n - 1, indexIdx + delta))
     }
 
-    function releaseText() {
-        textCapture = false
-        if (host && host.forceKeyFocus)
-            host.forceKeyFocus()
-    }
-
     function longClock(sec) {
         var m = Math.round((Number(sec) || 0) / 60)
         if (m < 60)
@@ -2457,7 +2015,7 @@ Item {
     }
 
     function rowArtUrl(row) {
-        return Util.fileUrl(String(row && (row.thumb || row.art) || ""))
+        return rowThumbUrl(row)
     }
 
     function rowCoverUrl(row) {
@@ -2648,20 +2206,6 @@ Item {
         })
     }
 
-    function headerShuffle() {
-        if (listSource() === "queue") {
-            toggleShuffle()
-            return
-        }
-        var rows = playlistRows()
-        if (!rows.length)
-            return
-        var start = rows[Math.floor(Math.random() * rows.length)]
-        ipc("playback.shuffle", { on: true }, function() {
-            root.playTrackList(rows, start && start.path)
-        })
-    }
-
     function showPlaylist(name) {
         name = String(name || "")
         if (!name)
@@ -2754,25 +2298,12 @@ Item {
         })
     }
 
-    function openBrowseAt(index) {
-        playBrowseAt(index)
-    }
-
     function playBrowseAt(index) {
         browseIdx = index
         var row = sidebar[index]
-        if (!row || row.kind === "tool" || row.kind === "rule" || row.kind === "page")
+        if (!row || row.kind !== "playlist")
             return
-        if (row.kind === "playlist") {
-            playPlaylist(row.id)
-            return
-        }
-        if (row.type === "dir") {
-            playFolder(row.path)
-            return
-        }
-        if (row.type === "track")
-            playTrack(row.path)
+        playPlaylist(row.id)
     }
 
     function playPlaylist(name) {
@@ -2793,21 +2324,6 @@ Item {
     }
 
     function playSelected() {
-        if (mode === "art") {
-            applyArt("album")
-            return
-        }
-        if (mode === "move") {
-            applyMove()
-            return
-        }
-        if (mode === "download") {
-            if (downloadHit >= 0)
-                playSoundCloudHit()
-            else
-                runDownloadBox()
-            return
-        }
         if (mode === "tags")
             return
         if (listSource() === "lists") {
@@ -2843,87 +2359,6 @@ Item {
                 ipc("queue.play_path", { path: track.path }, null)
             return
         }
-        var row = currentRow()
-        if (!row)
-            return
-        if (row.kind === "page") {
-            openIndex(row.id)
-            focusPane("playlist")
-            return
-        }
-        if (row.kind === "tool") {
-            if (row.id === "discover") {
-                if (mode !== "discover")
-                    loadDiscover(0)
-                pane = "playlist"
-                return
-            }
-            if (row.id === "download") {
-                if (mode !== "download")
-                    openDownload()
-                pane = "playlist"
-                return
-            }
-            return
-        }
-        if (row.kind === "playlist") {
-            playPlaylist(row.id)
-            return
-        }
-        if (row.type === "dir") {
-            playFolder(row.path)
-            return
-        }
-        if (row.type === "track")
-            playTrack(row.path)
-    }
-
-    function addDir() {
-        if (pane === "playlist")
-            return
-        var row = currentRow()
-        if (!row || row.kind !== "entry")
-            return
-        var rel = row.type === "dir" ? row.path : browsePath
-        if (!rel)
-            return
-        ipc("queue.append_folder", { path: rel }, function() {
-            root.err = ""
-            root.loadQueue()
-            root.loadPlaylistIndex()
-        })
-    }
-
-    function absPath(rel) {
-        var p = String(rel || "")
-        if (!p)
-            return ""
-        if (p.charAt(0) === "/")
-            return p
-        if (!musicRoot)
-            return ""
-        return musicRoot.replace(/\/$/, "") + "/" + p
-    }
-
-    function folderTarget() {
-        var row = currentRow()
-        if (!row)
-            return ""
-        if (row.kind === "entry" && row.type === "dir")
-            return absPath(row.path)
-        if (row.kind === "entry" && row.type === "track" && row.path) {
-            var slash = row.path.lastIndexOf("/")
-            return slash > 0 ? row.path.slice(0, slash) : ""
-        }
-        return ""
-    }
-
-    function openFolder() {
-        var target = folderTarget()
-        if (!target || openProc.running)
-            return
-        openProc.command = ["xdg-open", target]
-        openProc.running = true
     }
 
     function pluginFile(rel) {
@@ -2934,16 +2369,6 @@ Item {
         if (!path || path.charAt(0) !== "/" || path.indexOf("\n") >= 0 || path.indexOf("\r") >= 0)
             return ""
         return path
-    }
-
-    function openInFiles() {
-        var path = String(playlistArtPath() || "").replace(/^\s+|\s+$/g, "")
-        if (!path || path.charAt(0) !== "/" || path.indexOf("\n") >= 0 || path.indexOf("\r") >= 0)
-            return
-        var script = pluginFile("bin/open-files")
-        if (!script)
-            return
-        Quickshell.execDetached(["/usr/bin/bash", script, path])
     }
 
     function patchLiked(path, likedNow) {
@@ -2980,7 +2405,7 @@ Item {
         var row = previewRowForPath(path)
         if (row)
             return row
-        var lists = [queue, shownTracks, searchHits, pageTracks, downloadHits]
+        var lists = [queue, shownTracks, searchHits, pageTracks]
         for (var n = 0; n < lists.length; n++) {
             var rows = lists[n] || []
             for (var i = 0; i < rows.length; i++) {
@@ -3129,22 +2554,10 @@ Item {
         return next
     }
 
-    function playlistArtPath() {
-        var row = selectedListTrack()
-        var path = row && String(row.path || "")
-        if (path)
-            return path
-        return trackPath
-    }
-
     function artEditPath() {
         if (mode === "tags" && tagPath)
             return tagPath
         return trackPath
-    }
-
-    function patchListArt(rows, path, artPath) {
-        return patchListArtPaths(rows, [path], artPath)
     }
 
     function patchListArtPaths(rows, paths, artPath) {
@@ -3312,8 +2725,7 @@ Item {
                 if (row && want[row.path]) {
                     next.push(Object.assign({}, row, {
                         album: root.tagAlbum,
-                        year: root.tagYear,
-                        label: root.tagLabel
+                        year: root.tagYear
                     }))
                     changed = true
                 } else
@@ -3335,13 +2747,6 @@ Item {
     }
 
     function likePlaying() {
-        if (mode === "download" && downloadHit >= 0) {
-            var hit = selectedDownloadHit()
-            if (hit && hit.id) {
-                likeSoundCloud(hit.id, "", hit.artist, hit.title, !!hit.liked)
-                return
-            }
-        }
         var id = discoverPreviewId(trackPath)
         if (id) {
             var row = soundCloudRow(trackPath)
@@ -3363,10 +2768,8 @@ Item {
 
     function closeMode() {
         var back = savedFocus || "playlist"
-        var returnMode = modeReturn
-        modeReturn = ""
         eqKeys = false
-        mode = returnMode === "library" ? "library" : "queue"
+        mode = "queue"
         artPreview = ""
         artHits = []
         artBusy = false
@@ -3378,10 +2781,9 @@ Item {
         tagField = ""
         tagPaths = []
         tagScope = ""
-        moveBusy = false
         tagBusy = false
         playlistIdx = savedPlaylistIdx
-        pane = returnMode === "library" ? "playlist" : back
+        pane = back
         textCapture = false
         err = ""
         if (host && host.forceKeyFocus)
@@ -3390,7 +2792,6 @@ Item {
     }
 
     function openSearch() {
-        dismissDownload()
         if (mode !== "queue")
             closeMode()
         pane = "search"
@@ -3411,7 +2812,6 @@ Item {
     }
 
     function setSearch(text) {
-        dismissDownload()
         closePages()
         searchQuery = String(text || "")
         searchTimer.restart()
@@ -3481,49 +2881,6 @@ Item {
 
     function refreshSearchLabels() {
         searchLabels = indexMatches("label")
-    }
-
-    function openMove() {
-        if (pane !== "playlist" || mode !== "queue")
-            return
-        var track = selectedListTrack()
-        if (!track || !track.path)
-            return
-        movePath = track.path
-        moveIdx = 0
-        moveBusy = false
-        pushOverlay("move")
-        if (!browsePath && (browseEntries || []).length) {
-            moveFolders = dirNames(browseEntries)
-            return
-        }
-        ipc("library.browse", { path: "", offset: 0, limit: 400 }, function(data) {
-            root.moveFolders = root.dirNames((data && data.entries) || [])
-        })
-    }
-
-    function dirNames(entries) {
-        var out = []
-        for (var i = 0; i < entries.length; i++) {
-            if (String(entries[i].type || "") === "dir")
-                out.push(String(entries[i].name || entries[i].path || ""))
-        }
-        return out
-    }
-
-    function applyMove() {
-        if (moveBusy || moveIdx < 0 || moveIdx >= moveFolders.length || !movePath)
-            return
-        moveBusy = true
-        var folder = moveFolders[moveIdx]
-        ipc("library.track.move", { path: movePath, folder: folder }, function() {
-            root.moveBusy = false
-            root.err = ""
-            root.closeMode()
-            root.loadBrowse(root.browsePath)
-            root.loadQueue()
-            root.reloadPage()
-        })
     }
 
     function openTrackFolder() {
@@ -3920,7 +3277,6 @@ Item {
         if (!url || !target || artApplyProc.running)
             return
         artBusy = true
-        artFromDrop = false
         var cmd = [Util.evoplayerBinPath(service ? service.home : ""), "art", "apply", target, url, "--json"]
         if (scope === "album")
             cmd.splice(cmd.length - 1, 0, "--album")
@@ -3985,7 +3341,6 @@ Item {
                 cmd.splice(cmd.length - 1, 0, "--with", extra)
         }
         artDropAlbum = !!album
-        artFromDrop = true
         artBusy = true
         err = ""
         _applyBuf = ""
@@ -3998,7 +3353,6 @@ Item {
     function finishArt(ok, artPath, paths) {
         var albumDrop = artDropAlbum
         artDropAlbum = false
-        artFromDrop = false
         artBusy = false
         if (!ok) {
             err = "art apply failed"
@@ -4028,42 +3382,12 @@ Item {
             service.requestEnrich(target)
     }
 
-    function applyLibrary(path) {
-        path = String(path || "").replace(/^\s+|\s+$/g, "").replace(/\/$/, "")
-        if (!path)
-            return
-        musicRoot = path
-        ipc("config.set", { section: "paths", key: "root", value: path }, function() {
-            root.err = ""
-            root.loadBrowse("")
-            root.loadPlaylistIndex()
-        })
-    }
-
-    function pickLibrary() {
-        if (musicRoot || pickProc.running)
-            return
-        pickProc.stdoutBuf = ""
-        pickProc.command = [Util.evoplayerBinPath(service ? service.home : ""), "config", "pick"]
-        pickProc.running = true
-    }
-
-    function loadRoot() {
-        if (rootProc.running)
-            return
-        rootProc.stdoutBuf = ""
-        rootProc.command = [Util.evoplayerBinPath(""), "config", "toml-get", "paths", "root"]
-        rootProc.running = true
-    }
-
     function transport(action) {
         if (service && service.runTransport)
             service.runTransport(action)
     }
 
     function togglePlay() { transport("toggle") }
-    function toggleShuffle() { ipc("playback.shuffle", { on: !shuffle }, null) }
-    function toggleRepeat() { ipc("playback.repeat", { on: !repeatOn }, null) }
 
     function cycleShuffleRepeat() {
         var mode = (shuffle ? 1 : 0) + (repeatOn ? 2 : 0)
@@ -4104,19 +3428,6 @@ Item {
 
     function volumeDelta(delta) {
         ipc("playback.volume.delta", { delta: delta }, null)
-    }
-
-    function eqHot() {
-        if (!eqEnabled)
-            return false
-        if (Math.abs(eqPreamp) >= 0.05)
-            return true
-        var bands = eqBands || []
-        for (var i = 0; i < bands.length; i++) {
-            if (Math.abs(Number(bands[i]) || 0) >= 0.05)
-                return true
-        }
-        return false
     }
 
     function loadEq() {
@@ -4248,27 +3559,6 @@ Item {
         }
     }
 
-    function loadChannels() {
-        if (!trackPath || trackPath.indexOf("\n") >= 0 || trackPath.indexOf("\r") >= 0) {
-            channels = 0
-            return
-        }
-        if (!active)
-            return
-        if (channelProc.running) {
-            if (channelProc.forPath !== trackPath) {
-                channels = 0
-                channelProc.signal(15)
-            }
-            return
-        }
-        channels = 0
-        channelProc.forPath = trackPath
-        channelProc.stdoutBuf = ""
-        channelProc.command = ["ffprobe", "-v", "quiet", "-select_streams", "a:0", "-show_entries", "stream=channels", "-of", "csv=p=0", trackPath]
-        channelProc.running = true
-    }
-
     function loadWave() {
         if (!active)
             return
@@ -4324,10 +3614,6 @@ Item {
         for (var n = 0; n < src.length; n++)
             out.push(src[n] / max)
         peaks = out
-    }
-
-    function reorder(delta) {
-        reorderFrom(playlistIdx, delta, -1)
     }
 
     // The daemon only accepts a move of one slot, so a longer drag is a chain of those.
@@ -4418,31 +3704,15 @@ Item {
         })
     }
 
-    function cycleFocus(dir) {
-        if (pane === "search")
-            pane = dir > 0 ? "playlist" : "browse"
-        else if (pane === "browse")
-            pane = "playlist"
-        else
-            pane = "browse"
-        textCapture = false
-        syncSettingsMode()
-        if (pane === "playlist")
-            revealPlaying()
-        if (host && host.forceKeyFocus)
-            host.forceKeyFocus()
-    }
-
     function focusPane(which) {
         pane = which
         textCapture = false
-        syncSettingsMode()
         if (host && host.forceKeyFocus)
             host.forceKeyFocus()
     }
 
     function clickBrowse(index) {
-        if (mode === "eq" || mode === "library") {
+        if (mode === "library") {
             eqSaveArmed = false
             incomingGenrePath = ""
             closeMode()
@@ -4459,11 +3729,6 @@ Item {
             extendPlaylist(index)
         else
             selectOnly(index)
-        focusPane("playlist")
-    }
-
-    function clickMove(index) {
-        moveIdx = index
         focusPane("playlist")
     }
 
@@ -4485,10 +3750,6 @@ Item {
     function onEsc() {
         if (mode === "discover") {
             closeDiscover()
-            return
-        }
-        if (mode === "download") {
-            closeDownload()
             return
         }
         if (mode !== "queue") {
@@ -4516,6 +3777,12 @@ Item {
         if (mode === "library") {
             if (key === Qt.Key_Escape && eqSaveArmed) { eqSaveArmed = false; return true }
             if (key === Qt.Key_Escape && eqKeys) { eqKeys = false; return true }
+            if (eqKeys) {
+                if (key === Qt.Key_Left) { eqIdx = Math.max(0, eqIdx - 1); return true }
+                if (key === Qt.Key_Right) { eqIdx = Math.min(10, eqIdx + 1); return true }
+                if (key === Qt.Key_Up) { nudgeEq(1); return true }
+                if (key === Qt.Key_Down) { nudgeEq(-1); return true }
+            }
             if (key === Qt.Key_Escape && incomingGenrePath) { incomingGenrePath = ""; return true }
             if (key === Qt.Key_Escape) { onEsc(); return true }
             if (key === Qt.Key_Up) { incomingIdx = Math.max(0, incomingIdx - 1); return true }
@@ -4535,6 +3802,10 @@ Item {
         if (mode === "tags") {
             if (key === Qt.Key_Escape) { closeMode(); return true }
             if (artQueryFocus && !tagMany && tagField === "") {
+                if (key === Qt.Key_Return || key === Qt.Key_Enter) {
+                    searchDiscogs()
+                    return true
+                }
                 if (key === Qt.Key_Down) {
                     artQueryFocus = false
                     artPicking = true
@@ -4548,6 +3819,10 @@ Item {
                 return false
             }
             if (artPicking && !tagMany && tagField === "") {
+                if (key === Qt.Key_Return || key === Qt.Key_Enter) {
+                    applyArt("album")
+                    return true
+                }
                 if (key === Qt.Key_Up) {
                     if (artIdx <= 0) {
                         artPicking = false
@@ -4566,61 +3841,6 @@ Item {
             if (key === Qt.Key_Down) { moveTag(1); return true }
             return false
         }
-        if (mode === "art" && textCapture) {
-            if (key === Qt.Key_Escape) { onEsc(); return true }
-            if (key === Qt.Key_Down) {
-                artQueryFocus = false
-                textCapture = false
-                if (host && host.forceKeyFocus)
-                    host.forceKeyFocus()
-                return true
-            }
-            if (key === Qt.Key_Up) { return true }
-            return false
-        }
-        if (mode === "download" && textCapture) {
-            if (key === Qt.Key_Escape) { onEsc(); return true }
-            if (key === Qt.Key_Down) {
-                var rows = downloadHits || []
-                if (!rows.length)
-                    return true
-                textCapture = false
-                if (downloadHit < 0)
-                    downloadHit = 0
-                else if (downloadHit < rows.length - 1)
-                    downloadHit += 1
-                if (host && host.forceKeyFocus)
-                    host.forceKeyFocus()
-                return true
-            }
-            if (key === Qt.Key_Up) {
-                focusPane("browse")
-                return true
-            }
-            return false
-        }
-        if (mode === "download" && pane === "playlist" && downloadHit >= 0) {
-            if (key === Qt.Key_Escape) { onEsc(); return true }
-            if (key === Qt.Key_Up) {
-                if (downloadHit > 0)
-                    downloadHit -= 1
-                else
-                    downloadHit = -1
-                return true
-            }
-            if (key === Qt.Key_Down) {
-                if (downloadHit < (downloadHits || []).length - 1)
-                    downloadHit += 1
-                return true
-            }
-            if (text === "d" || text === "D") { downloadSoundCloudHit(); return true }
-            if (text === "l" || text === "L") { likePlaying(); return true }
-            return true
-        }
-        if (mode === "download") {
-            if (key === Qt.Key_Escape) { onEsc(); return true }
-            if (text === "l" || text === "L") { likePlaying(); return true }
-        }
         if (mode === "queue" && listSource() === "lists" && pane === "playlist") {
             if (key === Qt.Key_Left) { stepPlaylistGrid(-1); return true }
             if (key === Qt.Key_Right) { stepPlaylistGrid(1); return true }
@@ -4628,17 +3848,6 @@ Item {
             if (key === Qt.Key_Down) { stepPlaylistGrid(playlistColumns); return true }
         }
         if (mode === "queue" && indexPage() && pane === "playlist") {
-            if (textCapture) {
-                if (key === Qt.Key_Escape) {
-                    if (indexFilter)
-                        setIndexFilter("")
-                    else
-                        releaseText()
-                    return true
-                }
-                if (key === Qt.Key_Down) { releaseText(); return true }
-                return false
-            }
             if (key === Qt.Key_Left) { stepIndexGrid(-1); return true }
             if (key === Qt.Key_Right) { stepIndexGrid(1); return true }
             if (key === Qt.Key_Up) { stepIndexGrid(-indexColumns); return true }
@@ -4693,7 +3902,7 @@ Item {
             backToPlaylists()
             return true
         }
-        if ((key === Qt.Key_Backspace || key === Qt.Key_Left) && page && pane !== "browse") {
+        if ((key === Qt.Key_Backspace || key === Qt.Key_Left) && page) {
             pageBack()
             return true
         }
@@ -4751,12 +3960,6 @@ Item {
     }
 
     Timer {
-        id: indexFilterTimer
-        interval: 120
-        onTriggered: root.applyIndexFilter()
-    }
-
-    Timer {
         id: eqSend
         interval: 80
         onTriggered: root.sendEq()
@@ -4796,15 +3999,12 @@ Item {
             var name = String(data.name || "")
             if (name === "scan" || name === "cache" || name === "import" || name === "art-maintain") {
                 var running = String(data.status || "") === "running"
-                if (name === "scan")
-                    root.scanRunning = running
-                else
+                if (name !== "scan")
                     root.libraryJob = data
                 if (!running) {
                     root.indexCache = ({})
                     root.indexShown = ""
                     root.prefetchIndexes()
-                    root.loadBrowse(root.browsePath)
                     if (name === "import")
                         root.loadIncoming()
                     if (root.entityPage())
@@ -4814,33 +4014,11 @@ Item {
             }
             if (name === "download" || name === "download-url") {
                 root.libraryJob = data
-                root.noteDownloadJob(data)
                 if (String(data.status || "") === "done" && data.result && data.result.path)
                     root.applySoundCloudLike("", data.result)
                 if (name === "download" && String(data.status || "") === "done")
                     root.refreshPlaylistCounts()
                 return
-            }
-            if (name === "discover-preview" && root.mode === "download") {
-                var previewStatus = String(data.status || "")
-                if (previewStatus === "running") {
-                    var previewPhase = data.progress && data.progress.phase ? String(data.progress.phase) : ""
-                    root.downloadNote = previewPhase || "playing…"
-                    return
-                }
-                if (previewStatus === "error") {
-                    var previewErr = root.jobError(data)
-                    if (root.playDRMInBrave(previewErr))
-                        return
-                    root.downloadNote = ""
-                    root.err = previewErr
-                    return
-                }
-                if (previewStatus === "done") {
-                    root.downloadNote = ""
-                    root.err = ""
-                    return
-                }
             }
             if (name !== "discover-preview" && name !== "discover-keep")
                 return
@@ -4869,8 +4047,6 @@ Item {
             }
         }
     }
-
-    Process { id: openProc }
 
     Process {
         id: waveProc
@@ -4975,87 +4151,6 @@ Item {
         }
     }
 
-    Process {
-        id: channelProc
-        property string forPath: ""
-        property string stdoutBuf: ""
-        stdout: SplitParser {
-            splitMarker: ""
-            onRead: function(chunk) {
-                channelProc.stdoutBuf += String(chunk || "")
-                if (channelProc.stdoutBuf.length > 64) {
-                    channelProc.stdoutBuf = ""
-                    channelProc.signal(15)
-                }
-            }
-        }
-        onExited: function(code) {
-            var raw = String(channelProc.stdoutBuf || "").replace(/^\s+|\s+$/g, "")
-            channelProc.stdoutBuf = ""
-            if (channelProc.forPath !== root.trackPath) {
-                Qt.callLater(root.loadChannels)
-                return
-            }
-            if (code !== 0 || !raw)
-                return
-            var n = parseInt(raw, 10)
-            root.channels = n === 1 ? 1 : (n >= 2 ? n : 0)
-        }
-    }
-
-    Process {
-        id: rootProc
-        property string stdoutBuf: ""
-        stdout: SplitParser {
-            splitMarker: ""
-            onRead: function(chunk) {
-                rootProc.stdoutBuf += String(chunk || "")
-                if (rootProc.stdoutBuf.length > 4096) {
-                    rootProc.stdoutBuf = ""
-                    rootProc.signal(15)
-                }
-            }
-        }
-        onExited: {
-            var path = String(rootProc.stdoutBuf || "").replace(/^\s+|\s+$/g, "")
-            rootProc.stdoutBuf = ""
-            if (path)
-                root.musicRoot = path
-            else
-                root.pickLibrary()
-        }
-    }
-
-    Process {
-        id: pickProc
-        property string stdoutBuf: ""
-        stdout: SplitParser {
-            splitMarker: ""
-            onRead: function(chunk) {
-                pickProc.stdoutBuf += String(chunk || "")
-                if (pickProc.stdoutBuf.length > 65536) {
-                    pickProc.stdoutBuf = ""
-                    pickProc.signal(15)
-                }
-            }
-        }
-        onExited: {
-            var raw = String(pickProc.stdoutBuf || "").replace(/^\s+|\s+$/g, "")
-            pickProc.stdoutBuf = ""
-            if (!raw)
-                return
-            var parsed
-            try {
-                parsed = JSON.parse(raw)
-            } catch (e) {
-                return
-            }
-            var path = parsed && parsed.paths && parsed.paths.root ? String(parsed.paths.root) : ""
-            if (path)
-                root.applyLibrary(path)
-        }
-    }
-
     readonly property int paneGap: 16
 
     Item {
@@ -5070,7 +4165,6 @@ Item {
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
                 anchors.topMargin: browse.barHeight + 12
-                sideMargin: 0
                 view: root
             }
 

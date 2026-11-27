@@ -135,7 +135,7 @@ func relUnderRoot(musicRoot, path string) string {
 		p = filepath.Join(root, p)
 	}
 	rel, err := filepath.Rel(root, p)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil || pathEscapes(rel) {
 		return filepath.Base(p)
 	}
 	return filepath.ToSlash(rel)

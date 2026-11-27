@@ -56,6 +56,7 @@ func RenameUser(env Env, old, new string) (ActionResult, error) {
 	stars, _ := loadStars(env.PlaylistStars)
 	stars = renameStar(stars, old, new)
 	_ = saveStars(env.PlaylistStars, stars)
+	_ = renameTrackOrder(env, old, new)
 	return ActionResult{OK: true, Old: old, New: new, Action: "rename"}, nil
 }
 
@@ -69,16 +70,12 @@ func DeleteUser(env Env, name string) (ActionResult, error) {
 	stars, _ := loadStars(env.PlaylistStars)
 	stars = removeStar(stars, name)
 	_ = saveStars(env.PlaylistStars, stars)
+	_ = deleteTrackOrder(env, name)
 	return ActionResult{OK: true, Name: name, Action: "delete"}, nil
 }
 
 func isReservedName(name string) bool {
-	switch name {
-	case "all", "favorites", "current", "mixes", "":
-		return true
-	default:
-		return false
-	}
+	return name == "" || reservedPlaylist(name)
 }
 
 func isUserEditable(env Env, name string) bool {

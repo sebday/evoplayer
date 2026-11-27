@@ -133,6 +133,84 @@ func forgetTrackPath(env Env, path string) error {
 	return library.WriteFileAtomic(trackOrderPath(env), append(raw, '\n'), 0o644)
 }
 
+func remapTrackPaths(env Env, moves map[string]string) error {
+	if len(moves) == 0 || env.StateDir == "" {
+		return nil
+	}
+	orders, err := loadTrackOrders(env)
+	if err != nil || len(orders) == 0 {
+		return err
+	}
+	changed := false
+	for name, paths := range orders {
+		next := make([]string, len(paths))
+		rowChanged := false
+		for i, path := range paths {
+			if to, ok := moves[path]; ok {
+				next[i] = to
+				rowChanged = true
+				changed = true
+				continue
+			}
+			next[i] = path
+		}
+		if rowChanged {
+			orders[name] = next
+		}
+	}
+	if !changed {
+		return nil
+	}
+	raw, err := json.Marshal(orders)
+	if err != nil {
+		return err
+	}
+	return library.WriteFileAtomic(trackOrderPath(env), append(raw, '\n'), 0o644)
+}
+
+func renameTrackOrder(env Env, oldName, newName string) error {
+	oldName = strings.TrimSpace(oldName)
+	newName = strings.TrimSpace(newName)
+	if oldName == "" || newName == "" || oldName == newName || env.StateDir == "" {
+		return nil
+	}
+	orders, err := loadTrackOrders(env)
+	if err != nil || len(orders) == 0 {
+		return err
+	}
+	paths, ok := orders[oldName]
+	if !ok {
+		return nil
+	}
+	delete(orders, oldName)
+	orders[newName] = paths
+	raw, err := json.Marshal(orders)
+	if err != nil {
+		return err
+	}
+	return library.WriteFileAtomic(trackOrderPath(env), append(raw, '\n'), 0o644)
+}
+
+func deleteTrackOrder(env Env, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || env.StateDir == "" {
+		return nil
+	}
+	orders, err := loadTrackOrders(env)
+	if err != nil || len(orders) == 0 {
+		return err
+	}
+	if _, ok := orders[name]; !ok {
+		return nil
+	}
+	delete(orders, name)
+	raw, err := json.Marshal(orders)
+	if err != nil {
+		return err
+	}
+	return library.WriteFileAtomic(trackOrderPath(env), append(raw, '\n'), 0o644)
+}
+
 func cleanPaths(paths []string) []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(paths))

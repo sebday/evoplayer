@@ -5,65 +5,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/sebday/evoplayer/server/config"
-	"github.com/sebday/evoplayer/server/history"
 	"github.com/sebday/evoplayer/server/paths"
-	"github.com/sebday/evoplayer/server/secrets"
 )
-
-func CmdHistoryReport(env paths.Env, args []string) error {
-	jsonOut := false
-	week := "0"
-	limit := 12
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--json":
-			jsonOut = true
-		case "--week":
-			if i+1 < len(args) {
-				i++
-				week = args[i]
-			}
-		case "--limit":
-			if i+1 < len(args) {
-				i++
-				limit, _ = strconv.Atoi(args[i])
-			}
-		}
-	}
-	if err := env.EnsureDirs(); err != nil {
-		return err
-	}
-	user := os.Getenv("LASTFM_USER")
-	if user == "" {
-		user = "distortedmind"
-	}
-	report, err := history.Generate(history.Params{
-		CacheDir:    filepath.Join(env.CacheDir, "history"),
-		User:        user,
-		APIKey:      os.Getenv("LASTFM_API_KEY"),
-		WeekFrom:    week,
-		ScrobbleLog: filepath.Join(env.StateDir, "scrobble.jsonl"),
-		Limit:       limit,
-	})
-	if err != nil {
-		return err
-	}
-	if jsonOut {
-		b, err := json.Marshal(report)
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(b))
-		return nil
-	}
-	fmt.Printf("scrobbles: %d artists: %d\n", report.Totals.Scrobbles, report.Totals.Artists)
-	return nil
-}
 
 func CmdConfig(env paths.Env, args []string) error {
 	if len(args) == 0 {
@@ -137,12 +83,7 @@ func cmdConfigGet(env paths.Env, args []string) error {
 }
 
 func configJSONView(env paths.Env) (config.JSONView, error) {
-	view, err := config.JSON(env.MusicConfig, env.MusicRoot)
-	if err != nil {
-		return view, err
-	}
-	view.Soundcloud.OAuthSource = secrets.SoundcloudOAuth().Source
-	return view, nil
+	return config.JSONForClient(env.MusicConfig, env.MusicRoot)
 }
 
 func cmdConfigSet(env paths.Env, args []string) error {

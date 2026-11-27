@@ -26,7 +26,7 @@ func RunDiscoverPreview(ctx context.Context, env paths.Env, id int64) int {
 	return 0
 }
 
-// RunDiscoverKeep downloads or moves a discover track into .incoming.
+// RunDiscoverKeep downloads or moves a discover track into .evoplayer/incoming.
 func RunDiscoverKeep(ctx context.Context, env paths.Env, id int64) int {
 	DeprioritizeProcess()
 	rep := NewNDJSONReporter(os.Stdout)

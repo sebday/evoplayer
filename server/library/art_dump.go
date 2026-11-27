@@ -21,30 +21,24 @@ func SharedDumpCovers(env Env) (dirs []string, tracks []string, err error) {
 	if env.MusicRoot == "" {
 		return nil, nil, fmt.Errorf("music root is empty")
 	}
-	// WalkDir does not follow a symlinked library root.
-	root, err := filepath.EvalSymlinks(env.MusicRoot)
-	if err != nil || root == "" {
-		root = env.MusicRoot
-	}
 	groups := map[string][]string{}
 	dirSet := map[string]struct{}{}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+	err = walkLibrary(env.MusicRoot, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil || d.IsDir() {
 			return nil
 		}
-		logical := logicalMusicPath(env.MusicRoot, root, path)
-		dir := filepath.Dir(logical)
-		if !isDumpFolder(dir) || !playback.IsSupportedPath(logical) {
+		dir := filepath.Dir(path)
+		if !isDumpFolder(dir) || !playback.IsSupportedPath(path) {
 			return nil
 		}
 		dirSet[dir] = struct{}{}
-		art := artPathTrack(env, logical)
+		art := artPathTrack(env, path)
 		dev, ino, ok := fileInode(art)
 		if !ok {
 			return nil
 		}
 		key := fmt.Sprintf("%d:%d", dev, ino)
-		groups[key] = append(groups[key], logical)
+		groups[key] = append(groups[key], path)
 		return nil
 	})
 	dirs = make([]string, 0, len(dirSet))
@@ -134,17 +128,6 @@ func stripEmbeddedArt(audioPath string) error {
 		}
 	}
 	return nil
-}
-
-func logicalMusicPath(musicRoot, resolvedRoot, path string) string {
-	if resolvedRoot == "" || musicRoot == "" {
-		return path
-	}
-	rel, err := filepath.Rel(resolvedRoot, path)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
-		return path
-	}
-	return filepath.Join(musicRoot, rel)
 }
 
 func fileInode(path string) (dev, ino uint64, ok bool) {

@@ -4,7 +4,6 @@ import "fmt"
 
 const (
 	CodeInvalidParams = "invalid_params"
-	CodeConflict      = "conflict"
 	CodeNotFound      = "not_found"
 	CodeUnavailable   = "unavailable"
 	CodeUnknownMethod = "unknown_method"
@@ -37,14 +36,6 @@ func ErrInvalidParams(format string, args ...any) error {
 	return &Error{
 		Code:    CodeInvalidParams,
 		Message: fmt.Sprintf(format, args...),
-	}
-}
-
-func ErrConflict(queueRevision uint64) error {
-	return &Error{
-		Code:    CodeConflict,
-		Message: "queue revision conflict",
-		Data:    map[string]any{"queue_revision": queueRevision},
 	}
 }
 

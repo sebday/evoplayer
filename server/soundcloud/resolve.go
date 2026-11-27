@@ -69,11 +69,7 @@ func (c *Client) ResolveURL(pageURL string) (*Track, error) {
 }
 
 func (c *Client) streamInfoURL(transcodingURL string) (string, error) {
-	url := transcodingURL
-	if strings.HasPrefix(transcodingURL, apiBase) {
-		url = apiBase + strings.TrimPrefix(transcodingURL, apiBase)
-	}
-	body, err := c.getJSONPublic(url)
+	body, err := c.getJSONPublic(transcodingURL)
 	if err != nil {
 		return "", err
 	}

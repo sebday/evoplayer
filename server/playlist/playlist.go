@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sebday/evoplayer/server/audio"
 	"github.com/sebday/evoplayer/server/library"
 )
 
@@ -369,13 +370,7 @@ func currentJSONHasMeta(items []library.Track) bool {
 }
 
 func looksLikeAudioFilename(title string) bool {
-	lower := strings.ToLower(title)
-	for _, ext := range []string{".mp3", ".flac", ".ogg", ".m4a", ".wav", ".opus", ".aac", ".wma"} {
-		if strings.HasSuffix(lower, ext) {
-			return true
-		}
-	}
-	return false
+	return audio.IsAudio(title)
 }
 
 type likeEntry struct {

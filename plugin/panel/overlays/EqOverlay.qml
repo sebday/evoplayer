@@ -30,42 +30,6 @@ Item {
         return t * travel
     }
 
-    function libraryJobLine() {
-        var job = view.libraryJob
-        if (!job || !job.status || job.status === "idle")
-            return "Nothing running."
-        var names = {
-            "cache": "Rebuild",
-            "import": "Import",
-            "art-maintain": "Artwork",
-            "download": "Sync Likes",
-            "download-url": "Download"
-        }
-        var line = (names[String(job.name || "")] || String(job.name || "job")) + " · " + String(job.status || "")
-        var progress = job.progress
-        if (progress && Number(progress.total) > 0)
-            line += " · " + (Number(progress.done) || 0) + "/" + Number(progress.total)
-        if (progress && progress.phase)
-            line += " · " + progress.phase
-        if (progress && progress.folder)
-            line += " · " + progress.folder
-        if (job.status === "error" && job.error)
-            return String(job.error)
-        return line
-    }
-
-    function libraryJobLog() {
-        var log = String(view.libraryJob && view.libraryJob.log || "")
-        if (!log)
-            return ""
-        var lines = log.split("\n")
-        for (var i = lines.length - 1; i >= 0; i--) {
-            if (String(lines[i]).trim() !== "")
-                return String(lines[i])
-        }
-        return ""
-    }
-
     function dbText(v) {
         var n = Math.round(Number(v) || 0)
         if (n > 0)

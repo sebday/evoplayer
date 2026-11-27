@@ -40,11 +40,11 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 	defer db.Close()
 
 	pending := incomingAudioFiles(entries, incoming)
-	rep.Line(jobs.LogInfo("importing .incoming"))
+	rep.Line(jobs.LogInfo("importing .evoplayer/incoming"))
 	rep.Line(jobs.LogInfof("%d files", len(pending)))
 	if len(pending) == 0 {
 		rep.Line(jobs.LogInfo("nothing to import"))
-		fmt.Fprintln(os.Stderr, "evoplayer: nothing to import in .incoming/")
+		fmt.Fprintln(os.Stderr, "evoplayer: nothing to import in .evoplayer/incoming/")
 		return nil
 	}
 
@@ -164,7 +164,7 @@ func RunImportCtx(ctx context.Context, env Env, rep jobs.Reporter) error {
 	}
 	_ = SyncLiked(db, env)
 	rep.Line(jobs.LogInfof("imported %d", moved))
-	fmt.Fprintf(os.Stderr, "evoplayer: imported %d file(s) from .incoming/\n", moved)
+	fmt.Fprintf(os.Stderr, "evoplayer: imported %d file(s) from .evoplayer/incoming/\n", moved)
 	if removed > 0 {
 		rep.Line(jobs.LogInfof("removed %d already in library", removed))
 		fmt.Fprintf(os.Stderr, "evoplayer: removed %d incoming file(s) already in the library\n", removed)
@@ -203,7 +203,7 @@ func incomingAudioFiles(entries []os.DirEntry, incoming string) []string {
 
 func relMusicPath(root, path string) string {
 	rel, err := filepath.Rel(root, path)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == "." || pathEscapes(rel) {
 		return filepath.Base(path)
 	}
 	return rel
@@ -400,6 +400,18 @@ func trackFilename(artist, title, path, ext string) string {
 	return base + "." + ext
 }
 
+func asciiYear(part string) bool {
+	if len(part) != 4 {
+		return false
+	}
+	for i := 0; i < len(part); i++ {
+		if part[i] < '0' || part[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func isYouTubeSource(path string, tag tags.TagInfo) bool {
 	if strings.Contains(strings.ToLower(tag.Comment), "source:youtube") {
 		return true
@@ -418,6 +430,9 @@ func mixYear(yearTag string, paths ...string) string {
 		stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		for i := 0; i+4 <= len(stem); i++ {
 			part := stem[i : i+4]
+			if !asciiYear(part) {
+				continue
+			}
 			if part >= "1985" && part <= maxYear {
 				return part
 			}

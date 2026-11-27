@@ -49,7 +49,7 @@ func incomingAudioPath(env Env, path string) (string, error) {
 	incoming := paths.IncomingDir(env.MusicRoot)
 	clean := filepath.Clean(path)
 	rel, err := filepath.Rel(incoming, clean)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == "." || pathEscapes(rel) {
 		return "", fmt.Errorf("not an incoming file")
 	}
 	st, err := os.Stat(clean)

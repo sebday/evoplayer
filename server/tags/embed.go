@@ -24,12 +24,17 @@ func EmbedMP3(path string, targets map[string]string, picture []byte, pictureMIM
 		tag.SetGenre(v)
 	}
 	if v, ok := targets["year"]; ok {
-		tag.AddTextFrame("TDRC", tag.DefaultEncoding(), v)
+		tag.DeleteFrames("TDRC")
+		tag.DeleteFrames("TYER")
+		if strings.TrimSpace(v) != "" {
+			tag.AddTextFrame("TDRC", tag.DefaultEncoding(), v)
+		}
 	}
 	if v, ok := targets["album"]; ok {
 		tag.SetAlbum(v)
 	}
 	if v, ok := targets["comment"]; ok && v != "" {
+		tag.DeleteFrames("COMM")
 		tag.AddCommentFrame(id3v2.CommentFrame{
 			Encoding: tag.DefaultEncoding(),
 			Language: "eng",

@@ -269,8 +269,8 @@ func ytdlpProgressPhase(line string) string {
 		return ""
 	}
 	phase := strings.TrimSpace(strings.TrimPrefix(line, "[download]"))
-	if len(phase) > 72 {
-		phase = phase[:72]
+	if runes := []rune(phase); len(runes) > 72 {
+		phase = string(runes[:72])
 	}
 	return phase
 }

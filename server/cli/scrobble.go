@@ -95,7 +95,7 @@ func scrobbleToken(token string) error {
 func scrobbleNowPlaying(env paths.Env) error {
 	secrets.Load()
 	if DaemonUp(env) {
-		_, err := IPC(env, "scrobble.nowplaying", nil)
+		_, err := ipcOK(env, "scrobble.nowplaying", nil)
 		return err
 	}
 	st, err := currentTrack(env)
@@ -108,7 +108,7 @@ func scrobbleNowPlaying(env paths.Env) error {
 func scrobbleSubmit(env paths.Env, started int64) error {
 	secrets.Load()
 	if DaemonUp(env) {
-		_, err := IPC(env, "scrobble.submit", map[string]int64{"started": started})
+		_, err := ipcOK(env, "scrobble.submit", map[string]int64{"started": started})
 		return err
 	}
 	st, err := currentTrack(env)
@@ -133,6 +133,9 @@ func scrobbleTouch(env paths.Env) error {
 		"at": time.Now().Format(time.RFC3339),
 	}
 	b, _ := json.Marshal(row)
+	if err := env.EnsureDirs(); err != nil {
+		return err
+	}
 	f, err := os.OpenFile(env.ScrobbleLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
@@ -148,7 +151,7 @@ func scrobbleRecent(env paths.Env, limit int, jsonOut bool) error {
 		return err
 	}
 	if jsonOut {
-		return printJSONRows(rows)
+		return printJSON(rows)
 	}
 	for _, row := range rows {
 		artist, _ := row["artist"].(string)

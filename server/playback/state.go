@@ -19,7 +19,6 @@ type Status struct {
 	Volume        int     `json:"volume"`
 	Art           string  `json:"art"`
 	Waveform      string  `json:"waveform"`
-	Playlist      string  `json:"playlist"`
 	Shuffle       bool    `json:"shuffle"`
 	Repeat        bool    `json:"repeat"`
 	PlaylistPos   int     `json:"playlist_pos"`

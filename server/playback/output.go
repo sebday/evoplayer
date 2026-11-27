@@ -108,13 +108,9 @@ func (o *PlayerOutput) Clear() {
 		close(o.stopCh)
 		o.stopCh = nil
 	}
-	player := o.player
 	o.player = nil
 	o.mu.Unlock()
 	o.playWG.Wait()
-	if player != nil {
-		player.Close()
-	}
 }
 
 func (o *PlayerOutput) Close() {

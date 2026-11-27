@@ -58,7 +58,7 @@ func SyncLiked(db *sql.DB, env Env) error {
 // GenreFromPath returns the top-level library folder containing path.
 func GenreFromPath(root, path string) string {
 	rel, err := filepath.Rel(root, path)
-	if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == "." || pathEscapes(rel) {
 		return ""
 	}
 	return strings.Split(rel, string(os.PathSeparator))[0]

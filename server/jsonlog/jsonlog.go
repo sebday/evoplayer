@@ -21,11 +21,15 @@ func ScrobbleRecent(logPath string, limit int) ([]map[string]any, error) {
 	defer f.Close()
 	var lines []string
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line != "" {
 			lines = append(lines, line)
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
 	}
 	seen := map[string]struct{}{}
 	out := make([]map[string]any, 0, limit)

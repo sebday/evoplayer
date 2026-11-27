@@ -48,9 +48,6 @@ func trackEmbedGenre(track *Track, opts DownloadOptions) string {
 	if folder := library.MatchLibraryGenre(env, candidates...); folder != "" {
 		return folder
 	}
-	if folder := library.GuessFolderFromCandidates(env, candidates...); folder != "" {
-		return folder
-	}
 	if g := strings.TrimSpace(track.Genre); g != "" {
 		return g
 	}

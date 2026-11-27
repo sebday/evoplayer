@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/sebday/evoplayer/server/library"
 	"github.com/sebday/evoplayer/server/paths"
@@ -11,6 +12,7 @@ import (
 )
 
 type warmProgressPrinter struct {
+	mu       sync.Mutex
 	total    int
 	lastDone int
 	step     int
@@ -25,6 +27,8 @@ func newWarmProgressPrinter(total int) *warmProgressPrinter {
 }
 
 func (p *warmProgressPrinter) report(done int, folder string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if done <= 0 {
 		return
 	}
@@ -117,7 +121,7 @@ func CmdWarm(env paths.Env, args []string) error {
 	if path == "" {
 		return fmt.Errorf("usage: evoplayer warm <path> [--json] | evoplayer warm --all [<folder>] [--json] | evoplayer warm --batch <paths...>")
 	}
-	out, err := warm.Track(env, path)
+	out, err := warm.TrackAssets(env, path)
 	if err != nil {
 		return err
 	}

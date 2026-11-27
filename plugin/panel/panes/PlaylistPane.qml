@@ -4,12 +4,10 @@ import "../compat"
 import "../overlays"
 import "../widgets"
 
-Card {
+Item {
     id: pane
 
     required property var view
-
-    pad: 0
 
     // Ghostty's configured size is 9pt, which is 12px here — the size this
     // list already used. The terminal that is actually open is 12pt.
@@ -62,16 +60,12 @@ Card {
         background: Item {}
     }
 
-    active: view.pane === "playlist"
-    property int sideMargin: 0
     readonly property int scrollGutter: 12
     readonly property bool showLibrary: view.mode === "queue" || view.mode === "tags"
-    readonly property bool coverList: view.mode === "library"
     readonly property bool plainHead: view.listSource() === "lists"
     readonly property bool trackHeading: view.listSource() === "page"
     readonly property bool releaseColumn: trackHeading && view.page && String(view.page.kind) !== "album"
         && view.pageData && (view.pageData.releases || []).length > 0
-    property int menuTop: 0
 
     function activeFlick() {
         if (view.indexPage())
@@ -96,8 +90,10 @@ Card {
         if (!key)
             return
         var y = view.savedScroll(key)
-        if (y < 0)
+        if (y < 0) {
+            view.scrollPending = false
             return
+        }
         placeScroll(activeFlick(), y, 6)
     }
 
@@ -118,6 +114,82 @@ Card {
                 flick.contentY = next
             view.scrollPending = false
         })
+    }
+
+    component SearchSection: Column {
+        id: section
+        required property var view
+        property string title: ""
+        property string kind: ""
+        property var rows: []
+        property bool roundTiles: false
+
+        width: parent.width
+        spacing: 0
+        visible: view.listSource() === "search" && (rows || []).length > 0
+        height: visible ? implicitHeight : 0
+
+        Text {
+            width: parent.width
+            topPadding: 8
+            bottomPadding: 6
+            leftPadding: 8
+            textFormat: Text.PlainText
+            text: section.title
+            color: Theme.withOpacity(Theme.foreground, 0.38)
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontSizeS
+            font.bold: true
+            font.capitalization: Font.AllUppercase
+            font.letterSpacing: 1
+        }
+
+        Item {
+            id: wrap
+            width: parent.width
+            readonly property int columns: Math.max(1, Math.floor(width / 150))
+            readonly property int cellW: Math.max(1, Math.floor(width / columns))
+            readonly property int cellH: cellW + 34
+            readonly property int count: (section.rows || []).length
+            height: Math.ceil(count / columns) * cellH
+
+            GridView {
+                anchors.fill: parent
+                interactive: false
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                highlightFollowsCurrentItem: false
+                model: section.rows || []
+                cellWidth: wrap.cellW
+                cellHeight: wrap.cellH
+
+                delegate: IndexTile {
+                    required property var modelData
+                    width: wrap.cellW
+                    height: wrap.cellH
+                    view: section.view
+                    row: modelData
+                    playKind: section.kind
+                    round: section.roundTiles
+                    starred: !!modelData.starred
+                    onActivated: {
+                        var name = String(modelData.name || "")
+                        if (section.kind === "album")
+                            section.view.openAlbum(name, "")
+                        else if (section.kind === "label")
+                            section.view.openLabel(name)
+                        else
+                            section.view.openArtist(name)
+                    }
+                    onContextActivated: section.view.openFieldTags(section.kind, String(modelData.name || ""))
+                }
+            }
+        }
+
+        Item {
+            width: parent.width
+            height: 8
+        }
     }
 
     Item {
@@ -141,11 +213,8 @@ Card {
             anchors.top: errLine.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.rightMargin: pane.plainHead ? pane.sideMargin : 0
             visible: pane.showLibrary && !view.indexPage()
             height: visible ? (pane.plainHead ? 0 : banner.implicitHeight) : 0
-            onHeightChanged: pane.menuTop = pane.plainHead ? 0 : height
-            onVisibleChanged: pane.menuTop = visible && !pane.plainHead ? height : 0
 
             PageHeader {
                 id: banner
@@ -162,7 +231,6 @@ Card {
             anchors.topMargin: 8
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.rightMargin: pane.sideMargin
             anchors.bottom: parent.bottom
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -348,9 +416,9 @@ Card {
             anchors.top: pane.trackHeading ? tracksLabel.bottom : head.bottom
             anchors.left: parent.left
             anchors.right: pane.releaseColumn ? releaseCol.left : parent.right
-            anchors.rightMargin: (pane.releaseColumn ? 16 : pane.sideMargin) + pane.scrollGutter
+            anchors.rightMargin: (pane.releaseColumn ? 16 : 0) + pane.scrollGutter
             anchors.bottom: parent.bottom
-            visible: pane.showLibrary && !pane.coverList && !view.indexPage() && view.listSource() !== "lists"
+            visible: pane.showLibrary && !view.indexPage() && view.listSource() !== "lists"
             clip: true
             boundsBehavior: Flickable.StopAtBounds
             highlightMoveDuration: 0
@@ -381,7 +449,7 @@ Card {
                     list.scrollBy(dy)
                 }
             }
-            model: view.playlistRows()
+            model: view.listSource() === "lists" ? [] : view.playlistRows()
             header: Column {
                 id: searchHead
                 width: list.width
@@ -393,173 +461,26 @@ Card {
                 visible: showArtists || showAlbums || showLabels || showTracks
                 height: visible ? implicitHeight : 0
 
-                Text {
-                    width: parent.width
-                    visible: searchHead.showArtists
-                    topPadding: 8
-                    bottomPadding: 6
-                    leftPadding: 8
-                    textFormat: Text.PlainText
-                    text: "Artists"
-                    color: Theme.withOpacity(Theme.foreground, 0.38)
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeS
-                    font.bold: true
-                    font.capitalization: Font.AllUppercase
-                    font.letterSpacing: 1
+                SearchSection {
+                    view: pane.view
+                    title: "Artists"
+                    kind: "artist"
+                    rows: view.searchArtists || []
+                    roundTiles: true
                 }
 
-                Item {
-                    id: artistWrap
-                    width: parent.width
-                    visible: searchHead.showArtists
-                    readonly property int columns: Math.max(1, Math.floor(width / 150))
-                    readonly property int cellW: Math.max(1, Math.floor(width / columns))
-                    readonly property int cellH: cellW + 34
-                    readonly property int count: (view.searchArtists || []).length
-                    height: visible ? Math.ceil(count / columns) * cellH : 0
-
-                    GridView {
-                        anchors.fill: parent
-                        interactive: false
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-                        highlightFollowsCurrentItem: false
-                        model: view.searchArtists || []
-                        cellWidth: artistWrap.cellW
-                        cellHeight: artistWrap.cellH
-
-                        delegate: IndexTile {
-                            required property var modelData
-                            width: artistWrap.cellW
-                            height: artistWrap.cellH
-                            view: pane.view
-                            row: modelData
-                            playKind: "artist"
-                            round: true
-                            starred: !!modelData.starred
-                            onActivated: pane.view.openArtist(String(modelData.name || ""))
-                            onContextActivated: pane.view.openFieldTags("artist", String(modelData.name || ""))
-                        }
-                    }
+                SearchSection {
+                    view: pane.view
+                    title: "Albums"
+                    kind: "album"
+                    rows: view.searchAlbums || []
                 }
 
-                Item {
-                    width: parent.width
-                    visible: searchHead.showArtists
-                    height: visible ? 8 : 0
-                }
-
-                Text {
-                    width: parent.width
-                    visible: searchHead.showAlbums
-                    topPadding: 8
-                    bottomPadding: 6
-                    leftPadding: 8
-                    textFormat: Text.PlainText
-                    text: "Albums"
-                    color: Theme.withOpacity(Theme.foreground, 0.38)
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeS
-                    font.bold: true
-                    font.capitalization: Font.AllUppercase
-                    font.letterSpacing: 1
-                }
-
-                Item {
-                    id: albumWrap
-                    width: parent.width
-                    visible: searchHead.showAlbums
-                    readonly property int columns: Math.max(1, Math.floor(width / 150))
-                    readonly property int cellW: Math.max(1, Math.floor(width / columns))
-                    readonly property int cellH: cellW + 34
-                    readonly property int count: (view.searchAlbums || []).length
-                    height: visible ? Math.ceil(count / columns) * cellH : 0
-
-                    GridView {
-                        anchors.fill: parent
-                        interactive: false
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-                        highlightFollowsCurrentItem: false
-                        model: view.searchAlbums || []
-                        cellWidth: albumWrap.cellW
-                        cellHeight: albumWrap.cellH
-
-                        delegate: IndexTile {
-                            required property var modelData
-                            width: albumWrap.cellW
-                            height: albumWrap.cellH
-                            view: pane.view
-                            row: modelData
-                            playKind: "album"
-                            starred: !!modelData.starred
-                            onActivated: pane.view.openAlbum(String(modelData.name || ""), "")
-                            onContextActivated: pane.view.openFieldTags("album", String(modelData.name || ""))
-                        }
-                    }
-                }
-
-                Item {
-                    width: parent.width
-                    visible: searchHead.showAlbums
-                    height: visible ? 8 : 0
-                }
-
-                Text {
-                    width: parent.width
-                    visible: searchHead.showLabels
-                    topPadding: 8
-                    bottomPadding: 6
-                    leftPadding: 8
-                    textFormat: Text.PlainText
-                    text: "Labels"
-                    color: Theme.withOpacity(Theme.foreground, 0.38)
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontSizeS
-                    font.bold: true
-                    font.capitalization: Font.AllUppercase
-                    font.letterSpacing: 1
-                }
-
-                Item {
-                    id: labelWrap
-                    width: parent.width
-                    visible: searchHead.showLabels
-                    readonly property int columns: Math.max(1, Math.floor(width / 150))
-                    readonly property int cellW: Math.max(1, Math.floor(width / columns))
-                    readonly property int cellH: cellW + 34
-                    readonly property int count: (view.searchLabels || []).length
-                    height: visible ? Math.ceil(count / columns) * cellH : 0
-
-                    GridView {
-                        anchors.fill: parent
-                        interactive: false
-                        clip: true
-                        boundsBehavior: Flickable.StopAtBounds
-                        highlightFollowsCurrentItem: false
-                        model: view.searchLabels || []
-                        cellWidth: labelWrap.cellW
-                        cellHeight: labelWrap.cellH
-
-                        delegate: IndexTile {
-                            required property var modelData
-                            width: labelWrap.cellW
-                            height: labelWrap.cellH
-                            view: pane.view
-                            row: modelData
-                            playKind: "label"
-                            starred: !!modelData.starred
-                            onActivated: pane.view.openLabel(String(modelData.name || ""))
-                            onContextActivated: pane.view.openFieldTags("label", String(modelData.name || ""))
-                        }
-                    }
-                }
-
-                Item {
-                    width: parent.width
-                    visible: searchHead.showLabels
-                    height: visible ? 8 : 0
+                SearchSection {
+                    view: pane.view
+                    title: "Labels"
+                    kind: "label"
+                    rows: view.searchLabels || []
                 }
 
                 Text {
@@ -816,7 +737,7 @@ Card {
                     id: rowDrop
                     anchors.fill: parent
                     z: 4
-                    enabled: !row.folder && !row.listPick && String(modelData.path || "") !== ""
+                    enabled: String(modelData.path || "") !== ""
                     onDropped: function(dropEvent) {
                         var raw = ""
                         if (dropEvent.hasUrls && dropEvent.urls && dropEvent.urls.length)
@@ -839,9 +760,7 @@ Card {
                     border.color: Theme.good
                 }
 
-                readonly property bool folder: String(modelData.type || "") === "dir"
-                readonly property bool listPick: String(modelData.type || "") === "playlist"
-                readonly property bool playing: !folder && !listPick && String(modelData.path || "") !== "" && String(modelData.path) === view.trackPath
+                readonly property bool playing: String(modelData.path || "") !== "" && String(modelData.path) === view.trackPath
                 readonly property bool filled: playing
                 readonly property bool hovered: rowHover.hovered
                 readonly property color ink: filled ? Theme.background : Theme.foreground
@@ -937,25 +856,16 @@ Card {
                     }
                     onClicked: function(mouse) {
                         if (mouse.button === Qt.MiddleButton) {
-                            if (!row.folder && !row.listPick && modelData.path)
+                            if (modelData.path)
                                 view.lookupRelated(modelData)
                             return
                         }
                         if (mouse.button === Qt.RightButton) {
-                            if (!row.folder && !row.listPick)
-                                view.editTrack(String(modelData.path || ""))
+                            view.editTrack(String(modelData.path || ""))
                             return
                         }
                         if (dragged || suppressClick) {
                             suppressClick = false
-                            return
-                        }
-                        if (row.folder) {
-                            view.openBrowsePath(String(modelData.path || ""))
-                            return
-                        }
-                        if (row.listPick) {
-                            view.openListedPlaylist(String(modelData.id || ""))
                             return
                         }
                         if (clearOnClick) {
@@ -1041,7 +951,7 @@ Card {
                             anchors.fill: parent
                             radius: 4
                             color: Qt.rgba(0, 0, 0, 0.45)
-                            visible: !row.folder && !row.listPick && (row.hovered || (row.playing && view.playing))
+                            visible: row.hovered || (row.playing && view.playing)
 
                             Text {
                                 anchors.centerIn: parent
@@ -1057,13 +967,12 @@ Card {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: function(mouse) {
                                     if (mouse.button === Qt.MiddleButton) {
-                                        if (!row.folder && !row.listPick && modelData.path)
+                                        if (modelData.path)
                                             view.lookupRelated(modelData)
                                         return
                                     }
                                     if (mouse.button === Qt.RightButton) {
-                                        if (!row.folder && !row.listPick)
-                                            view.editTrack(String(modelData.path || ""))
+                                        view.editTrack(String(modelData.path || ""))
                                         return
                                     }
                                     if (row.playing) {
@@ -1144,25 +1053,9 @@ Card {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 8
 
-                        Chip {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: row.folder
-                            text: "play"
-                            inverted: row.filled
-                            onActivated: view.playFolder(String(modelData.path || ""))
-                        }
-
-                        Chip {
-                            anchors.verticalCenter: parent.verticalCenter
-                            visible: row.folder
-                            text: "add"
-                            inverted: row.filled
-                            onActivated: view.addFolder(String(modelData.path || ""))
-                        }
-
                         Item {
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: row.roomy && list.width > 820 && !row.folder && !row.listPick
+                            visible: row.roomy && list.width > 820
                             width: visible ? pane.genreCol : 0
                             height: 22
 
@@ -1181,8 +1074,7 @@ Card {
 
                         Item {
                             anchors.verticalCenter: parent.verticalCenter
-                            visible: !row.folder && !row.listPick
-                            width: visible ? pane.yearCol : 0
+                            width: pane.yearCol
                             height: 22
 
                             Chip {
@@ -1199,13 +1091,10 @@ Card {
                         Text {
                             id: dur
                             anchors.verticalCenter: parent.verticalCenter
-                            readonly property bool clock: !row.folder && !row.listPick
-                            width: text === "" && !clock ? 0 : pane.timeCol
+                            width: pane.timeCol
                             horizontalAlignment: Text.AlignRight
                             textFormat: Text.PlainText
-                            text: row.folder || row.listPick
-                                ? (Number(modelData.count) > 0 ? String(modelData.count) : "")
-                                : view.trackClock(modelData)
+                            text: view.trackClock(modelData)
                             color: row.filled ? Theme.background : Theme.withOpacity(Theme.foreground, 0.75)
                             font.family: Theme.fontFamily
                             font.pointSize: pane.metaPt
@@ -1214,8 +1103,7 @@ Card {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             textFormat: Text.PlainText
-                            visible: !row.folder && !row.listPick
-                            width: visible ? pane.heartCol : 0
+                            width: pane.heartCol
                             horizontalAlignment: Text.AlignHCenter
                             text: modelData.liked || row.hovered ? "♥" : ""
                             color: modelData.liked ? Theme.liked : (row.filled ? Theme.background : Theme.muted)
@@ -1240,7 +1128,7 @@ Card {
             anchors.top: errLine.bottom
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.rightMargin: pane.sideMargin + pane.scrollGutter
+            anchors.rightMargin: pane.scrollGutter
             anchors.bottom: parent.bottom
             visible: view.mode === "discover"
             clip: true
@@ -1364,7 +1252,6 @@ Card {
             id: indexGrid
             anchors.fill: parent
             anchors.topMargin: errLine.height
-            anchors.rightMargin: pane.sideMargin
             visible: pane.showLibrary && view.indexPage()
             view: pane.view
         }
@@ -1373,16 +1260,7 @@ Card {
             z: 8
             anchors.fill: parent
             anchors.topMargin: errLine.height
-            anchors.rightMargin: pane.sideMargin
             visible: view.mode === "tags"
-            view: pane.view
-        }
-
-        MovePicker {
-            anchors.fill: parent
-            anchors.topMargin: errLine.height
-            anchors.rightMargin: pane.sideMargin
-            visible: view.mode === "move"
             view: pane.view
         }
 
@@ -1396,12 +1274,5 @@ Card {
             view: pane.view
         }
 
-        DownloadOverlay {
-            anchors.fill: parent
-            anchors.topMargin: errLine.height
-            anchors.rightMargin: pane.sideMargin
-            visible: view.mode === "download"
-            view: pane.view
-        }
     }
 }

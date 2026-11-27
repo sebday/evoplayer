@@ -28,7 +28,6 @@ type CacheResult struct {
 
 type cacheFile struct {
 	path  string
-	genre string
 	mtime int64
 	size  int64
 }
@@ -50,7 +49,7 @@ func CacheGenreCtx(ctx context.Context, env Env, genre string, force bool, onPro
 		return CacheResult{}, err
 	}
 	defer db.Close()
-	files, err := listAudioFiles(dir, genre)
+	files, err := listAudioFiles(dir)
 	if err != nil {
 		return CacheResult{}, err
 	}
@@ -79,7 +78,7 @@ func CacheAllCtx(ctx context.Context, env Env, force bool, onProgress CacheProgr
 }
 
 func cacheAllIntoCtx(ctx context.Context, db *sql.DB, env Env, force bool, onProgress CacheProgressFunc) (CacheResult, error) {
-	files, err := listAudioFiles(env.MusicRoot, "")
+	files, err := listAudioFiles(env.MusicRoot)
 	if err != nil {
 		return CacheResult{}, err
 	}
@@ -269,7 +268,7 @@ func walkLibrary(root string, fn fs.WalkDirFunc) error {
 	})
 }
 
-func listAudioFiles(root, folderGenre string) ([]cacheFile, error) {
+func listAudioFiles(root string) ([]cacheFile, error) {
 	out := make([]cacheFile, 0)
 	displayRoot := filepath.Clean(root)
 	err := walkLibrary(root, func(path string, d os.DirEntry, err error) error {
@@ -293,13 +292,8 @@ func listAudioFiles(root, folderGenre string) ([]cacheFile, error) {
 		if err != nil {
 			return nil
 		}
-		genre := folderGenre
-		if genre == "" {
-			genre = GenreFromPath(displayRoot, path)
-		}
 		out = append(out, cacheFile{
 			path:  path,
-			genre: genre,
 			mtime: info.ModTime().UnixNano(),
 			size:  info.Size(),
 		})
@@ -343,7 +337,7 @@ func NeedsBootstrap(env Env) (bool, error) {
 			}
 		}
 	}
-	files, err := listAudioFiles(env.MusicRoot, "")
+	files, err := listAudioFiles(env.MusicRoot)
 	if err != nil {
 		return false, err
 	}
@@ -358,7 +352,7 @@ func NeedsScan(env Env) (bool, error) {
 	if st, err := os.Stat(env.MusicRoot); err != nil || !st.IsDir() {
 		return false, nil
 	}
-	files, err := listAudioFiles(env.MusicRoot, "")
+	files, err := listAudioFiles(env.MusicRoot)
 	if err != nil {
 		return false, err
 	}

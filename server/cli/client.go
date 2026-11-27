@@ -217,12 +217,9 @@ func IPC(env paths.Env, method string, params interface{}) (ipc.Response, error)
 }
 
 func PlaybackStatus(env paths.Env) (playback.Status, error) {
-	resp, err := IPC(env, "state.get", nil)
+	resp, err := ipcOK(env, "state.get", nil)
 	if err != nil {
 		return playback.Status{}, err
-	}
-	if !resp.OK {
-		return playback.Status{}, fmt.Errorf("%s", resp.Error)
 	}
 	st, err := decodeStatus(resp.Data)
 	if err != nil {

@@ -11,8 +11,6 @@ type Env struct {
 	library.Env
 	PlaylistDir   string
 	PlaylistStars string
-	MusicRoot     string
-	MusicConfig   string
 }
 
 func EnvFrom(p paths.Env) Env {
@@ -20,8 +18,6 @@ func EnvFrom(p paths.Env) Env {
 		Env:           library.EnvFrom(p),
 		PlaylistDir:   p.PlaylistDir,
 		PlaylistStars: filepath.Join(p.StateDir, "playlist-stars.json"),
-		MusicRoot:     p.MusicRoot,
-		MusicConfig:   p.MusicConfig,
 	}
 }
 

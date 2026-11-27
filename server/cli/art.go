@@ -171,37 +171,27 @@ func parseArtPath(args []string) (string, error) {
 }
 
 func parseArtPathImage(args []string) (string, string, error) {
-	var path, image string
-	for _, a := range args {
-		if strings.HasPrefix(a, "-") {
-			continue
-		}
-		if path == "" {
-			path = a
-		} else if image == "" {
-			image = a
-		}
-	}
-	if path == "" || image == "" {
-		return "", "", fmt.Errorf("usage: evoplayer art set <track> <image>")
-	}
-	return path, image, nil
+	return parseArtPathPair(args, "usage: evoplayer art set <track> <image>")
 }
 
 func parseArtPathURL(args []string) (string, string, error) {
-	var path, u string
+	return parseArtPathPair(args, "usage: evoplayer art apply <track> <url>")
+}
+
+func parseArtPathPair(args []string, usage string) (string, string, error) {
+	var path, extra string
 	for _, a := range args {
 		if strings.HasPrefix(a, "-") {
 			continue
 		}
 		if path == "" {
 			path = a
-		} else if u == "" {
-			u = a
+		} else if extra == "" {
+			extra = a
 		}
 	}
-	if path == "" || u == "" {
-		return "", "", fmt.Errorf("usage: evoplayer art apply <track> <url>")
+	if path == "" || extra == "" {
+		return "", "", fmt.Errorf("%s", usage)
 	}
-	return path, u, nil
+	return path, extra, nil
 }

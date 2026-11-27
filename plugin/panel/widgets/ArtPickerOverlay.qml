@@ -68,6 +68,7 @@ Column {
                 if (view.artQuery !== text)
                     view.artQuery = text
             }
+            onAccepted: view.searchDiscogs()
             onActiveFocusChanged: {
                 view.textCapture = activeFocus
                 view.artQueryFocus = activeFocus

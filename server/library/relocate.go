@@ -178,6 +178,7 @@ func RelocateLibraryPaths(env Env) error {
 			return err
 		}
 		_ = relocatePlayerState(env.MusicRoot, filepath.Join(env.StateDir, "player.json"), idx)
+		_ = relocateTrackOrder(env, idx)
 	}
 	if changed {
 		InvalidateLikesCache(env.LikesFile)
@@ -250,24 +251,32 @@ func RewriteM3U(path string, fn func(string) string) error {
 		return err
 	}
 	lines := strings.Split(string(raw), "\n")
+	out := make([]string, 0, len(lines))
 	changed := false
 	for i, line := range lines {
 		trim := M3UEntry(line, i == 0)
 		if trim == "" || strings.HasPrefix(trim, "#") {
+			out = append(out, line)
 			continue
 		}
-		if next := fn(trim); next != trim {
-			if strings.HasSuffix(line, "\r") {
-				next += "\r"
-			}
-			lines[i] = next
-			changed = true
+		next := fn(trim)
+		if next == trim {
+			out = append(out, line)
+			continue
 		}
+		changed = true
+		if next == "" {
+			continue
+		}
+		if strings.HasSuffix(line, "\r") {
+			next += "\r"
+		}
+		out = append(out, next)
 	}
 	if !changed {
 		return nil
 	}
-	return WriteFileAtomic(path, []byte(strings.Join(lines, "\n")), 0o644)
+	return WriteFileAtomic(path, []byte(strings.Join(out, "\n")), 0o644)
 }
 
 // M3UEntry trims a raw m3u line, dropping CRLF endings and a UTF-8 BOM on the first line.
@@ -321,6 +330,39 @@ func relocatePlayerState(root, path string, idx *fileIndex) error {
 	}
 	st["path"] = next
 	return writeJSONAtomic(path, st)
+}
+
+func relocateTrackOrder(env Env, idx *fileIndex) error {
+	if env.StateDir == "" {
+		return nil
+	}
+	path := filepath.Join(env.StateDir, "playlist-track-order.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var orders map[string][]string
+	if json.Unmarshal(raw, &orders) != nil || len(orders) == 0 {
+		return nil
+	}
+	changed := false
+	for name, paths := range orders {
+		for i, p := range paths {
+			next := idx.relocate(env.MusicRoot, p)
+			if next != p {
+				paths[i] = next
+				changed = true
+			}
+		}
+		orders[name] = paths
+	}
+	if !changed {
+		return nil
+	}
+	return writeJSONAtomic(path, orders)
 }
 
 func writeJSONAtomic(path string, v any) error {

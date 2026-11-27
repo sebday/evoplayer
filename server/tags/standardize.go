@@ -187,8 +187,9 @@ func writeTags(path string, targets map[string]string) bool {
 func writeMP3Tags(path string, targets map[string]string) bool {
 	tag, err := id3v2.Open(path, id3v2.Options{Parse: true})
 	if err != nil {
-		tag = id3v2.NewEmptyTag()
+		return false
 	}
+	defer tag.Close()
 	if v, ok := targets["title"]; ok {
 		tag.SetTitle(v)
 	}
@@ -199,7 +200,11 @@ func writeMP3Tags(path string, targets map[string]string) bool {
 		tag.SetGenre(v)
 	}
 	if v, ok := targets["year"]; ok {
-		tag.AddTextFrame("TDRC", tag.DefaultEncoding(), v)
+		tag.DeleteFrames("TDRC")
+		tag.DeleteFrames("TYER")
+		if strings.TrimSpace(v) != "" {
+			tag.AddTextFrame("TDRC", tag.DefaultEncoding(), v)
+		}
 	}
 	if v, ok := targets["album"]; ok {
 		tag.SetAlbum(v)
@@ -244,9 +249,7 @@ func setUserText(tag *id3v2.Tag, description, value string) {
 func writeM4ATags(path string, targets map[string]string) bool {
 	args := []string{"-y", "-hide_banner", "-loglevel", "error", "-i", path, "-c", "copy"}
 	add := func(key, val string) {
-		if val != "" {
-			args = append(args, "-metadata", key+"="+val)
-		}
+		args = append(args, "-metadata", key+"="+val)
 	}
 	if v, ok := targets["title"]; ok {
 		add("title", v)
@@ -308,9 +311,6 @@ func targetTags(musicRoot, path string, tags TagMap) TagMap {
 		if title == "" || title == stem {
 			title = fnTitle
 		}
-	}
-	if artist == "" && fnArtist != "" {
-		artist = fnArtist
 	}
 	if title == "" {
 		if fnTitle != "" {
@@ -469,7 +469,7 @@ func resolveYear(musicRoot, path string, tags TagMap) int {
 
 func folderFromPath(musicRoot, path string) string {
 	rel, err := filepath.Rel(filepath.Clean(musicRoot), filepath.Clean(path))
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return ""
 	}
 	parts := strings.Split(rel, string(os.PathSeparator))

@@ -63,74 +63,28 @@ func VizConfig(path string) (viz.Config, error) {
 	if sec == nil {
 		return out, nil
 	}
-	if v, ok := intFromAny(sec["sensitivity"], out.Sensitivity); ok {
+	if v, ok := IntFromMap(sec, "sensitivity"); ok {
 		out.Sensitivity = v
 	}
-	if v, ok := intFromAny(sec["autosens"], out.Autosens); ok {
+	if v, ok := IntFromMap(sec, "autosens"); ok {
 		out.Autosens = v
 	}
-	if v, ok := intFromAny(sec["noise_reduction"], out.NoiseReduction); ok {
+	if v, ok := IntFromMap(sec, "noise_reduction"); ok {
 		out.NoiseReduction = v
 	}
-	if v, ok := floatFromAny(sec["monstercat"], out.Monstercat); ok {
+	if v, ok := FloatFromMap(sec, "monstercat"); ok {
 		out.Monstercat = v
 	}
-	if v, ok := intFromAny(sec["frame_rate"], out.FrameRate); ok {
+	if v, ok := IntFromMap(sec, "frame_rate"); ok {
 		out.FrameRate = v
 	}
-	if v, ok := intFromAny(sec["low_cutoff"], out.LowCutoff); ok {
+	if v, ok := IntFromMap(sec, "low_cutoff"); ok {
 		out.LowCutoff = v
 	}
-	if v, ok := intFromAny(sec["high_cutoff"], out.HighCutoff); ok {
+	if v, ok := IntFromMap(sec, "high_cutoff"); ok {
 		out.HighCutoff = v
 	}
 	return out, nil
-}
-
-func intFromAny(val any, def int) (int, bool) {
-	switch v := val.(type) {
-	case int:
-		return v, true
-	case int64:
-		return int(v), true
-	case float64:
-		return int(v), true
-	case string:
-		s := strings.TrimSpace(v)
-		if s == "" {
-			return def, false
-		}
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			return def, false
-		}
-		return n, true
-	default:
-		return def, false
-	}
-}
-
-func floatFromAny(val any, def float64) (float64, bool) {
-	switch v := val.(type) {
-	case float64:
-		return v, true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case string:
-		s := strings.TrimSpace(v)
-		if s == "" {
-			return def, false
-		}
-		n, err := strconv.ParseFloat(s, 64)
-		if err != nil {
-			return def, false
-		}
-		return n, true
-	default:
-		return def, false
-	}
 }
 
 func VizJSON(path string) (VizView, error) {

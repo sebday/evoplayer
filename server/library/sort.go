@@ -9,9 +9,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sebday/evoplayer/server/paths"
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/tags"
 )
+
+type MoveTrackResult struct {
+	From   string `json:"from"`
+	To     string `json:"to"`
+	Folder string `json:"folder"`
+}
 
 type SortResult struct {
 	Folder string            `json:"folder"`
@@ -77,7 +84,12 @@ func SortFolder(env Env, rel string) (SortResult, error) {
 		}
 		if db != nil {
 			if st, err := os.Stat(canon); err == nil {
-				_ = replaceTrack(db, env, path, trackFromProbe(canon, genre, probed), st.ModTime().UnixNano(), st.Size())
+				item := trackFromProbe(canon, genre, probed)
+				if tagged := tags.TrimFrame(probed.Tag.Genre); tagged != "" {
+					item.Genre = tagged
+				}
+				item.Art, item.Waveform = moveTrackSidecars(env, path, canon)
+				_ = replaceTrack(db, env, path, item, st.ModTime().UnixNano(), st.Size())
 			}
 		}
 		appendPlacement(env, "sort", path, canon)
@@ -89,9 +101,28 @@ func SortFolder(env Env, rel string) (SortResult, error) {
 }
 
 func samePath(a, b string) bool {
-	aa, _ := filepath.Abs(a)
-	bb, _ := filepath.Abs(b)
-	return aa == bb
+	return paths.SamePath(a, b)
+}
+
+func moveTrackSidecars(env Env, from, to string) (string, string) {
+	art := moveCacheFile(artPathTrack(env, from), artPathTrack(env, to))
+	fromWave := filepath.Join(env.WaveformDir, CacheKey(env.MusicRoot, from)+".json")
+	toWave := filepath.Join(env.WaveformDir, CacheKey(env.MusicRoot, to)+".json")
+	wave := moveCacheFile(fromWave, toWave)
+	return art, wave
+}
+
+func moveCacheFile(from, to string) string {
+	if from == "" || to == "" || from == to || !nonEmptyFile(from) {
+		return ""
+	}
+	if err := os.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+		return ""
+	}
+	if err := os.Rename(from, to); err != nil {
+		return ""
+	}
+	return to
 }
 
 func appendPlacement(env Env, op, from, to string) {

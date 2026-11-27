@@ -227,21 +227,22 @@ func lastfmOverallReport(apiKey, user string, limit int) (*Report, error) {
 
 func lastfmWeekReport(apiKey, user string, startTS, endTS, limit int) (*Report, error) {
 	fromStr := strconv.Itoa(startTS)
-	data, err := lastfm(apiKey, "user.getWeeklyArtistChart", map[string]string{"user": user, "from": fromStr})
+	span := map[string]string{"user": user, "from": fromStr, "to": strconv.Itoa(endTS)}
+	data, err := lastfm(apiKey, "user.getWeeklyArtistChart", span)
 	if err != nil {
 		return nil, err
 	}
 	artistsBody, _ := data["weeklyartistchart"].(map[string]any)
 	artistRows := chartRows(artistsBody, "artist", "name", "playcount")
 
-	data, err = lastfm(apiKey, "user.getWeeklyAlbumChart", map[string]string{"user": user, "from": fromStr})
+	data, err = lastfm(apiKey, "user.getWeeklyAlbumChart", span)
 	if err != nil {
 		return nil, err
 	}
 	albumsBody, _ := data["weeklyalbumchart"].(map[string]any)
 	albumRows := chartRows(albumsBody, "album", "name", "playcount")
 
-	data, err = lastfm(apiKey, "user.getWeeklyTrackChart", map[string]string{"user": user, "from": fromStr})
+	data, err = lastfm(apiKey, "user.getWeeklyTrackChart", span)
 	if err != nil {
 		return nil, err
 	}
@@ -269,6 +270,13 @@ func lastfmWeekReport(apiKey, user string, startTS, endTS, limit int) (*Report, 
 	if err != nil {
 		return nil, err
 	}
+	totals := Totals{
+		Scrobbles: scrobbles,
+		Artists:   len(artistRows),
+		Albums:    len(albumRows),
+		Tracks:    len(trackRows),
+		Hours:     hours,
+	}
 	if len(artistRows) > 10 {
 		artistRows = artistRows[:10]
 	}
@@ -280,15 +288,9 @@ func lastfmWeekReport(apiKey, user string, startTS, endTS, limit int) (*Report, 
 	}
 
 	return &Report{
-		Source: "lastfm",
-		Week:   WeekInfo{From: startTS, To: endTS, Label: weekLabel(startTS, endTS)},
-		Totals: Totals{
-			Scrobbles: scrobbles,
-			Artists:   len(artistRows),
-			Albums:    len(albumRows),
-			Tracks:    len(trackRows),
-			Hours:     hours,
-		},
+		Source:     "lastfm",
+		Week:       WeekInfo{From: startTS, To: endTS, Label: weekLabel(startTS, endTS)},
+		Totals:     totals,
 		Daily:      daily,
 		TopArtists: artistRows,
 		TopAlbums:  albumRows,

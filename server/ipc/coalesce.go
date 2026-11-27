@@ -15,7 +15,7 @@ func (s *Server) coalesceBroadcast(ev Event) {
 	s.coalescePending[ev.Event] = ev
 	if !s.coalesceArmed {
 		s.coalesceArmed = true
-		time.AfterFunc(coalesceWindow, s.flushCoalesced)
+		s.coalesceTimer = time.AfterFunc(coalesceWindow, s.flushCoalesced)
 	}
 	s.coalesceMu.Unlock()
 }
@@ -30,9 +30,10 @@ func (s *Server) flushCoalesced() {
 	}
 	s.coalesceMu.Lock()
 	if len(s.coalescePending) > 0 {
-		time.AfterFunc(coalesceWindow, s.flushCoalesced)
+		s.coalesceTimer = time.AfterFunc(coalesceWindow, s.flushCoalesced)
 	} else {
 		s.coalesceArmed = false
+		s.coalesceTimer = nil
 	}
 	s.coalesceMu.Unlock()
 }

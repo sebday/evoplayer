@@ -16,7 +16,6 @@ import (
 	"github.com/sebday/evoplayer/server/playback"
 	"github.com/sebday/evoplayer/server/playlist"
 	"github.com/sebday/evoplayer/server/status"
-	"github.com/sebday/evoplayer/server/warm"
 )
 
 func CmdStart(env paths.Env, exe string) error {
@@ -39,9 +38,6 @@ func CmdGUI(env paths.Env, exe string) error {
 }
 
 func CmdRestart(env paths.Env, exe string) error {
-	if DaemonUp(env) {
-		_ = savePlayerState(env)
-	}
 	restartDaemon(env)
 	return EnsureDaemon(env, exe)
 }
@@ -50,12 +46,8 @@ func CmdStop(env paths.Env) error {
 	if !DaemonUp(env) {
 		return nil
 	}
-	resp, err := IPC(env, "playback.stop", nil)
-	if err != nil {
+	if _, err := ipcOK(env, "playback.stop", nil); err != nil {
 		return err
-	}
-	if !resp.OK {
-		return fmt.Errorf("%s", resp.Error)
 	}
 	for i := 0; i < 50; i++ {
 		st, err := PlaybackStatus(env)
@@ -79,17 +71,7 @@ func CmdToggle(env paths.Env, exe string) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	if !DaemonUp(env) {
-		return resumeSaved(env, exe, false)
-	}
-	st, err := PlaybackStatus(env)
-	if err != nil {
-		return err
-	}
-	if st.State == "stopped" {
-		return resumeSaved(env, exe, false)
-	}
-	_, err = ipcOK(env, "playback.toggle", nil)
+	_, err := ipcOK(env, "playback.toggle", nil)
 	return err
 }
 
@@ -235,7 +217,6 @@ func CmdLoad(env paths.Env, exe string, args []string) error {
 		return err
 	}
 	_ = saveStatus(env, st)
-	go warmTrack(env, path)
 	if jsonOut {
 		return printJSON(st)
 	}
@@ -274,10 +255,6 @@ func waitForTrack(env paths.Env, path string, timeout time.Duration) (playback.S
 
 func saveStatus(env paths.Env, st playback.Status) error {
 	return status.Write(env, st)
-}
-
-func warmTrack(env paths.Env, path string) {
-	_, _ = warm.Track(env, path)
 }
 
 func CmdStatus(env paths.Env, exe string, jsonOut bool) error {
@@ -373,48 +350,6 @@ func savePlayerState(env paths.Env) error {
 		return nil
 	}
 	return status.Write(env, st)
-}
-
-func resumeSaved(env paths.Env, exe string, playing bool) error {
-	b, err := os.ReadFile(env.PlayerState)
-	if err != nil {
-		return nil
-	}
-	var saved struct {
-		Path     string  `json:"path"`
-		Position float64 `json:"position"`
-	}
-	if json.Unmarshal(b, &saved) != nil || saved.Path == "" {
-		return nil
-	}
-	if _, err := os.Stat(saved.Path); err != nil {
-		return nil
-	}
-	if err := EnsureDaemon(env, exe); err != nil {
-		return err
-	}
-	_, err = IPC(env, "queue.replace", map[string]interface{}{
-		"paths":      []string{saved.Path},
-		"start_path": saved.Path,
-	})
-	if err != nil {
-		return err
-	}
-	if saved.Position > 0 {
-		_, _ = IPC(env, "playback.seek", map[string]float64{"seconds": saved.Position})
-	}
-	if playing {
-		st, _ := PlaybackStatus(env)
-		if st.State == "paused" {
-			_, _ = IPC(env, "playback.toggle", nil)
-		}
-	} else {
-		st, _ := PlaybackStatus(env)
-		if st.State == "playing" {
-			_, _ = IPC(env, "playback.toggle", nil)
-		}
-	}
-	return nil
 }
 
 // ipcOK is IPC that also fails when the daemon rejects the request.

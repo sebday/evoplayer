@@ -34,11 +34,7 @@ func openFFmpegDecoder(path string) (StreamSeeker, Format, error) {
 	if err := d.start(0); err != nil {
 		return nil, Format{}, err
 	}
-	format := Format{
-		SampleRate:  ffmpegSampleRate,
-		NumChannels: 2,
-		Precision:   4,
-	}
+	format := Format{SampleRate: ffmpegSampleRate}
 	return d, format, nil
 }
 

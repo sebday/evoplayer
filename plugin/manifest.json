@@ -5,18 +5,10 @@
   "version": "0.1.0",
   "author": "seb",
   "description": "Music library and playback",
-  "kinds": ["service", "panel", "bar-widget"],
+  "kinds": ["service", "panel"],
   "keepLoaded": true,
   "entryPoints": {
     "service": "panel/Service.qml",
-    "panel": "panel/Player.qml",
-    "barWidget": "BarWidget.qml"
-  },
-  "barWidget": {
-    "displayName": "Player",
-    "description": "Volume, now playing, and scrobble history",
-    "category": "Media",
-    "allowMultiple": false,
-    "defaultSection": "center"
+    "panel": "panel/Player.qml"
   }
 }

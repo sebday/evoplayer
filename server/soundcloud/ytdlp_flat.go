@@ -102,11 +102,6 @@ func flatDestPath(incoming string, e ytdlpFlatEntry) string {
 
 func archiveHasFlatEntry(a *syncarchive.Archive, e ytdlpFlatEntry) bool {
 	id := strings.TrimSpace(e.ID)
-	key := strings.ToLower(strings.TrimSpace(e.IEKey))
-	ext := strings.ToLower(strings.TrimSpace(e.Extractor))
-	if strings.Contains(key, "youtube") || strings.Contains(ext, "youtube") {
-		return a.HasYT(id)
-	}
 	if n, err := strconv.ParseInt(id, 10, 64); err == nil {
 		return a.HasSC(n)
 	}
@@ -115,11 +110,6 @@ func archiveHasFlatEntry(a *syncarchive.Archive, e ytdlpFlatEntry) bool {
 
 func archiveAddFlatEntry(a *syncarchive.Archive, e ytdlpFlatEntry) error {
 	id := strings.TrimSpace(e.ID)
-	key := strings.ToLower(strings.TrimSpace(e.IEKey))
-	ext := strings.ToLower(strings.TrimSpace(e.Extractor))
-	if strings.Contains(key, "youtube") || strings.Contains(ext, "youtube") {
-		return a.AddYT(id)
-	}
 	if n, err := strconv.ParseInt(id, 10, 64); err == nil {
 		return a.AddSC(n)
 	}

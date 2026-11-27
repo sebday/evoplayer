@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sync"
 
 	"github.com/sebday/evoplayer/server/jobs"
 )
@@ -21,7 +22,8 @@ type Event struct {
 
 // NDJSONReporter streams job progress to w as NDJSON lines.
 type NDJSONReporter struct {
-	w io.Writer
+	mu sync.Mutex
+	w  io.Writer
 }
 
 func NewNDJSONReporter(w io.Writer) *NDJSONReporter {
@@ -51,6 +53,8 @@ func (r *NDJSONReporter) write(ev Event) error {
 	if err != nil {
 		return err
 	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	_, err = fmt.Fprintf(r.w, "%s\n", b)
 	return err
 }

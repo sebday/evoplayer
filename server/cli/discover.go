@@ -48,7 +48,7 @@ func discoverVerb(method string) string {
 
 func discoverSimilar(env paths.Env, args []string) error {
 	jsonOut := hasFlag(args, "--json")
-	if err := EnsureDaemon(env, findExe(env)); err != nil {
+	if err := EnsureDaemon(env, findExe()); err != nil {
 		return err
 	}
 	st, err := PlaybackStatus(env)
@@ -58,12 +58,9 @@ func discoverSimilar(env paths.Env, args []string) error {
 	if strings.TrimSpace(st.Path) == "" {
 		return fmt.Errorf("evoplayer: nothing playing")
 	}
-	resp, err := IPC(env, "discover.similar", map[string]any{"path": st.Path})
+	resp, err := ipcOK(env, "discover.similar", map[string]any{"path": st.Path})
 	if err != nil {
 		return err
-	}
-	if !resp.OK {
-		return fmt.Errorf("%s", resp.Error)
 	}
 	if jsonOut {
 		return printJSON(resp.Data)

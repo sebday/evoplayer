@@ -72,12 +72,9 @@ func cmdSpectrumGet(env paths.Env, exe string) error {
 	if err := EnsureDaemon(env, exe); err != nil {
 		return err
 	}
-	resp, err := IPC(env, "spectrum.get", nil)
+	resp, err := ipcOK(env, "spectrum.get", nil)
 	if err != nil {
 		return err
-	}
-	if !resp.OK {
-		return respError(resp)
 	}
 	return printJSON(resp.Data)
 }

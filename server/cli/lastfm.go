@@ -23,6 +23,7 @@ func CmdLastfm(env paths.Env, args []string) error {
 		}
 		mbid, err := lastfm.RecordingMBID(args[1], args[2], album)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "evoplayer: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Print(mbid)

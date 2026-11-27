@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -23,7 +22,7 @@ func CmdMeta(env paths.Env, args []string) error {
 	if path == "" {
 		return fmt.Errorf("usage: evoplayer meta <path> [--json]")
 	}
-	row, err := library.Meta(library.EnvFrom(env), path, readPlaylistName(env))
+	row, err := library.Meta(library.EnvFrom(env), path, "")
 	if err != nil {
 		if jsonOut {
 			fmt.Println("{}")
@@ -197,31 +196,14 @@ func CmdCache(env paths.Env, args []string) error {
 }
 
 func runLibraryJob(env paths.Env, method string, params map[string]any) error {
-	if err := EnsureDaemon(env, findExe(env)); err != nil {
+	if err := EnsureDaemon(env, findExe()); err != nil {
 		return err
 	}
-	resp, err := IPC(env, method, params)
+	resp, err := ipcOK(env, method, params)
 	if err != nil {
 		return err
-	}
-	if !resp.OK {
-		return fmt.Errorf("%s", resp.Error)
 	}
 	return printJSON(resp.Data)
-}
-
-func readPlaylistName(env paths.Env) string {
-	st, err := os.ReadFile(env.PlayerState)
-	if err != nil {
-		return ""
-	}
-	var saved struct {
-		Playlist string `json:"playlist"`
-	}
-	if json.Unmarshal(st, &saved) != nil {
-		return ""
-	}
-	return saved.Playlist
 }
 
 func hasFlag(args []string, flag string) bool {
@@ -233,7 +215,10 @@ func hasFlag(args []string, flag string) bool {
 	return false
 }
 
-func findExe(env paths.Env) string {
+func findExe() string {
+	if exe, err := os.Executable(); err == nil && exe != "" {
+		return exe
+	}
 	candidates := []string{
 		os.Getenv("EVOPLAYER_BIN"),
 	}

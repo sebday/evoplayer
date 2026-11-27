@@ -3,7 +3,12 @@ package library
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
+
+func pathEscapes(rel string) bool {
+	return rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
 
 func fileExists(path string) bool {
 	st, err := os.Stat(path)

@@ -118,10 +118,7 @@ func keyringItemMatch(label string, attrs map[string]string, wantLabel, app stri
 	if strings.EqualFold(strings.TrimSpace(label), wantLabel) {
 		return true
 	}
-	if attrs == nil {
-		return false
-	}
-	if strings.EqualFold(attrs["application"], app) {
+	if attrs != nil && strings.EqualFold(attrs["application"], app) {
 		return true
 	}
 	return strings.Contains(strings.ToLower(label), strings.ToLower(app)) && strings.Contains(strings.ToLower(label), "safe storage")

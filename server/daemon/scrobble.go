@@ -69,7 +69,7 @@ func (d *Daemon) autoScrobble(st playback.Status) {
 
 	// A seek, or the resume that reports 0 then jumps to the saved position,
 	// is not listening time. Start the session again from the new position.
-	if st.Path == prev.Path && st.State == "playing" &&
+	if st.Path == prev.Path &&
 		scrobblePositionJumped(prev.Position, st.Position, scrobbleElapsed(d.scrobblePrevAt)) {
 		d.beginScrobbleSessionLocked(st)
 	}
@@ -167,7 +167,7 @@ func scrobbleSubmitDue(scrobblePath string, startPos float64, startedAt int64, s
 }
 
 func (d *Daemon) scrobbleNowPlaying() error {
-	return d.scrobbleNowPlayingStatus(enrichTrack(d.env(), d.Actor.Snapshot()))
+	return d.scrobbleNowPlayingStatus(d.Actor.Snapshot())
 }
 
 func (d *Daemon) scrobbleNowPlayingStatus(st playback.Status) error {
@@ -186,7 +186,7 @@ func (d *Daemon) scrobbleNowPlayingStatus(st playback.Status) error {
 }
 
 func (d *Daemon) scrobbleSubmit(started int64) error {
-	return d.scrobbleSubmitStatus(enrichTrack(d.env(), d.Actor.Snapshot()), started)
+	return d.scrobbleSubmitStatus(d.Actor.Snapshot(), started)
 }
 
 func (d *Daemon) scrobbleSubmitStatus(st playback.Status, started int64) error {

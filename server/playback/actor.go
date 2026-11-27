@@ -107,6 +107,10 @@ func (a *Actor) ensureOutput() error {
 }
 
 func (a *Actor) CloseOutput() {
+	if a.viz != nil {
+		a.viz.SetWanted(false)
+	}
+	a.haltPlayback()
 	a.output.Close()
 }
 
@@ -747,10 +751,13 @@ func (a *Actor) loadPath(path string, position float64, paused bool) error {
 	a.startPositionLoopLocked()
 	a.mu.Unlock()
 	if position > 0 {
-		_ = a.seekPlayback(position)
-	} else {
-		a.emit()
+		if err := a.seekPlayback(position); err != nil {
+			a.haltPlayback()
+			return err
+		}
+		return nil
 	}
+	a.emit()
 
 	go a.watchPlaybackEnd(path, loadGen, done)
 	return nil
@@ -797,6 +804,7 @@ func (a *Actor) seekPlayback(seconds float64) error {
 	err := stream.Seek(samples)
 	a.playMu.Unlock()
 	if err != nil {
+		a.haltPlayback()
 		return err
 	}
 	seconds = float64(samples) / float64(srcRate)
@@ -807,6 +815,7 @@ func (a *Actor) seekPlayback(seconds float64) error {
 	a.eq.Reset()
 	done := make(chan struct{})
 	if err := a.output.Play(a.playChain(), &a.playMu, func() { close(done) }); err != nil {
+		a.haltPlayback()
 		return err
 	}
 	go a.watchPlaybackEnd(path, loadGen, done)
